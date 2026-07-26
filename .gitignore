@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs
+*.log
+server.log
+fake.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 誤建的空檔
+/ComfyUI
