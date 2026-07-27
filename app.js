@@ -38,6 +38,18 @@
     );
   }
 
+  // 引擎切換器：滑動膠囊移到目前選中的按鈕
+  let pillReady = false;
+  function movePill() {
+    const sw = $('engine-switch'), pill = $('engine-pill');
+    const active = sw && sw.querySelector('button.active');
+    if (!sw || !pill || !active) return;
+    if (!pillReady) pill.style.transition = 'none';   // 首次定位不要滑入
+    pill.style.width = active.offsetWidth + 'px';
+    pill.style.transform = `translateX(${active.offsetLeft}px)`;
+    if (!pillReady) { void pill.offsetWidth; pill.style.transition = ''; pillReady = true; }
+  }
+
   /* ---------------- 初始化 ---------------- */
   async function init() {
     log('載入 workflow…');
@@ -130,6 +142,7 @@
     document.querySelectorAll('#engine-switch button').forEach(b => {
       b.onclick = () => selectEngine(b.dataset.engine);
     });
+    window.addEventListener('resize', movePill);
   }
 
   function selectEngine(engine) {
@@ -141,6 +154,8 @@
     $('brand-title').textContent = e.title;
     $('brand-sub').textContent = e.sub;
     document.querySelectorAll('#engine-switch button').forEach(b => b.classList.toggle('active', b.dataset.engine === engine));
+    movePill();
+    requestAnimationFrame(movePill);   // 佈局/字體就緒後再校正一次
     buildModelOptions();
     state.mode = currentOrder()[0];
     buildTabs();

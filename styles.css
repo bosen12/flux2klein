@@ -349,17 +349,22 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 }
 
 /* ==================== 引擎切換器 ==================== */
-.engine-switch { display: inline-flex; gap: 2px; padding: 3px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; }
+.engine-switch { position: relative; display: inline-flex; gap: 2px; padding: 3px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; }
+.engine-pill {
+  position: absolute; top: 3px; bottom: 3px; left: 0; width: 0;
+  border-radius: 999px; z-index: 0; pointer-events: none;
+  background: linear-gradient(135deg, var(--accent), var(--accent-3));
+  box-shadow: 0 3px 10px -3px rgba(0,0,0,.28);
+  transition: transform .28s cubic-bezier(.22,.61,.36,1), width .28s cubic-bezier(.22,.61,.36,1);
+}
 .engine-switch button {
+  position: relative; z-index: 1;
   border: none; background: transparent; color: var(--text-dim);
   font-size: 12.5px; font-weight: 600; padding: 6px 13px; border-radius: 999px; cursor: pointer;
-  transition: color .15s, background .15s; font-family: inherit;
+  transition: color .2s ease; font-family: inherit;
 }
 .engine-switch button:hover { color: var(--text); }
-.engine-switch button.active {
-  background: linear-gradient(135deg, var(--accent), var(--accent-3));
-  color: #fff; box-shadow: 0 3px 10px -3px rgba(0,0,0,.28);
-}
+.engine-switch button.active { color: #fff; }
 
 /* ==================== Z-Image Turbo 主題（橘紅）==================== */
 :root[data-engine="zimage"] {
