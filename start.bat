@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 
 rem ============================================================
-rem  YZ Goldfish - ComfyUI Panel launcher
+rem  Flux2 Klein / Z-Image - ComfyUI Panel launcher
 rem  Usage:
 rem    double-click            -> ComfyUI=127.0.0.1:8188, panel=8189
 rem    start.bat host:port port -> e.g. start.bat 127.0.0.1:8188 8190
@@ -29,7 +29,7 @@ if not defined PY (
 )
 
 echo ============================================================
-echo   YZ Goldfish - ComfyUI Panel
+echo   Flux2 Klein / Z-Image - ComfyUI Panel
 echo   ComfyUI : %COMFY%
 echo   Panel   : http://127.0.0.1:%PORT%/klein
 echo ------------------------------------------------------------

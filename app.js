@@ -7,7 +7,9 @@
   const clientId = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2));
 
   const state = {
-    workflow: null,
+    engine: 'flux2klein',   // 'flux2klein' | 'zimage'
+    workflow: null,         // Flux2 UI workflow
+    zTemplates: {},         // Z-Image API 工作流範本
     objectInfo: null,
     mode: 't2i',
     images: {},          // nodeId -> { file, uploaded, url }
@@ -17,6 +19,25 @@
     run: null,
   };
 
+  // 兩個引擎的品牌與主題資訊
+  const ENGINES = {
+    flux2klein: { logo: '✦', title: 'Flux2 Klein 面板', sub: '文生圖 / 單雙三圖編輯 / 局部重繪 / 圖像擴展' },
+    zimage:     { logo: '✦', title: 'Z-Image Turbo 面板', sub: '文生圖 / ControlNet 邊緣參考' },
+  };
+  const Z = window.YZ_Z;
+  const currentModes = () => state.engine === 'zimage' ? Z.MODES : MODES;
+  const currentOrder = () => state.engine === 'zimage' ? Z.MODE_ORDER : MODE_ORDER;
+
+  // 頁面切換過渡：淡入 + 微幅上移（僅動 opacity/transform → 不觸發 reflow、無版面跳動、不影響捲軸）
+  const prefersReduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function animateSwitch(el, dy = 6) {
+    if (!el || prefersReduced || !el.animate) return;
+    el.animate(
+      [{ opacity: 0, transform: `translateY(${dy}px)` }, { opacity: 1, transform: 'translateY(0)' }],
+      { duration: 240, easing: 'cubic-bezier(.22,.61,.36,1)' }
+    );
+  }
+
   /* ---------------- 初始化 ---------------- */
   async function init() {
     log('載入 workflow…');
@@ -24,10 +45,19 @@
       state.workflow = await fetch('workflow.json').then(r => r.json());
     } catch (e) { log('無法載入 workflow.json：' + e, 'err'); return; }
 
+    // Z-Image 兩份 API 工作流（小檔）
+    try {
+      const [t2i, cn] = await Promise.all([
+        fetch('zimage_t2i.json').then(r => r.json()),
+        fetch('zimage_controlnet.json').then(r => r.json()),
+      ]);
+      state.zTemplates = { 'zimage_t2i.json': t2i, 'zimage_controlnet.json': cn };
+    } catch (e) { log('無法載入 Z-Image 工作流：' + e, 'warn'); }
+
     // 先把畫面渲染出來（不等 object_info），手機/遠端才不會卡在白畫面
-    buildTabs();
-    selectMode('t2i');
     bindGlobalControls();
+    bindEngineSwitch();
+    selectEngine('flux2klein');
     connectWS();
 
     // object_info 很大（約 10MB），改成背景載入，不擋 UI；生成時才需要
@@ -41,30 +71,42 @@
   function buildTabs() {
     const tabs = $('tabs');
     tabs.innerHTML = '';
-    for (const key of MODE_ORDER) {
-      const m = MODES[key];
+    const modes = currentModes();
+    for (const key of currentOrder()) {
       const b = document.createElement('button');
       b.className = 'tab' + (key === state.mode ? ' active' : '');
-      b.textContent = m.label;
+      b.textContent = modes[key].label;
       b.onclick = () => selectMode(key);
       tabs.appendChild(b);
     }
   }
 
+  // 讀某模式的預設提示詞 / 步數（兩個引擎來源不同）
+  function modeDefaults(m) {
+    if (state.engine === 'zimage') {
+      const tpl = state.zTemplates[m.template] || {};
+      const p = tpl[m.nodes.prompt], k = tpl[m.nodes.ksampler];
+      return { prompt: p ? (p.inputs.text || '') : '', steps: k ? k.inputs.steps : null };
+    }
+    const node = state.workflow.nodes.find(n => n.id === m.prompt);
+    const sched = state.workflow.nodes.find(n => n.id === m.steps);
+    return {
+      prompt: (node && Array.isArray(node.widgets_values)) ? (node.widgets_values[0] || '') : '',
+      steps: (sched && Array.isArray(sched.widgets_values)) ? sched.widgets_values[0] : null,
+    };
+  }
+
   function selectMode(key) {
     state.mode = key;
-    const m = MODES[key];
-    document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', MODE_ORDER[i] === key));
+    const order = currentOrder();
+    const m = currentModes()[key];
+    document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', order[i] === key));
     $('mode-desc').textContent = m.desc;
 
-    // 提示詞預設值（帶入原作者範例，方便測試）
-    const node = state.workflow.nodes.find(n => n.id === m.prompt);
-    $('prompt').value = (node && Array.isArray(node.widgets_values)) ? (node.widgets_values[0] || '') : '';
+    const d = modeDefaults(m);
+    $('prompt').value = d.prompt;
+    if (d.steps != null) $('steps').value = d.steps;
     $('prompt-hint').textContent = m.images.length >= 2 ? '可用「圖1 / 圖2 / 圖3」指涉各張圖' : '';
-
-    // 步數預設值（讀該模式 Flux2Scheduler 的目前值）
-    const sched = state.workflow.nodes.find(n => n.id === m.steps);
-    if (sched && Array.isArray(sched.widgets_values)) $('steps').value = sched.widgets_values[0];
 
     // 圖片上傳區
     buildUploads(m);
@@ -74,12 +116,59 @@
     show('mask-field', m.images.some(i => i.mask));
     show('size-field', !!m.size);
     show('pad-field', !!m.pad);
-    show('batch', !!m.size, true);
+    show('batch', !!m.size && state.engine === 'flux2klein', true);
     $('images-hint').textContent = `需 ${m.images.filter(i => !i.mask).length} 張`;
 
     if (m.size) buildAspectPresets();
     state.images = {}; // 換模式清空已選圖
     state.mask = null;
+    animateSwitch($('form'));   // 切換模式：表單淡入
+  }
+
+  /* ---------------- 引擎切換 ---------------- */
+  function bindEngineSwitch() {
+    document.querySelectorAll('#engine-switch button').forEach(b => {
+      b.onclick = () => selectEngine(b.dataset.engine);
+    });
+  }
+
+  function selectEngine(engine) {
+    if (!ENGINES[engine]) return;
+    state.engine = engine;
+    document.documentElement.dataset.engine = engine;
+    const e = ENGINES[engine];
+    $('brand-logo').textContent = e.logo;
+    $('brand-title').textContent = e.title;
+    $('brand-sub').textContent = e.sub;
+    document.querySelectorAll('#engine-switch button').forEach(b => b.classList.toggle('active', b.dataset.engine === engine));
+    buildModelOptions();
+    state.mode = currentOrder()[0];
+    buildTabs();
+    selectMode(state.mode);        // 內含表單淡入
+    animateSwitch($('tabs'), 0);   // 分頁列淡入
+    animateSwitch(document.querySelector('.brand'), 0);  // 品牌淡入
+  }
+
+  // 依引擎重建「模型」下拉
+  function buildModelOptions() {
+    const sel = $('model-set');
+    sel.innerHTML = '';
+    const add = (value, label, unet, clip) => {
+      const o = document.createElement('option');
+      o.value = value; o.textContent = label;
+      if (unet) o.dataset.unet = unet;
+      if (clip) o.dataset.clip = clip;
+      sel.appendChild(o);
+    };
+    if (state.engine === 'zimage') {
+      for (const mo of Z.MODELS) add(mo.value, mo.label);
+      sel.value = Z.MODELS[0].value;                       // 預設 pornmaster V35 Fp8
+    } else {
+      add('9b-mixed', 'Klein 9B · qwen_3_8b_fp8mixed', 'fluxKleinFP8_flux2Klein9bFp8.safetensors', 'qwen_3_8b_fp8mixed.safetensors');
+      add('9b', 'Klein 9B · qwen_3_8b', 'fluxKleinFP8_flux2Klein9bFp8.safetensors', 'qwen_3_8b.safetensors');
+      add('4b', 'Klein 4B · qwen_3_4b_fp8_mixed', 'flux-2-klein-4b.safetensors', 'qwen_3_4b_fp8_mixed.safetensors');
+      sel.value = '4b';                                    // 預設 4B
+    }
   }
 
   function show(id, on, isField = false) {
@@ -235,11 +324,20 @@
   async function generate() {
     if (state.running) { log('目前有任務進行中，請稍候或按中斷。', 'warn'); return; }
     $('run-loader').classList.add('on');   // 顯示生成中星星動畫
-    const m = MODES[state.mode];
+    const m = currentModes()[state.mode];
+    try {
+      if (state.engine === 'zimage') await runZImage(m);
+      else await runFlux2(m);
+    } catch (e) {
+      log('錯誤：' + e.message, 'err');
+      resetRunBtn();
+    }
+  }
+
+  async function runFlux2(m) {
     const g = WorkflowGraph.clone(state.workflow);
     g.applyMode(m.group);
-
-    try {
+    {
       // 1) 上傳圖片
       const need = m.images.filter(i => !i.mask);
       for (const slot of need) {
@@ -326,10 +424,56 @@
 
       // 非固定種子 → 下次自動換
       if (!$('seed-fixed').checked) $('seed').value = Math.floor(Math.random() * 1e15);
-    } catch (e) {
-      log('錯誤：' + e.message, 'err');
-      resetRunBtn();
     }
+  }
+
+  /* ---------------- Z-Image Turbo 送出（API 工作流直接注入）---------------- */
+  async function runZImage(m) {
+    const tpl = JSON.parse(JSON.stringify(state.zTemplates[m.template] || {}));
+    if (!Object.keys(tpl).length) throw new Error('Z-Image 工作流未載入');
+    const nd = m.nodes;
+    // 模型 / CLIP / VAE（三個模型共用固定 CLIP、VAE）
+    const model = $('model-set').value;
+    if (tpl[nd.unet]) tpl[nd.unet].inputs.unet_name = model;
+    if (tpl[nd.clip]) tpl[nd.clip].inputs.clip_name = Z.CLIP;
+    if (tpl[nd.vae]) tpl[nd.vae].inputs.vae_name = Z.VAE;
+    // 提示詞 / 種子 / 步數
+    if (tpl[nd.prompt]) tpl[nd.prompt].inputs.text = $('prompt').value;
+    const seed = parseInt($('seed').value, 10) || 0;
+    const steps = parseInt($('steps').value, 10) || 8;
+    if (tpl[nd.ksampler]) { tpl[nd.ksampler].inputs.seed = seed; tpl[nd.ksampler].inputs.steps = steps; }
+    // 尺寸（文生圖：直接寫入 EmptySD3LatentImage）
+    if (m.size && tpl[nd.latent]) {
+      tpl[nd.latent].inputs.width = +$('width').value || 1024;
+      tpl[nd.latent].inputs.height = +$('height').value || 1024;
+    }
+    // 參考圖（ControlNet）
+    for (const slot of m.images) {
+      const item = state.images[slot.node];
+      if (!item) throw new Error(`「${slot.label}」還沒上傳圖片`);
+      if (!item.uploaded) {
+        $('run').textContent = `上傳 ${slot.label}…`;
+        item.uploaded = await uploadBlob(item.file, item.file.name || `zimg_${Date.now()}.png`);
+      }
+      const up = item.uploaded;
+      if (tpl[slot.node]) tpl[slot.node].inputs.image = up.subfolder ? `${up.subfolder}/${up.name}` : up.name;
+    }
+    // 送出
+    $('run').textContent = '送出中…';
+    const res = await fetch(API + '/prompt', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: tpl, client_id: clientId }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      log('提交被拒：' + JSON.stringify(data.error || data, null, 2), 'err');
+      if (data.node_errors) log(JSON.stringify(data.node_errors, null, 2), 'err');
+      resetRunBtn();
+      return;
+    }
+    log(`已排入佇列（prompt_id=${data.prompt_id?.slice(0, 8)}…），共 ${countNodes(tpl)} 個節點`, 'ok');
+    startRun(data.prompt_id, steps, countNodes(tpl));
+    if (!$('seed-fixed').checked) $('seed').value = Math.floor(Math.random() * 1e15);
   }
 
   function countNodes(p) { return Object.keys(p).length; }
@@ -478,6 +622,12 @@
   }
 
   function classOfNode(nodeId) {
+    if (state.engine === 'zimage') {
+      const m = Z.MODES[state.mode];
+      const tpl = state.zTemplates[m && m.template] || {};
+      const node = tpl[String(nodeId)];
+      return node ? node.class_type : null;
+    }
     const n = state.workflow.nodes.find(x => String(x.id) === String(nodeId));
     return n ? n.type : null;
   }

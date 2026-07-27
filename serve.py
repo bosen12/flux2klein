@@ -36,8 +36,11 @@ STATIC_FILES = {
     "/panel": "index.html",
     "/app.js": "app.js",
     "/converter.js": "converter.js",
+    "/zimage.js": "zimage.js",
     "/styles.css": "styles.css",
     "/workflow.json": "workflow.json",
+    "/zimage_t2i.json": "zimage_t2i.json",
+    "/zimage_controlnet.json": "zimage_controlnet.json",
     "/favicon.ico": "favicon.ico",
     "/favicon.png": "favicon.png",
 }

@@ -12,8 +12,12 @@
 <div class="app">
   <header class="topbar">
     <div class="brand">
-      <div class="logo">✦</div>
-      <div>Flux2 Klein 面板<br><small>文生圖 / 單雙三圖編輯 / 局部重繪 / 圖像擴展</small></div>
+      <div class="logo" id="brand-logo">✦</div>
+      <div><span id="brand-title">Flux2 Klein 面板</span><br><small id="brand-sub">文生圖 / 單雙三圖編輯 / 局部重繪 / 圖像擴展</small></div>
+    </div>
+    <div class="engine-switch" id="engine-switch">
+      <button type="button" data-engine="flux2klein" class="active">Flux2 Klein</button>
+      <button type="button" data-engine="zimage">Z-Image Turbo</button>
     </div>
     <div class="spacer"></div>
     <div class="toggle-inline">
@@ -234,6 +238,7 @@
 <div class="lightbox" id="lightbox"><img id="lightbox-img" alt=""></div>
 
 <script src="converter.js"></script>
+<script src="zimage.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
