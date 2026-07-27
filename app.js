@@ -27,8 +27,8 @@
   };
   const Z = window.YZ_Z;
   const K = window.YZ_K;
-  const currentModes = () => state.engine === 'zimage' ? Z.MODES : state.engine === 'krea2' ? K.MODES : MODES;
-  const currentOrder = () => state.engine === 'zimage' ? Z.MODE_ORDER : state.engine === 'krea2' ? K.MODE_ORDER : MODE_ORDER;
+  const currentModes = () => state.engine === 'zimage' && Z ? Z.MODES : state.engine === 'krea2' && K ? K.MODES : MODES;
+  const currentOrder = () => state.engine === 'zimage' && Z ? Z.MODE_ORDER : state.engine === 'krea2' && K ? K.MODE_ORDER : MODE_ORDER;
 
   // 頁面切換過渡：淡入 + 微幅上移（僅動 opacity/transform → 不觸發 reflow、無版面跳動、不影響捲軸）
   const prefersReduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -67,7 +67,7 @@
         fetch('krea2.json').then(r => r.json()),
       ]);
       state.zTemplates = { 'zimage_t2i.json': t2i, 'zimage_controlnet.json': cn, 'krea2.json': kr };
-    } catch (e) { log('無法載入 Z-Image / Krea2 工作流：' + e, 'warn'); }
+    } catch (e) { log('無法載入 Z-Image / Krea2 工作流（多半是 serve.py 是舊版）：請重啟面板 stop_panel.bat → start.bat。' + e, 'err'); }
 
     // 先把畫面渲染出來（不等 object_info），手機/遠端才不會卡在白畫面
     bindGlobalControls();
@@ -152,6 +152,13 @@
 
   function selectEngine(engine) {
     if (!ENGINES[engine]) return;
+    // 引擎設定檔沒載入 → 通常是 serve.py 是舊版沒提供該 .js。清楚報錯而不半殘。
+    if ((engine === 'zimage' && !Z) || (engine === 'krea2' && !K)) {
+      log(`${ENGINES[engine].title} 尚未就緒：請重啟面板（stop_panel.bat → start.bat）並 Ctrl+Shift+R`, 'err');
+      document.querySelectorAll('#engine-switch button').forEach(b => b.classList.toggle('active', b.dataset.engine === state.engine));
+      movePill();
+      return;
+    }
     state.engine = engine;
     document.documentElement.dataset.engine = engine;
     const e = ENGINES[engine];
