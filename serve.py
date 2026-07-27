@@ -37,10 +37,12 @@ STATIC_FILES = {
     "/app.js": "app.js",
     "/converter.js": "converter.js",
     "/zimage.js": "zimage.js",
+    "/krea2.js": "krea2.js",
     "/styles.css": "styles.css",
     "/workflow.json": "workflow.json",
     "/zimage_t2i.json": "zimage_t2i.json",
     "/zimage_controlnet.json": "zimage_controlnet.json",
+    "/krea2.json": "krea2.json",
     "/favicon.ico": "favicon.ico",
     "/favicon.png": "favicon.png",
 }

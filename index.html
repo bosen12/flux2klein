@@ -19,6 +19,7 @@
       <span class="engine-pill" id="engine-pill"></span>
       <button type="button" data-engine="flux2klein" class="active">Flux2 Klein</button>
       <button type="button" data-engine="zimage">Z-Image Turbo</button>
+      <button type="button" data-engine="krea2">Krea2</button>
     </div>
     <div class="spacer"></div>
     <div class="toggle-inline">
@@ -84,7 +85,16 @@
           </div>
         </div>
 
-        <div class="field">
+        <!-- Krea2：增強開關 -->
+        <div class="field" id="enhance-field" style="display:none">
+          <label>增強 <span class="hint">預設不開；開啟後可拉桿對照</span></label>
+          <div class="toggle-inline">
+            <label class="chk"><input type="checkbox" id="opt-seedvr2"> SeedVR2 高清放大</label>
+            <label class="chk"><input type="checkbox" id="opt-second"> 二次採樣</label>
+          </div>
+        </div>
+
+        <div class="field" id="model-field">
           <label>模型 <span class="hint">Diffusion + Text Encoder（成套）</span></label>
           <select id="model-set">
             <option value="9b-mixed" data-unet="fluxKleinFP8_flux2Klein9bFp8.safetensors" data-clip="qwen_3_8b_fp8mixed.safetensors">Klein 9B · qwen_3_8b_fp8mixed</option>
@@ -223,6 +233,11 @@
         </div>
       </div>
 
+      <div class="card" id="compare-card" style="display:none">
+        <div class="card-head">🔍 前後對照（拖曳中間分隔線）</div>
+        <div class="card-body"><div id="compare"></div></div>
+      </div>
+
       <div class="card">
         <div class="card-head">🖼️ 生成結果</div>
         <div class="card-body"><div class="gallery" id="gallery"></div></div>
@@ -240,6 +255,7 @@
 
 <script src="converter.js"></script>
 <script src="zimage.js"></script>
+<script src="krea2.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

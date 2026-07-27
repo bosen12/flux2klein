@@ -23,10 +23,12 @@
   const ENGINES = {
     flux2klein: { logo: '✦', title: 'Flux2 Klein 面板', sub: '文生圖 / 單雙三圖編輯 / 局部重繪 / 圖像擴展' },
     zimage:     { logo: '✦', title: 'Z-Image Turbo 面板', sub: '文生圖 / ControlNet 邊緣參考' },
+    krea2:      { logo: '✦', title: 'Krea2 面板', sub: '文生圖（可選 SeedVR2 / 二次採樣，前後對照）' },
   };
   const Z = window.YZ_Z;
-  const currentModes = () => state.engine === 'zimage' ? Z.MODES : MODES;
-  const currentOrder = () => state.engine === 'zimage' ? Z.MODE_ORDER : MODE_ORDER;
+  const K = window.YZ_K;
+  const currentModes = () => state.engine === 'zimage' ? Z.MODES : state.engine === 'krea2' ? K.MODES : MODES;
+  const currentOrder = () => state.engine === 'zimage' ? Z.MODE_ORDER : state.engine === 'krea2' ? K.MODE_ORDER : MODE_ORDER;
 
   // 頁面切換過渡：淡入 + 微幅上移（僅動 opacity/transform → 不觸發 reflow、無版面跳動、不影響捲軸）
   const prefersReduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -57,14 +59,15 @@
       state.workflow = await fetch('workflow.json').then(r => r.json());
     } catch (e) { log('無法載入 workflow.json：' + e, 'err'); return; }
 
-    // Z-Image 兩份 API 工作流（小檔）
+    // Z-Image / Krea2 的 API 工作流（小檔）
     try {
-      const [t2i, cn] = await Promise.all([
+      const [t2i, cn, kr] = await Promise.all([
         fetch('zimage_t2i.json').then(r => r.json()),
         fetch('zimage_controlnet.json').then(r => r.json()),
+        fetch('krea2.json').then(r => r.json()),
       ]);
-      state.zTemplates = { 'zimage_t2i.json': t2i, 'zimage_controlnet.json': cn };
-    } catch (e) { log('無法載入 Z-Image 工作流：' + e, 'warn'); }
+      state.zTemplates = { 'zimage_t2i.json': t2i, 'zimage_controlnet.json': cn, 'krea2.json': kr };
+    } catch (e) { log('無法載入 Z-Image / Krea2 工作流：' + e, 'warn'); }
 
     // 先把畫面渲染出來（不等 object_info），手機/遠端才不會卡在白畫面
     bindGlobalControls();
@@ -95,7 +98,7 @@
 
   // 讀某模式的預設提示詞 / 步數（兩個引擎來源不同）
   function modeDefaults(m) {
-    if (state.engine === 'zimage') {
+    if (state.engine !== 'flux2klein') {   // Z-Image / Krea2：從 API 範本讀
       const tpl = state.zTemplates[m.template] || {};
       const p = tpl[m.nodes.prompt], k = tpl[m.nodes.ksampler];
       return { prompt: p ? (p.inputs.text || '') : '', steps: k ? k.inputs.steps : null };
@@ -129,6 +132,8 @@
     show('size-field', !!m.size);
     show('pad-field', !!m.pad);
     show('batch', !!m.size && state.engine === 'flux2klein', true);
+    show('enhance-field', state.engine === 'krea2');   // Krea2 的 SeedVR2 / 二次採樣 開關
+    show('model-field', state.engine !== 'krea2');      // Krea2 單一固定模型，不顯示下拉
     $('images-hint').textContent = `需 ${m.images.filter(i => !i.mask).length} 張`;
 
     if (m.size) buildAspectPresets();
@@ -178,6 +183,9 @@
     if (state.engine === 'zimage') {
       for (const mo of Z.MODELS) add(mo.value, mo.label);
       sel.value = Z.MODELS[0].value;                       // 預設 pornmaster V35 Fp8
+    } else if (state.engine === 'krea2') {
+      add(K.UNET, 'redcraft 30Krea2');                     // 單一固定（欄位隱藏，僅備援）
+      sel.value = K.UNET;
     } else {
       add('9b-mixed', 'Klein 9B · qwen_3_8b_fp8mixed', 'fluxKleinFP8_flux2Klein9bFp8.safetensors', 'qwen_3_8b_fp8mixed.safetensors');
       add('9b', 'Klein 9B · qwen_3_8b', 'fluxKleinFP8_flux2Klein9bFp8.safetensors', 'qwen_3_8b.safetensors');
@@ -339,14 +347,58 @@
   async function generate() {
     if (state.running) { log('目前有任務進行中，請稍候或按中斷。', 'warn'); return; }
     $('run-loader').classList.add('on');   // 顯示生成中星星動畫
+    show('compare-card', false); $('compare').innerHTML = '';   // 清掉上次對照
     const m = currentModes()[state.mode];
     try {
       if (state.engine === 'zimage') await runZImage(m);
+      else if (state.engine === 'krea2') await runKrea2(m);
       else await runFlux2(m);
     } catch (e) {
       log('錯誤：' + e.message, 'err');
       resetRunBtn();
     }
+  }
+
+  /* ---------------- Krea2 送出（API 工作流 + 依開關裁剪增強分支）---------------- */
+  async function runKrea2(m) {
+    const tpl = JSON.parse(JSON.stringify(state.zTemplates[m.template] || {}));
+    if (!Object.keys(tpl).length) throw new Error('Krea2 工作流未載入');
+    const nd = m.nodes;
+    tpl[nd.unet].inputs.unet_name = K.UNET;
+    tpl[nd.clip].inputs.clip_name = K.CLIP;
+    tpl[nd.vae].inputs.vae_name = K.VAE;
+    tpl[nd.prompt].inputs.text = $('prompt').value;
+    const seed = parseInt($('seed').value, 10) || 0;
+    const steps = parseInt($('steps').value, 10) || 12;
+    tpl[nd.ksampler].inputs.seed = seed;
+    tpl[nd.ksampler].inputs.steps = steps;
+    if (tpl[nd.latent]) {
+      tpl[nd.latent].inputs.width = +$('width').value || 960;
+      tpl[nd.latent].inputs.height = +$('height').value || 1440;
+    }
+    // 增強開關（預設不開）→ 關閉就從 prompt 移除該分支節點
+    const seedvr2On = $('opt-seedvr2').checked;
+    const secondOn = $('opt-second').checked;
+    if (secondOn && tpl[K.secondSampler]) tpl[K.secondSampler].inputs.seed = seed;  // 二次採樣種子跟隨
+    if (!seedvr2On) for (const id of K.branch.seedvr2) delete tpl[id];
+    if (!secondOn) for (const id of K.branch.second) delete tpl[id];
+    // 送出
+    $('run').textContent = '送出中…';
+    const res = await fetch(API + '/prompt', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: tpl, client_id: clientId }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      log('提交被拒：' + JSON.stringify(data.error || data, null, 2), 'err');
+      if (data.node_errors) log(JSON.stringify(data.node_errors, null, 2), 'err');
+      resetRunBtn();
+      return;
+    }
+    log(`已排入佇列（prompt_id=${data.prompt_id?.slice(0, 8)}…），共 ${countNodes(tpl)} 個節點`, 'ok');
+    startRun(data.prompt_id, steps, countNodes(tpl));
+    state.run.krea2 = { seedvr2: seedvr2On, second: secondOn, images: {} };  // 收集輸出做對照
+    if (!$('seed-fixed').checked) $('seed').value = Math.floor(Math.random() * 1e15);
   }
 
   async function runFlux2(m) {
@@ -563,10 +615,55 @@
       $('pct').textContent = '100%'; $('bar-fill').style.width = '100%';
       setStage(`完成 · 耗時 ${fmtTime(total)}`);
       log(`✅ 完成，耗時 ${fmtTime(total)}`, 'ok');
+      if (r.krea2) buildCompare(r.krea2);
       if ($('opt-sound').checked) beep();
-      if ($('opt-notify').checked) notify('生成完成', `${MODES[state.mode].label} · ${fmtTime(total)}`);
+      if ($('opt-notify').checked) { const mm = currentModes()[state.mode]; notify('生成完成', `${(mm && mm.label) || ''} · ${fmtTime(total)}`); }
     }
     state.run = null;
+  }
+
+  /* ---------------- 前後對照拉桿 ---------------- */
+  function viewUrl(im) {
+    const q = new URLSearchParams({ filename: im.filename, subfolder: im.subfolder || '', type: im.type || 'output' });
+    return API + '/view?' + q.toString();
+  }
+
+  function makeCompareSlider(beforeUrl, afterUrl, labelB, labelA) {
+    const el = document.createElement('div');
+    el.className = 'cmp';
+    el.innerHTML =
+      `<img class="cmp-a" src="${afterUrl}" alt="">` +
+      `<img class="cmp-b" src="${beforeUrl}" alt="">` +
+      `<div class="cmp-divider"></div>` +
+      `<span class="cmp-tag cmp-tag-b">${labelB}</span>` +
+      `<span class="cmp-tag cmp-tag-a">${labelA}</span>`;
+    const before = el.querySelector('.cmp-b'), divider = el.querySelector('.cmp-divider');
+    const set = p => { p = Math.max(0, Math.min(100, p)); before.style.clipPath = `inset(0 ${100 - p}% 0 0)`; divider.style.left = p + '%'; };
+    set(50);
+    const move = e => { const r = el.getBoundingClientRect(); set(((e.touches ? e.touches[0].clientX : e.clientX) - r.left) / r.width * 100); };
+    let drag = false;
+    el.addEventListener('pointerdown', e => { drag = true; move(e); });
+    window.addEventListener('pointermove', e => { if (drag) move(e); });
+    window.addEventListener('pointerup', () => drag = false);
+    return el;
+  }
+
+  function buildCompare(k) {
+    const cont = $('compare'); if (!cont) return;
+    cont.innerHTML = '';
+    const base = k.images[K.outputs.base];
+    let any = false;
+    const addPair = (title, afterUrl, labelA) => {
+      if (!base || !afterUrl) return;
+      const h = document.createElement('div'); h.className = 'cmp-title'; h.textContent = title;
+      cont.appendChild(h);
+      cont.appendChild(makeCompareSlider(base, afterUrl, '原圖', labelA));
+      any = true;
+    };
+    if (k.second) addPair('二次採樣 對照', k.images[K.outputs.second], '二次採樣');
+    if (k.seedvr2) addPair('SeedVR2 對照', k.images[K.outputs.seedvr2], 'SeedVR2');
+    show('compare-card', any);
+    if (any) animateSwitch($('compare-card'), 8);
   }
 
   function resetRunBtn() { $('run').disabled = false; $('run').textContent = '生成'; $('run-loader').classList.remove('on'); }
@@ -622,7 +719,10 @@
         onProgress(d.value, d.max);
         break;
       case 'executed':
-        if (d.output && d.output.images) addResults(d.output.images);
+        if (d.output && d.output.images) {
+          addResults(d.output.images);
+          if (state.run && state.run.krea2) state.run.krea2.images[String(d.node)] = viewUrl(d.output.images[0]);
+        }
         break;
       case 'execution_error':
         log('❌ 執行錯誤：' + (d.exception_message || JSON.stringify(d)), 'err');
@@ -637,8 +737,8 @@
   }
 
   function classOfNode(nodeId) {
-    if (state.engine === 'zimage') {
-      const m = Z.MODES[state.mode];
+    if (state.engine !== 'flux2klein') {   // Z-Image / Krea2
+      const m = currentModes()[state.mode];
       const tpl = state.zTemplates[m && m.template] || {};
       const node = tpl[String(nodeId)];
       return node ? node.class_type : null;

@@ -1,0 +1,278 @@
+{
+  "29": {
+    "inputs": {
+      "filename_prefix": "Krea2_RedMix3",
+      "images": [
+        "56",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "儲存圖片"
+    }
+  },
+  "51": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "53",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP 文字編碼（提示詞）"
+    }
+  },
+  "52": {
+    "inputs": {
+      "unet_name": "redcraft23INT8INT4FP8_30Krea2.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "載入擴散模型"
+    }
+  },
+  "53": {
+    "inputs": {
+      "clip_name": "qwen3vl_4b_fp8_scaled.safetensors",
+      "type": "krea2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "載入 CLIP"
+    }
+  },
+  "54": {
+    "inputs": {
+      "seed": 681882143711823,
+      "steps": 12,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "52",
+        0
+      ],
+      "positive": [
+        "51",
+        0
+      ],
+      "negative": [
+        "55",
+        0
+      ],
+      "latent_image": [
+        "57",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "55": {
+    "inputs": {
+      "conditioning": [
+        "51",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "條件設定（歸零）"
+    }
+  },
+  "56": {
+    "inputs": {
+      "samples": [
+        "54",
+        0
+      ],
+      "vae": [
+        "58",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE 解碼"
+    }
+  },
+  "57": {
+    "inputs": {
+      "width": 960,
+      "height": 1440,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "空白潛在影像"
+    }
+  },
+  "58": {
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "載入 VAE"
+    }
+  },
+  "69": {
+    "inputs": {
+      "filename_prefix": "Krea2upscale",
+      "images": [
+        "133",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "儲存圖片"
+    }
+  },
+  "129": {
+    "inputs": {
+      "model": "seedvr2_ema_3b_fp16.safetensors",
+      "device": "cuda:0",
+      "blocks_to_swap": 36,
+      "swap_io_components": false,
+      "offload_device": "cpu",
+      "cache_model": true,
+      "attention_mode": "flash_attn_2"
+    },
+    "class_type": "SeedVR2LoadDiTModel",
+    "_meta": {
+      "title": "SeedVR2 (Down)Load DiT Model"
+    }
+  },
+  "131": {
+    "inputs": {
+      "model": "ema_vae_fp16.safetensors",
+      "device": "cuda:0",
+      "encode_tiled": true,
+      "encode_tile_size": 1024,
+      "encode_tile_overlap": 128,
+      "decode_tiled": true,
+      "decode_tile_size": 1024,
+      "decode_tile_overlap": 128,
+      "tile_debug": "false",
+      "offload_device": "cpu",
+      "cache_model": true
+    },
+    "class_type": "SeedVR2LoadVAEModel",
+    "_meta": {
+      "title": "SeedVR2 (Down)Load VAE Model"
+    }
+  },
+  "133": {
+    "inputs": {
+      "seed": 462961455,
+      "resolution": 1920,
+      "max_resolution": 0,
+      "batch_size": 1,
+      "uniform_batch_size": false,
+      "color_correction": "lab",
+      "temporal_overlap": 0,
+      "prepend_frames": 0,
+      "input_noise_scale": 0,
+      "latent_noise_scale": 0,
+      "offload_device": "cpu",
+      "enable_debug": false,
+      "image": [
+        "56",
+        0
+      ],
+      "dit": [
+        "129",
+        0
+      ],
+      "vae": [
+        "131",
+        0
+      ]
+    },
+    "class_type": "SeedVR2VideoUpscaler",
+    "_meta": {
+      "title": "SeedVR2 Video Upscaler (v2.5.22)"
+    }
+  },
+  "179": {
+    "inputs": {
+      "images": [
+        "154:130",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "預覽圖片"
+    }
+  },
+  "154:130": {
+    "inputs": {
+      "samples": [
+        "154:136",
+        0
+      ],
+      "vae": [
+        "58",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE 解碼"
+    }
+  },
+  "154:137": {
+    "inputs": {
+      "upscale_method": "bicubic",
+      "scale_by": 2,
+      "samples": [
+        "54",
+        0
+      ]
+    },
+    "class_type": "LatentUpscaleBy",
+    "_meta": {
+      "title": "放大 latent 空間"
+    }
+  },
+  "154:136": {
+    "inputs": {
+      "seed": 944318523987052,
+      "steps": 6,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 0.75,
+      "model": [
+        "52",
+        0
+      ],
+      "positive": [
+        "51",
+        0
+      ],
+      "negative": [
+        "55",
+        0
+      ],
+      "latent_image": [
+        "154:137",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  }
+}
