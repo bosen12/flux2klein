@@ -435,8 +435,9 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 /* ==================== 前後對照拉桿 ==================== */
 .cmp-title { font-size: 12px; font-weight: 600; color: var(--text-dim); margin: 4px 2px 6px; }
 .cmp {
-  position: relative; width: 100%; border-radius: var(--radius-sm); overflow: hidden;
-  user-select: none; touch-action: none; margin-bottom: 16px;
+  position: relative; width: 100%; max-width: 380px; margin: 0 auto 16px;
+  border-radius: var(--radius-sm); overflow: hidden;
+  user-select: none; touch-action: none;
   background: repeating-conic-gradient(#f0f2f5 0% 25%, #fafbfc 0% 50%) 50% / 20px 20px;
 }
 .cmp img { display: block; }
