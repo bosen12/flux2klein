@@ -153,6 +153,11 @@
       const cb = $(id);
       if (cb) cb.addEventListener('change', () => cb.closest('.enh') && cb.closest('.enh').classList.toggle('on', cb.checked));
     });
+    // 手動改寬高 → 取消長寬比 chip 的選中
+    ['width', 'height'].forEach(id => {
+      const el = $(id);
+      if (el) el.addEventListener('input', () => document.querySelectorAll('#aspect-presets .aspect.active').forEach(x => x.classList.remove('active')));
+    });
   }
 
   function selectEngine(engine) {
@@ -337,10 +342,22 @@
     const box = $('aspect-presets');
     const presets = [['1:1', 1024, 1024], ['3:4', 896, 1152], ['4:3', 1152, 896], ['9:16', 768, 1344], ['16:9', 1344, 768]];
     box.innerHTML = '';
+    const curW = +$('width').value, curH = +$('height').value;
     for (const [name, w, h] of presets) {
       const b = document.createElement('button');
-      b.className = 'btn-mini'; b.textContent = name;
-      b.onclick = () => { $('width').value = w; $('height').value = h; };
+      b.type = 'button';
+      b.className = 'aspect';
+      // 依比例畫一個迷你方框（長邊 16px）
+      const long = 16, ratio = w / h;
+      const bw = ratio >= 1 ? long : Math.round(long * ratio);
+      const bh = ratio >= 1 ? Math.round(long / ratio) : long;
+      b.innerHTML = `<span class="ar-box" style="width:${bw}px;height:${bh}px"></span><span>${name}</span>`;
+      if (curW === w && curH === h) b.classList.add('active');
+      b.onclick = () => {
+        $('width').value = w; $('height').value = h;
+        box.querySelectorAll('.aspect').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+      };
       box.appendChild(b);
     }
   }
