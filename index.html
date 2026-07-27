@@ -87,10 +87,22 @@
 
         <!-- Krea2：增強開關 -->
         <div class="field" id="enhance-field" style="display:none">
-          <label>增強 <span class="hint">預設不開；開啟後可拉桿對照</span></label>
-          <div class="toggle-inline">
-            <label class="chk"><input type="checkbox" id="opt-seedvr2"> SeedVR2 高清放大</label>
-            <label class="chk"><input type="checkbox" id="opt-second"> 二次採樣</label>
+          <label>增強 <span class="hint">預設不開；開啟後可拉桿對照差別</span></label>
+          <div class="enh-grid">
+            <label class="enh">
+              <input type="checkbox" id="opt-seedvr2">
+              <span class="enh-body">
+                <span class="enh-top"><span class="enh-name">SeedVR2 高清放大</span><span class="enh-sw"></span></span>
+                <span class="enh-desc">用 SeedVR2 模型把成品放大到更高解析度</span>
+              </span>
+            </label>
+            <label class="enh">
+              <input type="checkbox" id="opt-second">
+              <span class="enh-body">
+                <span class="enh-top"><span class="enh-name">二次採樣</span><span class="enh-sw"></span></span>
+                <span class="enh-desc">latent 放大 2× 後重採樣，補更多細節</span>
+              </span>
+            </label>
           </div>
         </div>
 

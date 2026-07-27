@@ -148,6 +148,11 @@
       b.onclick = () => selectEngine(b.dataset.engine);
     });
     window.addEventListener('resize', movePill);
+    // 增強卡片：勾選狀態同步到卡片高亮（.on）
+    ['opt-seedvr2', 'opt-second'].forEach(id => {
+      const cb = $(id);
+      if (cb) cb.addEventListener('change', () => cb.closest('.enh') && cb.closest('.enh').classList.toggle('on', cb.checked));
+    });
   }
 
   function selectEngine(engine) {
