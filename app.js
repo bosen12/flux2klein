@@ -23,7 +23,7 @@
   const ENGINES = {
     flux2klein: { logo: '✦', title: 'Flux2 Klein 面板', sub: '文生圖 / 單雙三圖編輯 / 局部重繪 / 圖像擴展' },
     zimage:     { logo: '✦', title: 'Z-Image Turbo 面板', sub: '文生圖 / ControlNet 邊緣參考' },
-    krea2:      { logo: '✦', title: 'Krea2 面板', sub: '文生圖（可選 SeedVR2 / 二次採樣，前後對照）' },
+    krea2:      { logo: '✦', title: 'Krea2 面板', sub: '文生圖（可選 SeedVR2 / 二次採樣）' },
   };
   const Z = window.YZ_Z;
   const K = window.YZ_K;
