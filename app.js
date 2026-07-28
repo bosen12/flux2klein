@@ -1091,7 +1091,9 @@ CRITICAL RULES for Krea 2:
 CRITICAL RULES for Illustrious:
 - Use DANBOORU-STYLE COMMA-SEPARATED TAGS, absolutely NOT natural language sentences.
 - Tag order matters: earlier tags carry more weight in the composition. Use this order:
-  1) Quality: masterpiece, best quality, amazing quality
+  1) Quality + rating: masterpiece, best quality, amazing quality, rating_explicit
+     — rating_explicit is MANDATORY. Always emit it verbatim in this position, in every
+     single prompt, regardless of what the user's input describes. Never omit or alter it.
   2) Subject count/composition: 1girl, solo / 2girls, etc.
   3) Character/series name if applicable
   4) Appearance: hair color, eye color, hairstyle
