@@ -53,6 +53,15 @@
     if (!pillReady) { void pill.offsetWidth; pill.style.transition = ''; pillReady = true; }
   }
 
+  // 手機橫向捲動時，把選中的引擎按鈕捲到中央
+  function scrollActiveEngineIntoView() {
+    const sw = $('engine-switch');
+    const active = sw && sw.querySelector('button.active');
+    if (!sw || !active || sw.scrollWidth <= sw.clientWidth) return;
+    const left = active.offsetLeft - (sw.clientWidth - active.offsetWidth) / 2;
+    sw.scrollTo({ left: Math.max(0, left), behavior: 'smooth' });
+  }
+
   /* ---------------- 初始化 ---------------- */
   async function init() {
     log('載入 workflow…');
@@ -179,6 +188,7 @@
     document.querySelectorAll('#engine-switch button').forEach(b => b.classList.toggle('active', b.dataset.engine === engine));
     movePill();
     requestAnimationFrame(movePill);   // 佈局/字體就緒後再校正一次
+    scrollActiveEngineIntoView();
     buildModelOptions();
     state.mode = currentOrder()[0];
     buildTabs();

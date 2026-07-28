@@ -292,7 +292,12 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   .brand small { display: none; }
   .spacer { display: none; }
   .conn { order: 2; margin-left: auto; }
-  .toggle-inline { order: 3; width: 100%; justify-content: space-between; gap: 8px; font-size: 12px; }
+  /* 引擎切換器：自成一列橫向捲動，避免四顆按鈕撐爆 topbar。
+     膠囊是 absolute 定位在同一個捲動容器內，會跟著內容一起捲，offsetLeft 不受影響。 */
+  .engine-switch { order: 3; width: 100%; overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
+  .engine-switch::-webkit-scrollbar { display: none; }
+  .engine-switch button { flex: none; white-space: nowrap; }
+  .toggle-inline { order: 4; width: 100%; justify-content: space-between; gap: 8px; font-size: 12px; }
 
   .form { padding: 14px; gap: 14px; }
   .tabs { padding: 12px 14px 0; }
