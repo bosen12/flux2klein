@@ -103,7 +103,7 @@ def recv_headers(sock):
 # index.html 裡的 ?v= 會被換成這些檔案 mtime 的雜湊：只要改過任何一支，
 # 網址就不同，瀏覽器一定重抓，不會再發生「改了 JS 但頁面跑舊版」。
 VERSIONED_ASSETS = ("app.js", "config.js", "converter.js", "zimage.js",
-                    "krea2.js", "illustrious.js", "styles.css")
+                    "krea2.js", "illustrious.js", "styles.css", "favicon.svg")
 
 
 def asset_version():

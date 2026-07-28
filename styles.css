@@ -300,10 +300,11 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 }
 .card.idle .idle-hint { display: block; }
 .card.idle .progress-top, .card.idle .bar, .card.idle .metrics { display: none; }
-/* 首次生成脫離閒置：讀數與進度條依序浮現，不要三塊同時硬跳出來 */
+/* 首次生成脫離閒置：讀數與 metrics 依序浮現。
+   .bar 刻意不列入——它在生成中要跑 .bar.running 的流動條紋，而這裡的選擇器
+   特異性 (1,2,0) 高於 .bar.running (0,2,0)，會把條紋動畫整個蓋掉、條紋就不動了。*/
 #progress-card:not(.idle) .progress-top { animation: soft-in .4s cubic-bezier(.22,.61,.36,1) both; }
-#progress-card:not(.idle) .bar          { animation: soft-in .4s cubic-bezier(.22,.61,.36,1) .06s both; }
-#progress-card:not(.idle) .metrics      { animation: soft-in .4s cubic-bezier(.22,.61,.36,1) .12s both; }
+#progress-card:not(.idle) .metrics      { animation: soft-in .4s cubic-bezier(.22,.61,.36,1) .1s both; }
 
 .progress-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .progress-pct {
