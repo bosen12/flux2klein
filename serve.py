@@ -24,6 +24,7 @@ import threading
 import mimetypes
 import datetime
 import gzip
+import hashlib
 import urllib.request
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -35,6 +36,7 @@ STATIC_FILES = {
     "/klein": "index.html",       # 全新網址：避開瀏覽器對 / 的舊快取
     "/panel": "index.html",
     "/app.js": "app.js",
+    "/config.js": "config.js",
     "/converter.js": "converter.js",
     "/zimage.js": "zimage.js",
     "/krea2.js": "krea2.js",
@@ -97,12 +99,45 @@ def recv_headers(sock):
     return data
 
 
+# index.html 裡的 ?v= 會被換成這些檔案 mtime 的雜湊：只要改過任何一支，
+# 網址就不同，瀏覽器一定重抓，不會再發生「改了 JS 但頁面跑舊版」。
+VERSIONED_ASSETS = ("app.js", "config.js", "converter.js", "zimage.js",
+                    "krea2.js", "illustrious.js", "styles.css")
+
+
+def asset_version():
+    stamps = []
+    for name in VERSIONED_ASSETS:
+        p = os.path.join(BASE, name)
+        if os.path.isfile(p):
+            stamps.append("%s:%d" % (name, os.path.getmtime(p)))
+    if not stamps:
+        return "1"
+    return hashlib.md5("|".join(stamps).encode("utf-8")).hexdigest()[:8]
+
+
+def send_body(client, body, ctype):
+    header = (
+        "HTTP/1.1 200 OK\r\n"
+        f"Content-Type: {ctype}; charset=utf-8\r\n"
+        f"Content-Length: {len(body)}\r\n"
+        "Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\n"
+        "Connection: close\r\n\r\n"
+    ).encode("utf-8")
+    client.sendall(header + body)
+
+
 def send_file(client, filename):
     if filename is None:  # favicon 之類
         client.sendall(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
         return
     path = os.path.join(BASE, filename)
     if not os.path.isfile(path):
+        # config.js 是選用的（含 API key，不進版控），沒有就回空檔避免 console 噴 404
+        if filename == "config.js":
+            send_body(client, b"/* config.js \xe4\xb8\x8d\xe5\xad\x98\xe5\x9c\xa8 */\n",
+                      "application/javascript")
+            return
         body = ("找不到檔案：" + filename).encode("utf-8")
         client.sendall(
             b"HTTP/1.1 404 Not Found\r\n"
@@ -113,6 +148,8 @@ def send_file(client, filename):
     ctype = mimetypes.guess_type(path)[0] or "application/octet-stream"
     with open(path, "rb") as f:
         body = f.read()
+    if filename == "index.html":
+        body = body.replace(b"?v=1", b"?v=" + asset_version().encode("ascii"))
     header = (
         "HTTP/1.1 200 OK\r\n"
         f"Content-Type: {ctype}; charset=utf-8\r\n"
