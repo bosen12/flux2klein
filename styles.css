@@ -187,6 +187,16 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 /* 招牌：即時進度卡 —— 儀表讀數風格 */
 .right > .card:first-child { box-shadow: var(--shadow-lg); }
 
+/* 閒置（尚未生成過）：收起讀數，只留一行引導 */
+.idle-hint { display: none; color: var(--text-faint); font-size: 13px; line-height: 1.7; padding: 2px; }
+.idle-hint kbd {
+  font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 5px; padding: 1px 6px; margin: 0 2px; white-space: nowrap;
+}
+.card.idle .idle-hint { display: block; }
+.card.idle .progress-top, .card.idle .bar, .card.idle .metrics { display: none; }
+
 .progress-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .progress-pct {
   font-size: 46px; font-weight: 800; line-height: 1;

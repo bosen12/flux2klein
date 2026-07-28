@@ -134,7 +134,7 @@
 
     <!-- 右側：即時進度與結果 -->
     <section class="right">
-      <div class="card">
+      <div class="card idle" id="progress-card">
         <div class="card-head">⚡ 即時進度<span id="run-loader" class="run-loader"><svg viewBox="0 0 128 128" height="128" width="128" class="star">
   <defs>
     <filter id="star-glow">
@@ -221,6 +221,7 @@
   </g>
 </svg></span></div>
         <div class="card-body">
+          <div class="idle-hint">填好左側設定後按「生成」<kbd>Ctrl / ⌘ + Enter</kbd>，這裡會顯示即時進度、速度與剩餘時間。</div>
           <div class="progress-top">
             <div class="progress-pct" id="pct">0%</div>
             <div class="progress-stage" id="stage">閒置中</div>

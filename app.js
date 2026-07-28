@@ -656,6 +656,7 @@
       firstT: 0, firstV: 0, lastValue: 0, rate: 0, t0: performance.now(),
       results: [],
     };
+    $('progress-card').classList.remove('idle');   // 首次生成後就不再回到閒置外觀
     $('pct').textContent = '0%'; $('bar-fill').style.width = '0%';
     setRunning(true);                        // 進行中：後半段流動條紋
     setStage('已排入佇列，等待開始…');
