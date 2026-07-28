@@ -1130,8 +1130,21 @@
       try { await fetch(API + '/interrupt', { method: 'POST' }); log('已送出中斷指令', 'warn'); }
       catch (e) { log('中斷失敗：' + e, 'err'); }
     };
-    $('opt-notify').onchange = () => {
-      if ($('opt-notify').checked && Notification && Notification.permission === 'default') Notification.requestPermission();
+    // 原本只在權限為 default 時請求，被封鎖時什麼都不做、notify() 又把錯誤吞掉，
+    // 結果是開關打開卻永遠不會響，使用者完全沒有線索。每種失敗都要講清楚並把開關關掉。
+    $('opt-notify').onchange = async () => {
+      const cb = $('opt-notify');
+      if (!cb.checked) return;
+      const fail = msg => { log(msg, 'warn'); cb.checked = false; };
+      if (!('Notification' in window)) return fail('這個瀏覽器不支援桌面通知');
+      if (!window.isSecureContext)
+        return fail('桌面通知需要安全環境：請用 127.0.0.1 或 localhost 開啟，區網 IP 不行');
+      if (Notification.permission === 'granted') { log('桌面通知已開啟', 'ok'); return; }
+      if (Notification.permission === 'denied')
+        return fail('桌面通知已被瀏覽器封鎖。點網址列左側的圖示 → 通知 → 允許，再重整頁面');
+      const res = await Notification.requestPermission();
+      if (res === 'granted') log('桌面通知已開啟，生成完成時會跳出提示', 'ok');
+      else fail('你拒絕了通知權限，開關已關閉');
     };
     $('lightbox').onclick = () => $('lightbox').classList.remove('on');
     $('ai-btn').onclick = aiOptimizePrompt;
@@ -1352,7 +1365,9 @@ EXPLICIT CONTENT:
     } catch (e) {}
   }
   function notify(title, body) {
-    try { if (Notification && Notification.permission === 'granted') new Notification(title, { body }); } catch (e) {}
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    try { new Notification(title, { body, icon: '/favicon.png' }); }
+    catch (e) { log('桌面通知送出失敗：' + e.message, 'warn'); }   // 不要再默默吞掉
   }
 
   init();

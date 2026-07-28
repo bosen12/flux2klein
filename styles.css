@@ -11,6 +11,10 @@
   --accent-2: #10b3ab;
   --accent-3: #8b7bff;
   --accent-soft: #edecff;
+  /* 頂部開關：關=中性灰（一眼看出是關的），開=引擎主色。
+     原本關閉態是飽和的蘭紫、開啟態是淺藍，兩個都是有彩度的顏色，看不出誰是開誰是關。*/
+  --switch-off: #cbd5e1;
+  --switch-on:  var(--accent);
   --ok: #12a150;
   --warn: #d97706;
   --err: #e5484d;
@@ -381,20 +385,29 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .toggle-inline label.opt { gap:8px; }
 .yz-switch { position:relative; display:inline-block; width:38px; height:22px; flex:none; }
 .yz-switch input { position:absolute; opacity:0; width:0; height:0; }
+/* 不要讓「顏色值本身」過渡：background 的值來自自訂屬性時，切換引擎改了變數，
+   Chrome 不會重啟 background-color 的 transition，顏色會卡在舊值（註冊 @property
+   也沒用，反而會被釘在 initial-value）。改成兩層堆疊、只對 opacity 過渡——
+   變數變動立即生效，開關翻轉的動畫也保留。*/
 .yz-slider {
-  position:absolute; inset:0; cursor:pointer;
-  background:#c77dff;                 /* 關：蘭紫 */
-  border-radius:22px; transition:background-color .3s ease;
+  position:absolute; inset:0; cursor:pointer; overflow:hidden;
+  background: var(--switch-off);
+  border-radius:22px;
 }
+.yz-slider::after {
+  content:''; position:absolute; inset:0; border-radius:inherit;
+  background: var(--switch-on);
+  opacity:0; transition:opacity .3s ease;
+}
+.yz-switch input:checked + .yz-slider::after { opacity:1; }
 .yz-knob {
   position:absolute; top:50%; left:3px; transform:translateY(-50%);
   width:16px; height:16px; background:#fff; border-radius:50%;
   box-shadow:0 1px 3px rgba(0,0,0,.25);
   transition:transform .3s cubic-bezier(.68,-.55,.27,1.55);   /* 彈跳 */
 }
-.yz-switch input:checked + .yz-slider { background:#7dd3fc; }  /* 開：淺藍 */
 .yz-switch input:checked ~ .yz-knob { transform:translateX(16px) translateY(-50%); }
-.yz-switch input:focus-visible + .yz-slider { box-shadow:0 0 0 3px rgba(125,211,252,.5); }
+.yz-switch input:focus-visible + .yz-slider { box-shadow:0 0 0 3px color-mix(in srgb, var(--switch-on) 45%, transparent); }
 
 @media (max-width: 900px) {
   .main { grid-template-columns: 1fr; }
