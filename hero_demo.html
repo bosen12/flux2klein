@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flux2 Klein · Hero 設計範例</title>
+<style>
+/* ============ 旋轉光邊需要可動畫的角度變數 ============ */
+@property --beam { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+
+:root {
+  --violet: #8b5cf6;
+  --pink:   #ec4899;
+  --indigo: #5b52f0;
+  --teal:   #10b3ab;
+  --orange: #f4511e;
+
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+}
+
+/* ---- 深色（預設）---- */
+:root[data-theme="dark"] {
+  --bg:          #08080c;
+  --bg-2:        #0d0d14;
+  --text:        #f4f4f5;
+  --text-dim:    #a1a1aa;
+  --text-faint:  #52525b;
+  --glass:       rgba(24, 24, 31, .42);
+  --glass-hi:    rgba(255, 255, 255, .07);
+  --border:      rgba(255, 255, 255, .09);
+  --border-lit:  rgba(255, 255, 255, .22);
+  --stroke:      rgba(255, 255, 255, .58);
+  --spot-a:      rgba(139, 92, 246, .17);
+  --spot-b:      rgba(236, 72, 153, .13);
+  --blob-o:      .55;
+  --blob-blur:   90px;
+  --noise-o:     .045;
+  --card-shadow: 0 24px 70px -24px rgba(0,0,0,.9);
+}
+
+/* ---- 淺色 ---- */
+:root[data-theme="light"] {
+  --bg:          #f7f7fa;
+  --bg-2:        #ffffff;
+  --text:        #0b0b12;
+  --text-dim:    #52525b;
+  --text-faint:  #9ca3af;
+  --glass:       rgba(255, 255, 255, .74);
+  --glass-hi:    rgba(255, 255, 255, .95);
+  --border:      rgba(9, 9, 16, .1);
+  --border-lit:  rgba(9, 9, 16, .24);
+  --stroke:      rgba(11, 11, 18, .5);
+  --spot-a:      rgba(139, 92, 246, .13);
+  --spot-b:      rgba(236, 72, 153, .09);
+  /* 淺底上光球要更淡更散，否則整片糊成奶白、對比全失 */
+  --blob-o:      .26;
+  --blob-blur:   120px;
+  --noise-o:     .035;
+  --card-shadow: 0 20px 48px -22px rgba(40, 20, 80, .3), 0 2px 6px -2px rgba(40, 20, 80, .08);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  overflow-x: hidden;
+  position: relative;
+  transition: background .5s ease, color .5s ease;
+}
+
+/* ============ 背景層 ============ */
+.bg-layer { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+
+.blob {
+  position: absolute; border-radius: 50%;
+  filter: blur(var(--blob-blur));
+  opacity: var(--blob-o);
+  transition: opacity .5s ease, filter .5s ease;
+  will-change: transform;
+}
+.blob.b1 { width: 46vw; height: 46vw; background: radial-gradient(circle, var(--violet), transparent 68%); }
+.blob.b2 { width: 40vw; height: 40vw; background: radial-gradient(circle, var(--pink), transparent 68%); }
+.blob.b3 { width: 34vw; height: 34vw; background: radial-gradient(circle, var(--teal), transparent 70%); }
+
+/* 噪點紋理：內嵌 SVG，不依賴外部資源 */
+.noise {
+  position: fixed; inset: 0; z-index: 1; pointer-events: none;
+  opacity: var(--noise-o);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='260'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+}
+
+/* 游標聚光：兩層不同色不同半徑，疊出層次 */
+.spotlight {
+  position: fixed; inset: 0; z-index: 2; pointer-events: none;
+  background:
+    radial-gradient(520px circle at var(--mx, 50%) var(--my, 40%), var(--spot-a), transparent 42%),
+    radial-gradient(820px circle at var(--mx, 50%) var(--my, 40%), var(--spot-b), transparent 46%);
+  transition: background .12s ease-out;
+}
+
+/* ============ 版面 ============ */
+.wrap { position: relative; z-index: 3; max-width: 1180px; margin: 0 auto; padding: 0 28px; }
+
+nav {
+  display: flex; align-items: center; gap: 14px;
+  padding: 26px 0 0;
+}
+.logo {
+  width: 34px; height: 34px; border-radius: 10px; flex: none;
+  background: linear-gradient(140deg, var(--violet), var(--pink));
+  display: grid; place-items: center; color: #fff; font-size: 17px;
+  box-shadow: 0 6px 20px -4px rgba(139, 92, 246, .6);
+}
+.logo-text { font-weight: 700; letter-spacing: -.02em; font-size: 15px; }
+.nav-spacer { flex: 1; }
+
+.theme-btn {
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 8px 15px 8px 11px; border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  color: var(--text-dim); font-family: var(--sans); font-size: 12.5px; font-weight: 600;
+  cursor: pointer; transition: .25s;
+}
+.theme-btn:hover { border-color: var(--border-lit); color: var(--text); transform: translateY(-1px); }
+.theme-icon { font-size: 14px; line-height: 1; }
+
+/* ============ Hero ============ */
+header.hero { padding: 90px 0 20px; }
+
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 7px 15px; border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  font-size: 11.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--text-dim);
+  opacity: 0; animation: rise .8s cubic-bezier(.22,1,.36,1) .1s forwards;
+}
+.eyebrow .pulse {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--teal);
+  box-shadow: 0 0 0 0 rgba(16, 179, 171, .6);
+  animation: pulse 2.4s ease-out infinite;
+}
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(16,179,171,.55); }
+  70%  { box-shadow: 0 0 0 9px rgba(16,179,171,0); }
+  100% { box-shadow: 0 0 0 0 rgba(16,179,171,0); }
+}
+
+h1 {
+  margin: 26px 0 0;
+  font-size: clamp(52px, 11.5vw, 152px);
+  line-height: .89;
+  letter-spacing: -.055em;
+  font-weight: 800;
+}
+h1 .line { display: block; white-space: nowrap; }
+
+/* 逐字進場：JS 依 index 設 --i */
+h1 .ch {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(.42em) rotateX(-58deg);
+  animation: letter .95s cubic-bezier(.22,1,.36,1) forwards;
+  animation-delay: calc(.22s + var(--i) * .045s);
+}
+@keyframes letter {
+  to { opacity: 1; transform: translateY(0) rotateX(0); }
+}
+
+/* 實心那行：漸層填字 */
+.line-solid .ch {
+  background: linear-gradient(115deg, var(--text) 22%, var(--violet) 62%, var(--pink));
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+/* 描邊那行 */
+.line-outline .ch {
+  color: transparent;
+  -webkit-text-stroke: 1.6px var(--stroke);
+  transition: -webkit-text-stroke-color .5s ease;
+}
+@media (min-width: 800px) { .line-outline .ch { -webkit-text-stroke-width: 2.2px; } }
+
+.lede {
+  max-width: 545px; margin: 34px 0 0;
+  font-size: 16.5px; line-height: 1.75; color: var(--text-dim);
+  opacity: 0; animation: rise .9s cubic-bezier(.22,1,.36,1) .62s forwards;
+}
+.lede b { color: var(--text); font-weight: 600; }
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ============ CTA ============ */
+.cta-row {
+  display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+  margin-top: 40px;
+  opacity: 0; animation: rise .9s cubic-bezier(.22,1,.36,1) .74s forwards;
+}
+
+/* 旋轉光邊：外層跑 conic-gradient，內層蓋底色只留 1.5px 邊 */
+.beam {
+  position: relative; padding: 1.5px; border-radius: 15px;
+  background: conic-gradient(from var(--beam),
+    transparent 0%, var(--violet) 8%, var(--pink) 17%, transparent 27%, transparent 100%);
+  animation: beam-spin 3.2s linear infinite;
+  transition: transform .28s cubic-bezier(.22,1,.36,1), filter .28s;
+}
+@keyframes beam-spin { to { --beam: 360deg; } }
+.beam::after {
+  content: ''; position: absolute; inset: -22%; z-index: -1; border-radius: inherit;
+  background: conic-gradient(from var(--beam),
+    transparent 0%, var(--violet) 8%, var(--pink) 17%, transparent 27%, transparent 100%);
+  filter: blur(20px); opacity: .55;
+  animation: beam-spin 3.2s linear infinite;
+}
+.beam:hover { transform: translateY(-2px) scale(1.015); }
+.beam:hover::after { opacity: .85; }
+
+.btn-primary {
+  display: flex; align-items: center; gap: 11px;
+  padding: 15px 27px; border-radius: 13.5px; border: none;
+  background: var(--bg-2); color: var(--text);
+  font-family: var(--sans); font-size: 14.5px; font-weight: 700; letter-spacing: .01em;
+  cursor: pointer; white-space: nowrap;
+}
+.btn-primary .arrow { transition: transform .3s cubic-bezier(.22,1,.36,1); }
+.beam:hover .arrow { transform: translateX(4px); }
+
+.btn-ghost {
+  padding: 15px 25px; border-radius: 15px;
+  border: 1px solid var(--border); background: var(--glass);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  color: var(--text-dim); font-family: var(--sans); font-size: 14.5px; font-weight: 600;
+  cursor: pointer; transition: .25s;
+}
+.btn-ghost:hover { border-color: var(--border-lit); color: var(--text); transform: translateY(-2px); }
+
+/* ============ 引擎色票 ============ */
+.engines {
+  display: flex; flex-wrap: wrap; gap: 9px; margin-top: 46px;
+  opacity: 0; animation: rise .9s cubic-bezier(.22,1,.36,1) .86s forwards;
+}
+.eng {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 7px 14px 7px 10px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--glass);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  font-size: 12px; font-weight: 600; color: var(--text-dim);
+  cursor: default; transition: .25s;
+}
+.eng:hover { border-color: var(--border-lit); color: var(--text); transform: translateY(-2px); }
+.eng i { width: 7px; height: 7px; border-radius: 50%; display: block; }
+
+/* ============ 3D 傾斜玻璃卡 ============ */
+.cards {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(272px, 1fr));
+  gap: 20px; margin: 96px 0 110px;
+}
+.card-3d { perspective: 1100px; opacity: 0; animation: rise .9s cubic-bezier(.22,1,.36,1) forwards; }
+.card-3d:nth-child(1) { animation-delay: .96s; }
+.card-3d:nth-child(2) { animation-delay: 1.04s; }
+.card-3d:nth-child(3) { animation-delay: 1.12s; }
+
+.card {
+  position: relative; overflow: hidden;
+  padding: 30px 27px 32px; border-radius: 21px;
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(34px) saturate(1.35);
+  -webkit-backdrop-filter: blur(34px) saturate(1.35);
+  box-shadow: var(--card-shadow);
+  transform-style: preserve-3d;
+  will-change: transform;
+  transition: border-color .3s ease, background .5s ease;
+}
+.card:hover { border-color: var(--border-lit); }
+
+/* 隨滑鼠移動的高光 */
+.card .glare {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0;
+  background: radial-gradient(340px circle at var(--gx, 50%) var(--gy, 50%),
+    var(--glass-hi), transparent 42%);
+  transition: opacity .35s ease;
+}
+.card:hover .glare { opacity: 1; }
+
+/* 卡片邊緣跟著滑鼠亮起 */
+.card .edge {
+  position: absolute; inset: -1px; border-radius: inherit; pointer-events: none;
+  opacity: 0; transition: opacity .35s ease;
+  background: radial-gradient(260px circle at var(--gx, 50%) var(--gy, 50%),
+    rgba(139,92,246,.5), transparent 45%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  padding: 1px;
+}
+.card:hover .edge { opacity: 1; }
+
+.card-inner { position: relative; transform: translateZ(48px); transform-style: preserve-3d; }
+
+.card-ico {
+  width: 44px; height: 44px; border-radius: 13px;
+  display: grid; place-items: center; font-size: 20px;
+  background: linear-gradient(140deg, var(--violet), var(--pink));
+  box-shadow: 0 10px 26px -8px rgba(139, 92, 246, .65);
+  margin-bottom: 20px;
+}
+.card h3 { font-size: 17px; font-weight: 700; letter-spacing: -.02em; margin-bottom: 9px; }
+.card p { font-size: 13.5px; line-height: 1.75; color: var(--text-dim); }
+
+.card-stat {
+  display: flex; align-items: baseline; gap: 7px; margin-top: 22px;
+  padding-top: 18px; border-top: 1px solid var(--border);
+}
+.card-stat .n {
+  font-size: 27px; font-weight: 800; letter-spacing: -.03em;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(120deg, var(--violet), var(--pink));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.card-stat .u { font-size: 11.5px; color: var(--text-faint); font-family: var(--mono); }
+
+/* ============ 響應式 ============ */
+@media (max-width: 640px) {
+  .wrap { padding: 0 20px; }
+  header.hero { padding: 60px 0 10px; }
+  h1 { letter-spacing: -.045em; }
+  .cards { margin: 68px 0 80px; }
+  .card-inner { transform: translateZ(30px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+  h1 .ch, .eyebrow, .lede, .cta-row, .engines, .card-3d { opacity: 1 !important; transform: none !important; }
+}
+</style>
+</head>
+<body>
+
+<div class="bg-layer">
+  <div class="blob b1"></div>
+  <div class="blob b2"></div>
+  <div class="blob b3"></div>
+</div>
+<div class="noise"></div>
+<div class="spotlight" id="spot"></div>
+
+<div class="wrap">
+
+  <nav>
+    <div class="logo">✦</div>
+    <div class="logo-text">Flux2 Klein</div>
+    <div class="nav-spacer"></div>
+    <button class="theme-btn" id="theme-btn">
+      <span class="theme-icon" id="theme-icon">◐</span>
+      <span id="theme-label">淺色</span>
+    </button>
+  </nav>
+
+  <header class="hero">
+    <div class="eyebrow"><span class="pulse"></span>本機 ComfyUI · 零依賴</div>
+
+    <h1>
+      <span class="line line-solid" data-text="四個引擎"></span>
+      <span class="line line-outline" data-text="一個面板"></span>
+    </h1>
+
+    <p class="lede">
+      把四組繪圖引擎收進同一個表單介面。<b>純前端 vanilla JS</b>，
+      沒有建置步驟、沒有框架、沒有 npm 依賴——存檔重整就生效。
+    </p>
+
+    <div class="cta-row">
+      <div class="beam">
+        <button class="btn-primary">開始生成 <span class="arrow">→</span></button>
+      </div>
+      <button class="btn-ghost">閱讀文件</button>
+    </div>
+
+    <div class="engines">
+      <span class="eng"><i style="background:#5b52f0"></i>Flux2 Klein</span>
+      <span class="eng"><i style="background:#f4511e"></i>Z-Image Turbo</span>
+      <span class="eng"><i style="background:#7c3aed"></i>Krea2</span>
+      <span class="eng"><i style="background:#ec4899"></i>Illustrious</span>
+    </div>
+  </header>
+
+  <section class="cards">
+    <div class="card-3d">
+      <article class="card">
+        <div class="glare"></div><div class="edge"></div>
+        <div class="card-inner">
+          <div class="card-ico">⚡</div>
+          <h3>即時進度</h3>
+          <p>WebSocket 取得每一步進度，換算 it/s 與 ETA。分塊放大時進度條只進不退，不會反覆歸零。</p>
+          <div class="card-stat"><span class="n">4.41</span><span class="u">it/s</span></div>
+        </div>
+      </article>
+    </div>
+
+    <div class="card-3d">
+      <article class="card">
+        <div class="glare"></div><div class="edge"></div>
+        <div class="card-inner">
+          <div class="card-ico">◧</div>
+          <h3>前後對照</h3>
+          <p>放大與二次採樣的成果並排比較。點開全螢幕後可縮放、平移，分隔線固定在視窗座標不隨圖飄移。</p>
+          <div class="card-stat"><span class="n">20</span><span class="u">× zoom</span></div>
+        </div>
+      </article>
+    </div>
+
+    <div class="card-3d">
+      <article class="card">
+        <div class="glare"></div><div class="edge"></div>
+        <div class="card-inner">
+          <div class="card-ico">✦</div>
+          <h3>AI 提示詞優化</h3>
+          <p>依當前引擎切換寫法——Danbooru tag 或自然語言，並把畫布長寬比一起餵給模型決定構圖。</p>
+          <div class="card-stat"><span class="n">4</span><span class="u">× system prompt</span></div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+</div>
+
+<script>
+(() => {
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---------- 大標逐字拆分 ---------- */
+  document.querySelectorAll('h1 .line').forEach(line => {
+    const text = line.dataset.text;
+    let i = 0;
+    for (const ch of text) {
+      const s = document.createElement('span');
+      s.className = 'ch';
+      s.textContent = ch;
+      s.style.setProperty('--i', i++);
+      line.appendChild(s);
+    }
+  });
+  // 第二行接續第一行的節奏，不要同時開跑
+  const first = document.querySelector('.line-solid').children.length;
+  document.querySelectorAll('.line-outline .ch').forEach((el, i) => {
+    el.style.setProperty('--i', first + i);
+  });
+
+  /* ---------- 游標聚光 ---------- */
+  const spot = document.getElementById('spot');
+  let mx = innerWidth / 2, my = innerHeight * .4, sx = mx, sy = my;
+  addEventListener('pointermove', e => { mx = e.clientX; my = e.clientY; }, { passive: true });
+  (function follow() {
+    sx += (mx - sx) * .1;                       // 阻尼跟隨，比直接貼游標柔和
+    sy += (my - sy) * .1;
+    spot.style.setProperty('--mx', sx + 'px');
+    spot.style.setProperty('--my', sy + 'px');
+    requestAnimationFrame(follow);
+  })();
+
+  /* ---------- 背景光球漂移（撞邊反彈）---------- */
+  if (!reduced) {
+    document.querySelectorAll('.blob').forEach((el, i) => {
+      const p = {
+        x: Math.random() * 70, y: Math.random() * 60,
+        vx: (Math.random() - .5) * .028, vy: (Math.random() - .5) * .028,
+      };
+      // 錯開起始位置，避免三顆疊在一起
+      p.x = [6, 58, 32][i]; p.y = [4, 30, 58][i];
+      (function drift() {
+        p.x += p.vx; p.y += p.vy;
+        if (p.x < -12 || p.x > 78) p.vx *= -1;
+        if (p.y < -12 || p.y > 72) p.vy *= -1;
+        el.style.transform = `translate(${p.x}vw, ${p.y}vh)`;
+        requestAnimationFrame(drift);
+      })();
+    });
+  }
+
+  /* ---------- 3D 傾斜（彈簧，非線性插值）---------- */
+  const MAX = 11;            // 最大傾角
+  document.querySelectorAll('.card-3d').forEach(wrap => {
+    const card = wrap.querySelector('.card');
+    // cur=目前值 tgt=目標值 v=速度；stiffness 決定追得多快，damping 決定回彈衰減
+    const s = { rx: 0, ry: 0, sc: 1, trx: 0, try_: 0, tsc: 1, vx: 0, vy: 0, vs: 0 };
+    const K = .1, D = .72;
+    let live = false;
+
+    wrap.addEventListener('pointermove', e => {
+      const r = card.getBoundingClientRect();
+      const px = (e.clientX - r.left) / r.width;
+      const py = (e.clientY - r.top) / r.height;
+      s.try_ = (px - .5) * 2 * MAX;         // 左右 → rotateY
+      s.trx = -(py - .5) * 2 * MAX;         // 上下 → rotateX（反向才符合直覺）
+      s.tsc = 1.022;
+      card.style.setProperty('--gx', px * 100 + '%');
+      card.style.setProperty('--gy', py * 100 + '%');
+      if (!live) { live = true; tick(); }
+    });
+
+    wrap.addEventListener('pointerleave', () => { s.trx = 0; s.try_ = 0; s.tsc = 1; });
+
+    function tick() {
+      s.vx = (s.vx + (s.trx - s.rx) * K) * D;  s.rx += s.vx;
+      s.vy = (s.vy + (s.try_ - s.ry) * K) * D; s.ry += s.vy;
+      s.vs = (s.vs + (s.tsc - s.sc) * K) * D;  s.sc += s.vs;
+      card.style.transform =
+        `rotateX(${s.rx.toFixed(3)}deg) rotateY(${s.ry.toFixed(3)}deg) scale(${s.sc.toFixed(4)})`;
+      // 靜止且已歸零就停掉 rAF，不要空轉
+      const still = Math.abs(s.vx) < .0015 && Math.abs(s.vy) < .0015 && Math.abs(s.vs) < .00015;
+      const home = Math.abs(s.trx - s.rx) < .02 && Math.abs(s.try_ - s.ry) < .02;
+      if (still && home) { live = false; return; }
+      requestAnimationFrame(tick);
+    }
+  });
+
+  /* ---------- 深淺色切換 ---------- */
+  const root = document.documentElement;
+  const btn = document.getElementById('theme-btn');
+  const icon = document.getElementById('theme-icon');
+  const label = document.getElementById('theme-label');
+
+  if (matchMedia('(prefers-color-scheme: light)').matches) setTheme('light');
+
+  function setTheme(t) {
+    root.dataset.theme = t;
+    icon.textContent = t === 'dark' ? '◐' : '◑';
+    label.textContent = t === 'dark' ? '淺色' : '深色';
+  }
+  btn.onclick = () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark');
+})();
+</script>
+</body>
+</html>

@@ -49,6 +49,7 @@ API 格式的範本在啟動時一次 fetch 進 `state.zTemplates`，送出前 d
 | `zimage.js` / `krea2.js` / `illustrious.js` | 各引擎設定：模型檔名、模式、節點對照、增強分支 |
 | `config.js` | Groq API key。**已 gitignore**，不要提交，也不要把 key 寫回程式碼 |
 | `styles.css` | 樣式。設計 token 在 `:root`，各引擎主題色用 `:root[data-engine="..."]` 覆寫 |
+| `hero_demo.html` | **設計參考，不是面板的一部分。** 獨立單檔，用 `file://` 直接開；刻意不列入 `STATIC_FILES`，不要把它加進去 |
 
 ## 引擎設定的結構
 
