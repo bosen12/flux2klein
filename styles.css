@@ -73,17 +73,44 @@ header.topbar {
 .right { overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 18px; }
 
 /* ---------- 模式分頁 ---------- */
-.tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 14px 16px 0; }
+.tabs { position: relative; display: flex; flex-wrap: wrap; gap: 6px; padding: 14px 16px 0; }
+
+/* 滑動膠囊：分頁會換行，所以 X 與 Y 都要補間，換行時是斜著飛過去 */
+.tab-pill {
+  position: absolute; top: 0; left: 0; width: 0; height: 0;
+  border-radius: 999px; z-index: 0; pointer-events: none;
+  background: linear-gradient(135deg, var(--accent), var(--accent-3));
+  box-shadow: 0 5px 14px -4px rgba(91,82,240,.55);
+  transition: transform .36s cubic-bezier(.34,1.28,.5,1),
+              width .36s cubic-bezier(.34,1.28,.5,1),
+              height .26s ease;
+}
+/* 選中分頁的旋轉光環。這裡不能沿用按鈕那招（底色蓋住中間只留邊）：
+   膠囊自身有漸層底色且 z-index:0 已建立堆疊脈絡，負 z-index 的偽元素會被蓋掉，
+   拉出脈絡又會穿到左欄面板底下。改用 mask-composite 直接鏤空中間，只留 2px 環。*/
+.tab-pill::before {
+  content: ''; position: absolute; inset: -2px; pointer-events: none;
+  border-radius: inherit; padding: 2px;
+  background: conic-gradient(from var(--beam),
+    transparent 0%, rgba(255,255,255,.95) 7%, var(--accent-2) 15%, transparent 27%, transparent 100%);
+  animation: beam-spin 3s linear infinite;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+}
 .tab {
+  position: relative; z-index: 1;
   border: 1px solid var(--border); background: var(--panel-2);
   padding: 7px 13px; border-radius: 999px; cursor: pointer;
-  font-size: 13px; color: var(--text-dim); transition: .15s;
+  font-size: 13px; color: var(--text-dim); transition: color .2s, border-color .2s, background .2s;
+  /* 字重固定 600：選中才變粗會讓分頁寬度改變、其他分頁跟著位移，膠囊就會追到過期的座標 */
+  font-weight: 600;
 }
 .tab:hover { border-color: var(--border-strong); color: var(--text); background: var(--panel); }
-.tab.active {
-  background: linear-gradient(135deg, var(--accent), var(--accent-3));
-  border-color: transparent; color: #fff; font-weight: 600;
-  box-shadow: 0 5px 14px -4px rgba(91,82,240,.55);
+/* 選中態的底色與陰影改由膠囊提供，分頁本身必須透明才看得到膠囊 */
+.tab.active, .tab.active:hover {
+  background: transparent; border-color: transparent; color: #fff;
 }
 
 .form { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
@@ -158,8 +185,25 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   margin: 2px -16px -16px; padding: 12px 16px 16px;
   background: linear-gradient(transparent, var(--panel) 22%);
 }
+/* 生成按鈕的旋轉光環：外層跑 conic-gradient，按鈕自身的底色蓋住中間只留一圈邊。
+   角度要能動畫必須先用 @property 宣告成 <angle>，否則 conic-gradient 的 from 不會補間。*/
+@property --beam { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+
+.beam-wrap {
+  position: relative; flex: 1; display: block;
+  padding: 2px; border-radius: calc(var(--radius-sm) + 2px);
+}
+.beam-wrap::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  background: conic-gradient(from var(--beam),
+    transparent 0%, rgba(255,255,255,.95) 6%, var(--accent-2) 14%, transparent 26%, transparent 100%);
+  animation: beam-spin 3s linear infinite;
+}
+@keyframes beam-spin { to { --beam: 360deg; } }
+
 .btn-run {
-  flex: 1; border: none; background: linear-gradient(135deg, var(--accent), var(--accent-3));
+  position: relative; z-index: 1; width: 100%;
+  border: none; background: linear-gradient(135deg, var(--accent), var(--accent-3));
   color: #fff; font-weight: 700; font-size: 15px; padding: 14px; border-radius: var(--radius-sm);
   letter-spacing: .02em; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
@@ -199,6 +243,9 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   100% { width: .5em; height: .82em; opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
+  .beam-wrap::before { animation: none; background: var(--accent-2); }
+  .tab-pill { transition: none; }
+  .tab-pill::before { animation: none; background: var(--accent-2); }
   .btn-run, .btn-run::before { transition: none; }
   .btn-run[data-state="loading"]::before { animation: run-spin .9s linear infinite; }
   .btn-run[data-state="done"]::before { animation: none; }
@@ -466,7 +513,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 }
 :root[data-engine="zimage"] ::selection { background: rgba(244,81,30,.22); }
 :root[data-engine="zimage"] .brand .logo { box-shadow: 0 4px 12px -2px rgba(244,81,30,.5), inset 0 1px 0 rgba(255,255,255,.35); }
-:root[data-engine="zimage"] .tab.active { box-shadow: 0 5px 14px -4px rgba(244,81,30,.5); }
+:root[data-engine="zimage"] .tab-pill { box-shadow: 0 5px 14px -4px rgba(244,81,30,.5); }
 :root[data-engine="zimage"] .btn-run { box-shadow: 0 8px 20px -6px rgba(244,81,30,.55), inset 0 1px 0 rgba(255,255,255,.25); }
 :root[data-engine="zimage"] .btn-run:hover { box-shadow: 0 12px 26px -6px rgba(244,81,30,.62), inset 0 1px 0 rgba(255,255,255,.25); }
 :root[data-engine="zimage"] .bar > i { box-shadow: 0 0 12px -1px rgba(244,81,30,.55); }
@@ -504,7 +551,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 }
 :root[data-engine="krea2"] ::selection { background: rgba(124,58,237,.24); }
 :root[data-engine="krea2"] .brand .logo { box-shadow: 0 4px 12px -2px rgba(124,58,237,.5), inset 0 1px 0 rgba(255,255,255,.35); }
-:root[data-engine="krea2"] .tab.active { box-shadow: 0 5px 14px -4px rgba(124,58,237,.5); }
+:root[data-engine="krea2"] .tab-pill { box-shadow: 0 5px 14px -4px rgba(124,58,237,.5); }
 :root[data-engine="krea2"] .btn-run { box-shadow: 0 8px 20px -6px rgba(124,58,237,.55), inset 0 1px 0 rgba(255,255,255,.25); }
 :root[data-engine="krea2"] .btn-run:hover { box-shadow: 0 12px 26px -6px rgba(124,58,237,.62), inset 0 1px 0 rgba(255,255,255,.25); }
 :root[data-engine="krea2"] .bar > i { box-shadow: 0 0 12px -1px rgba(124,58,237,.55); }
@@ -626,7 +673,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 }
 :root[data-engine="illustrious"] ::selection { background: rgba(236,72,153,.24); }
 :root[data-engine="illustrious"] .brand .logo { box-shadow: 0 4px 12px -2px rgba(236,72,153,.5), inset 0 1px 0 rgba(255,255,255,.35); }
-:root[data-engine="illustrious"] .tab.active { box-shadow: 0 5px 14px -4px rgba(236,72,153,.5); }
+:root[data-engine="illustrious"] .tab-pill { box-shadow: 0 5px 14px -4px rgba(236,72,153,.5); }
 :root[data-engine="illustrious"] .btn-run { box-shadow: 0 8px 20px -6px rgba(236,72,153,.55), inset 0 1px 0 rgba(255,255,255,.25); }
 :root[data-engine="illustrious"] .btn-run:hover { box-shadow: 0 12px 26px -6px rgba(236,72,153,.62), inset 0 1px 0 rgba(255,255,255,.25); }
 :root[data-engine="illustrious"] .bar > i { box-shadow: 0 0 12px -1px rgba(236,72,153,.55); }

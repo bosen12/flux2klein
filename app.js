@@ -75,6 +75,32 @@
     })(prev);
   }
 
+  // 模式分頁的滑動膠囊。分頁會換行，所以 X 與 Y 都要補間（引擎切換器只需要 X）。
+  // animate 只在使用者點擊切換時給 true；版面或字體造成的校正一律瞬移，
+  // 否則字體載入完的那次重算會讓膠囊自己飄一段，看起來像 bug。
+  function moveTabPill(animate) {
+    const tabs = $('tabs'), pill = $('tab-pill');
+    const active = tabs && tabs.querySelector('.tab.active');
+    if (!tabs || !pill || !active) return;
+    if (!animate) pill.style.transition = 'none';
+    pill.style.width = active.offsetWidth + 'px';
+    pill.style.height = active.offsetHeight + 'px';
+    pill.style.transform = `translate(${active.offsetLeft}px, ${active.offsetTop}px)`;
+    if (!animate) { void pill.offsetWidth; pill.style.transition = ''; }
+  }
+
+  // 中文字體載入、左欄寬度改變、分頁換行都會改變膠囊該在的位置。
+  // 單一個 rAF 等不到字體就緒（初次會量到分頁被擠窄、文字折行時的尺寸），改用 ResizeObserver。
+  let tabRO = null;
+  function observeTabs() {
+    const tabs = $('tabs');
+    if (!tabs || !window.ResizeObserver) return;
+    if (tabRO) tabRO.disconnect();
+    tabRO = new ResizeObserver(() => moveTabPill());
+    tabRO.observe(tabs);                                     // 換行造成的容器高度變化
+    tabs.querySelectorAll('.tab').forEach(t => tabRO.observe(t));  // 字體造成的分頁尺寸變化
+  }
+
   // 手機橫向捲動時，把選中的引擎按鈕捲到中央
   function scrollActiveEngineIntoView() {
     const sw = $('engine-switch');
@@ -120,6 +146,10 @@
   function buildTabs() {
     const tabs = $('tabs');
     tabs.innerHTML = '';
+    tabPillReady = false;          // 換引擎重建分頁，膠囊不要從舊座標滑過來
+    const pill = document.createElement('span');
+    pill.className = 'tab-pill'; pill.id = 'tab-pill';
+    tabs.appendChild(pill);
     const modes = currentModes();
     for (const key of currentOrder()) {
       const b = document.createElement('button');
@@ -128,6 +158,8 @@
       b.onclick = () => selectMode(key);
       tabs.appendChild(b);
     }
+    moveTabPill();
+    observeTabs();   // 之後的校正交給 ResizeObserver（observe 當下就會先觸發一次）
   }
 
   // 讀某模式的預設提示詞 / 步數（兩個引擎來源不同）
@@ -151,6 +183,7 @@
     const order = currentOrder();
     const m = currentModes()[key];
     document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', order[i] === key));
+    moveTabPill(true);   // 使用者點擊：滑過去
     $('mode-desc').textContent = m.desc;
 
     const d = modeDefaults(m);
@@ -1080,6 +1113,8 @@
     $('gallery-clear').onclick = () => { $('gallery').innerHTML = ''; };
     $('log-head').onclick = () => $('log-card').classList.toggle('collapsed');
     document.addEventListener('keydown', onGlobalKey);
+    // 分頁膠囊由 ResizeObserver 顧，這裡只需補引擎切換器（它沒有尺寸變化可觀察）
+    addEventListener('resize', movePill);
   }
 
   /* 全域快捷鍵：Ctrl/Cmd+Enter 生成、Esc 關閉浮層 */
