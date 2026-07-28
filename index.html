@@ -6,7 +6,7 @@
   <title>Flux2 Klein · ComfyUI 面板</title>
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=1">
 </head>
 <body>
 <div class="app">
@@ -20,6 +20,7 @@
       <button type="button" data-engine="flux2klein" class="active">Flux2 Klein</button>
       <button type="button" data-engine="zimage">Z-Image Turbo</button>
       <button type="button" data-engine="krea2">Krea2</button>
+      <button type="button" data-engine="illustrious">Illustrious</button>
     </div>
     <div class="spacer"></div>
     <div class="toggle-inline">
@@ -88,21 +89,9 @@
         <!-- Krea2：增強開關 -->
         <div class="field" id="enhance-field" style="display:none">
           <label>增強 <span class="hint">預設不開；開啟後可拉桿對照差別</span></label>
-          <div class="enh-grid">
-            <label class="enh">
-              <input type="checkbox" id="opt-seedvr2">
-              <span class="enh-body">
-                <span class="enh-top"><span class="enh-name">SeedVR2 高清放大</span><span class="enh-sw"></span></span>
-                <span class="enh-desc">用 SeedVR2 模型把成品放大到更高解析度</span>
-              </span>
-            </label>
-            <label class="enh">
-              <input type="checkbox" id="opt-second">
-              <span class="enh-body">
-                <span class="enh-top"><span class="enh-name">二次採樣</span><span class="enh-sw"></span></span>
-                <span class="enh-desc">latent 放大 2× 後重採樣，補更多細節</span>
-              </span>
-            </label>
+          <div class="enh-grid" id="enhance-list"></div>
+          <div id="ref-upload" style="display:none; margin-top:10px">
+            <div class="uploads" id="uploads-ref"></div>
           </div>
         </div>
 
@@ -265,9 +254,10 @@
 
 <div class="lightbox" id="lightbox"><img id="lightbox-img" alt=""></div>
 
-<script src="converter.js"></script>
-<script src="zimage.js"></script>
-<script src="krea2.js"></script>
-<script src="app.js"></script>
+<script src="converter.js?v=1"></script>
+<script src="zimage.js?v=1"></script>
+<script src="krea2.js?v=1"></script>
+<script src="illustrious.js?v=1"></script>
+<script src="app.js?v=1"></script>
 </body>
 </html>

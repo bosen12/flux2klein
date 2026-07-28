@@ -24,11 +24,12 @@
     flux2klein: { logo: '✦', title: 'Flux2 Klein 面板', sub: '文生圖 / 單雙三圖編輯 / 局部重繪 / 圖像擴展' },
     zimage:     { logo: '✦', title: 'Z-Image Turbo 面板', sub: '文生圖 / ControlNet 邊緣參考' },
     krea2:      { logo: '✦', title: 'Krea2 面板', sub: '文生圖（可選 SeedVR2 / 二次採樣）' },
+    illustrious:{ logo: '✦', title: 'Illustrious 面板', sub: 'SDXL 動漫（可選 Hires / ControlNet / SeedVR2 / SD 放大）' },
   };
-  const Z = window.YZ_Z;
-  const K = window.YZ_K;
-  const currentModes = () => state.engine === 'zimage' && Z ? Z.MODES : state.engine === 'krea2' && K ? K.MODES : MODES;
-  const currentOrder = () => state.engine === 'zimage' && Z ? Z.MODE_ORDER : state.engine === 'krea2' && K ? K.MODE_ORDER : MODE_ORDER;
+  const Z = window.YZ_Z, K = window.YZ_K, I = window.YZ_I;
+  const ENG = { zimage: Z, krea2: K, illustrious: I };   // API 格式引擎設定
+  const currentModes = () => ENG[state.engine] ? ENG[state.engine].MODES : MODES;
+  const currentOrder = () => ENG[state.engine] ? ENG[state.engine].MODE_ORDER : MODE_ORDER;
 
   // 頁面切換過渡：淡入 + 微幅上移（僅動 opacity/transform → 不觸發 reflow、無版面跳動、不影響捲軸）
   const prefersReduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -61,13 +62,14 @@
 
     // Z-Image / Krea2 的 API 工作流（小檔）
     try {
-      const [t2i, cn, kr] = await Promise.all([
+      const [t2i, cn, kr, il] = await Promise.all([
         fetch('zimage_t2i.json').then(r => r.json()),
         fetch('zimage_controlnet.json').then(r => r.json()),
         fetch('krea2.json').then(r => r.json()),
+        fetch('illustrious.json').then(r => r.json()),
       ]);
-      state.zTemplates = { 'zimage_t2i.json': t2i, 'zimage_controlnet.json': cn, 'krea2.json': kr };
-    } catch (e) { log('無法載入 Z-Image / Krea2 工作流（多半是 serve.py 是舊版）：請重啟面板 stop_panel.bat → start.bat。' + e, 'err'); }
+      state.zTemplates = { 'zimage_t2i.json': t2i, 'zimage_controlnet.json': cn, 'krea2.json': kr, 'illustrious.json': il };
+    } catch (e) { log('無法載入 API 工作流（多半是 serve.py 是舊版）：請重啟面板 stop_panel.bat → start.bat。' + e, 'err'); }
 
     // 先把畫面渲染出來（不等 object_info），手機/遠端才不會卡在白畫面
     bindGlobalControls();
@@ -113,6 +115,7 @@
 
   function selectMode(key) {
     state.mode = key;
+    try {
     const order = currentOrder();
     const m = currentModes()[key];
     document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', order[i] === key));
@@ -132,14 +135,17 @@
     show('size-field', !!m.size);
     show('pad-field', !!m.pad);
     show('batch', !!m.size && state.engine === 'flux2klein', true);
-    show('enhance-field', state.engine === 'krea2');   // Krea2 的 SeedVR2 / 二次採樣 開關
-    show('model-field', state.engine !== 'krea2');      // Krea2 單一固定模型，不顯示下拉
+    const eng = ENG[state.engine];
+    if (eng && eng.enhance) buildEnhance(eng, m);
+    show('enhance-field', !!(eng && eng.enhance));      // Krea2 / Illustrious 的增強卡片
+    show('model-field', !(eng && eng.enhance));         // 有增強的引擎皆為單一固定模型，隱藏下拉
     $('images-hint').textContent = `需 ${m.images.filter(i => !i.mask).length} 張`;
 
     if (m.size) buildAspectPresets();
     state.images = {}; // 換模式清空已選圖
     state.mask = null;
     animateSwitch($('form'));   // 切換模式：表單淡入
+    } catch (err) { log('切換模式錯誤：' + err.message, 'err'); console.error(err); }
   }
 
   /* ---------------- 引擎切換 ---------------- */
@@ -148,11 +154,6 @@
       b.onclick = () => selectEngine(b.dataset.engine);
     });
     window.addEventListener('resize', movePill);
-    // 增強卡片：勾選狀態同步到卡片高亮（.on）
-    ['opt-seedvr2', 'opt-second'].forEach(id => {
-      const cb = $(id);
-      if (cb) cb.addEventListener('change', () => cb.closest('.enh') && cb.closest('.enh').classList.toggle('on', cb.checked));
-    });
     // 手動改寬高 → 取消長寬比 chip 的選中
     ['width', 'height'].forEach(id => {
       const el = $(id);
@@ -163,7 +164,7 @@
   function selectEngine(engine) {
     if (!ENGINES[engine]) return;
     // 引擎設定檔沒載入 → 通常是 serve.py 是舊版沒提供該 .js。清楚報錯而不半殘。
-    if ((engine === 'zimage' && !Z) || (engine === 'krea2' && !K)) {
+    if (engine !== 'flux2klein' && !ENG[engine]) {
       log(`${ENGINES[engine].title} 尚未就緒：請重啟面板（stop_panel.bat → start.bat）並 Ctrl+Shift+R`, 'err');
       document.querySelectorAll('#engine-switch button').forEach(b => b.classList.toggle('active', b.dataset.engine === state.engine));
       movePill();
@@ -203,6 +204,9 @@
     } else if (state.engine === 'krea2') {
       add(K.UNET, 'redcraft 30Krea2');                     // 單一固定（欄位隱藏，僅備援）
       sel.value = K.UNET;
+    } else if (state.engine === 'illustrious') {
+      add(I.CKPT, 'waiIllustrious v170');
+      sel.value = I.CKPT;
     } else {
       add('9b-mixed', 'Klein 9B · qwen_3_8b_fp8mixed', 'fluxKleinFP8_flux2Klein9bFp8.safetensors', 'qwen_3_8b_fp8mixed.safetensors');
       add('9b', 'Klein 9B · qwen_3_8b', 'fluxKleinFP8_flux2Klein9bFp8.safetensors', 'qwen_3_8b.safetensors');
@@ -217,26 +221,49 @@
   }
 
   /* ---------------- 圖片上傳 UI ---------------- */
+  // 產生一個上傳框（存入 state.images[slot.node]）
+  function makeDrop(slot) {
+    const d = document.createElement('div');
+    d.className = 'drop';
+    d.innerHTML = `<span class="tag">${slot.label}</span>
+      <button class="clear" type="button" title="移除">✕</button>
+      <span class="ph">＋ 點擊上傳<br>${slot.label}</span>
+      <input type="file" accept="image/*" hidden>`;
+    const input = d.querySelector('input');
+    d.onclick = (e) => { if (e.target.closest('.clear')) return; input.click(); };
+    input.onchange = () => onPickImage(slot.node, input.files[0], d);
+    d.querySelector('.clear').onclick = (e) => { e.stopPropagation(); e.preventDefault(); delete state.images[slot.node]; d.classList.remove('has-img'); d.querySelectorAll('img').forEach(x => x.remove()); };
+    return d;
+  }
+
   function buildUploads(m) {
     const wrap = $('uploads');
     wrap.innerHTML = '';
-    const slots = m.images.filter(i => !i.mask);
-    for (const slot of slots) {
-      const d = document.createElement('div');
-      d.className = 'drop';
-      d.innerHTML = `<span class="tag">${slot.label}</span>
-        <button class="clear" type="button" title="移除">✕</button>
-        <span class="ph">＋ 點擊上傳<br>${slot.label}</span>
-        <input type="file" accept="image/*" hidden>`;
-      const input = d.querySelector('input');
-      d.onclick = (e) => { if (e.target.closest('.clear')) return; input.click(); };
-      input.onchange = () => onPickImage(slot.node, input.files[0], d);
-      d.querySelector('.clear').onclick = (e) => { e.stopPropagation(); e.preventDefault(); delete state.images[slot.node]; d.classList.remove('has-img'); d.querySelectorAll('img').forEach(x => x.remove()); };
-      wrap.appendChild(d);
-    }
-    // 局部重繪的圖片走遮罩畫布
+    for (const slot of m.images.filter(i => !i.mask)) wrap.appendChild(makeDrop(slot));
     const maskSlot = m.images.find(i => i.mask);
     if (maskSlot) setupMaskUpload(maskSlot);
+  }
+
+  // 依引擎設定動態建立增強卡片（Krea2 / Illustrious）
+  function buildEnhance(E, m) {
+    const list = $('enhance-list'); list.innerHTML = '';
+    let hasRef = false;
+    for (const e of E.enhance) {
+      const card = document.createElement('label');
+      card.className = 'enh';
+      card.innerHTML = `<input type="checkbox" id="enh-${e.key}"><span class="enh-body"><span class="enh-top"><span class="enh-name">${e.name}</span><span class="enh-sw"></span></span><span class="enh-desc">${e.desc}</span></span>`;
+      const cb = card.querySelector('input');
+      cb.addEventListener('change', () => {
+        card.classList.toggle('on', cb.checked);
+        if (e.requiresRef) show('ref-upload', cb.checked);
+      });
+      list.appendChild(card);
+      if (e.requiresRef) hasRef = true;
+    }
+    // ControlNet 參考圖上傳（需要時才顯示）
+    show('ref-upload', false);
+    const refBox = $('uploads-ref'); refBox.innerHTML = '';
+    if (hasRef && m.nodes.ref) refBox.appendChild(makeDrop({ node: 'ref', label: '參考圖' }));
   }
 
   function onPickImage(nodeId, file, dropEl) {
@@ -380,7 +407,8 @@
     const m = currentModes()[state.mode];
     try {
       if (state.engine === 'zimage') await runZImage(m);
-      else if (state.engine === 'krea2') await runKrea2(m);
+      else if (state.engine === 'krea2') await runEnhanceEngine(m, K);
+      else if (state.engine === 'illustrious') await runEnhanceEngine(m, I);
       else await runFlux2(m);
     } catch (e) {
       log('錯誤：' + e.message, 'err');
@@ -388,29 +416,45 @@
     }
   }
 
-  /* ---------------- Krea2 送出（API 工作流 + 依開關裁剪增強分支）---------------- */
-  async function runKrea2(m) {
+  /* ---------------- 增強引擎送出（Krea2 / Illustrious 共用）---------------- */
+  async function runEnhanceEngine(m, E) {
     const tpl = JSON.parse(JSON.stringify(state.zTemplates[m.template] || {}));
-    if (!Object.keys(tpl).length) throw new Error('Krea2 工作流未載入');
+    if (!Object.keys(tpl).length) throw new Error('工作流未載入');
     const nd = m.nodes;
-    tpl[nd.unet].inputs.unet_name = K.UNET;
-    tpl[nd.clip].inputs.clip_name = K.CLIP;
-    tpl[nd.vae].inputs.vae_name = K.VAE;
-    tpl[nd.prompt].inputs.text = $('prompt').value;
+    // 固定模型（有哪個設哪個）
+    if (E.CKPT && tpl[nd.ckpt]) tpl[nd.ckpt].inputs.ckpt_name = E.CKPT;
+    if (E.UNET && tpl[nd.unet]) tpl[nd.unet].inputs.unet_name = E.UNET;
+    if (E.CLIP && tpl[nd.clip]) tpl[nd.clip].inputs.clip_name = E.CLIP;
+    if (E.VAE && tpl[nd.vae]) tpl[nd.vae].inputs.vae_name = E.VAE;
+    // 提示詞 / 種子 / 步數
+    if (tpl[nd.prompt]) tpl[nd.prompt].inputs.text = $('prompt').value;
     const seed = parseInt($('seed').value, 10) || 0;
-    const steps = parseInt($('steps').value, 10) || 12;
-    tpl[nd.ksampler].inputs.seed = seed;
-    tpl[nd.ksampler].inputs.steps = steps;
-    if (tpl[nd.latent]) {
-      tpl[nd.latent].inputs.width = +$('width').value || 960;
-      tpl[nd.latent].inputs.height = +$('height').value || 1440;
+    const steps = parseInt($('steps').value, 10) || (tpl[nd.ksampler] ? tpl[nd.ksampler].inputs.steps : 20);
+    if (tpl[nd.ksampler]) { tpl[nd.ksampler].inputs.seed = seed; tpl[nd.ksampler].inputs.steps = steps; }
+    // 尺寸
+    if (m.size && tpl[nd.latent]) {
+      tpl[nd.latent].inputs.width = +$('width').value || 1024;
+      tpl[nd.latent].inputs.height = +$('height').value || 1024;
     }
-    // 增強開關（預設不開）→ 關閉就從 prompt 移除該分支節點
-    const seedvr2On = $('opt-seedvr2').checked;
-    const secondOn = $('opt-second').checked;
-    if (secondOn && tpl[K.secondSampler]) tpl[K.secondSampler].inputs.seed = seed;  // 二次採樣種子跟隨
-    if (!seedvr2On) for (const id of K.branch.seedvr2) delete tpl[id];
-    if (!secondOn) for (const id of K.branch.second) delete tpl[id];
+    // 增強開關 + 相依（例如 SeedVR2/SD 放大需先有 Hires）
+    const on = {};
+    for (const e of E.enhance) on[e.key] = !!($('enh-' + e.key) && $('enh-' + e.key).checked);
+    for (const e of E.enhance) if (e.requires && on[e.key]) on[e.requires] = true;
+    // 各開啟分支：種子跟隨 + 參考圖上傳
+    for (const e of E.enhance) {
+      if (!on[e.key]) continue;
+      if (e.seedFollow && tpl[e.seedFollow]) tpl[e.seedFollow].inputs.seed = seed;
+      if (e.requiresRef && nd.ref) {
+        const item = state.images['ref'];
+        if (!item) throw new Error(`「${e.name}」需要先上傳參考圖`);
+        if (!item.uploaded) { $('run').textContent = '上傳參考圖…'; item.uploaded = await uploadBlob(item.file, item.file.name || `ref_${Date.now()}.png`); }
+        const up = item.uploaded;
+        if (tpl[nd.ref]) tpl[nd.ref].inputs.image = up.subfolder ? `${up.subfolder}/${up.name}` : up.name;
+      }
+    }
+    // 裁剪：關閉的分支移除；一律移除的節點（比較節點等）移除
+    for (const e of E.enhance) if (!on[e.key]) for (const id of e.branch) delete tpl[id];
+    for (const id of (E.alwaysDelete || [])) delete tpl[id];
     // 送出
     $('run').textContent = '送出中…';
     const res = await fetch(API + '/prompt', {
@@ -426,7 +470,7 @@
     }
     log(`已排入佇列（prompt_id=${data.prompt_id?.slice(0, 8)}…），共 ${countNodes(tpl)} 個節點`, 'ok');
     startRun(data.prompt_id, steps, countNodes(tpl));
-    state.run.krea2 = { seedvr2: seedvr2On, second: secondOn, images: {} };  // 收集輸出做對照
+    state.run.compare = { E, on, images: {} };   // 收集輸出做對照
     if (!$('seed-fixed').checked) $('seed').value = Math.floor(Math.random() * 1e15);
   }
 
@@ -644,7 +688,7 @@
       $('pct').textContent = '100%'; $('bar-fill').style.width = '100%';
       setStage(`完成 · 耗時 ${fmtTime(total)}`);
       log(`✅ 完成，耗時 ${fmtTime(total)}`, 'ok');
-      if (r.krea2) buildCompare(r.krea2);
+      if (r.compare) buildCompare(r.compare);
       if ($('opt-sound').checked) beep();
       if ($('opt-notify').checked) { const mm = currentModes()[state.mode]; notify('生成完成', `${(mm && mm.label) || ''} · ${fmtTime(total)}`); }
     }
@@ -677,20 +721,21 @@
     return el;
   }
 
-  function buildCompare(k) {
+  function buildCompare(c) {
     const cont = $('compare'); if (!cont) return;
     cont.innerHTML = '';
-    const base = k.images[K.outputs.base];
+    const E = c.E, base = c.images[E.outputs.base];
     let any = false;
-    const addPair = (title, afterUrl, labelA) => {
-      if (!base || !afterUrl) return;
-      const h = document.createElement('div'); h.className = 'cmp-title'; h.textContent = title;
+    for (const e of E.enhance) {
+      if (!c.on[e.key]) continue;
+      const after = c.images[E.outputs[e.key]];
+      if (!base || !after) continue;
+      const label = E.compareLabels[e.key] || e.name;
+      const h = document.createElement('div'); h.className = 'cmp-title'; h.textContent = label + ' 對照';
       cont.appendChild(h);
-      cont.appendChild(makeCompareSlider(base, afterUrl, '原圖', labelA));
+      cont.appendChild(makeCompareSlider(base, after, '原圖', label));
       any = true;
-    };
-    if (k.second) addPair('二次採樣 對照', k.images[K.outputs.second], '二次採樣');
-    if (k.seedvr2) addPair('SeedVR2 對照', k.images[K.outputs.seedvr2], 'SeedVR2');
+    }
     show('compare-card', any);
     if (any) animateSwitch($('compare-card'), 8);
   }
@@ -750,7 +795,7 @@
       case 'executed':
         if (d.output && d.output.images) {
           addResults(d.output.images);
-          if (state.run && state.run.krea2) state.run.krea2.images[String(d.node)] = viewUrl(d.output.images[0]);
+          if (state.run && state.run.compare) state.run.compare.images[String(d.node)] = viewUrl(d.output.images[0]);
         }
         break;
       case 'execution_error':
