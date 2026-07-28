@@ -68,7 +68,8 @@ header.topbar {
 .brand .logo .logo-fill {
   position: absolute; left: 0; right: 0; bottom: 0; height: 100%; z-index: 1;
   background: linear-gradient(140deg, var(--accent), var(--accent-2));
-  transform: translateY(100%);
+  /* 多推 8px：液面橢圓定位在 top:-4px，只推 100% 的話它會露在 logo 底部變成一條橫線 */
+  transform: translateY(calc(100% + 8px));
 }
 /* 液面：一顆扁橢圓騎在水位上緣，讓它有弧度而不是一條直線 */
 .brand .logo .logo-fill::before {

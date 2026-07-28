@@ -287,8 +287,9 @@
     // （實測第二次之後連 animationstart 都不會觸發），finished promise 則穩定得多。
     cancelScriptAnims(fill);
     const anim = fill.animate(
-      [{ transform: 'translateY(100%)' }, { transform: 'translateY(0)' }],
-      { duration: 820, easing: 'cubic-bezier(.42,0,.22,1)', fill: 'forwards' }
+      // 起點要跟 CSS 的靜止位置一致，否則液面橢圓會先閃一下才開始漲
+      [{ transform: 'translateY(calc(100% + 8px))' }, { transform: 'translateY(0)' }],
+      { duration: 500, easing: 'cubic-bezier(.42,0,.22,1)', fill: 'forwards' }
     );
     const settle = () => {
       logo.style.background = '';   // 底層交還給 var()，此時已是新色
@@ -297,7 +298,7 @@
     anim.finished.then(settle).catch(() => {});   // 被下一次切換取消會 reject，忽略即可
     // 保險：分頁在背景時 rAF 不觸發、動畫不前進，finished 永遠不會結算，
     // 沒有這道 logo 會卡在舊色。settle 重複呼叫是無害的。
-    setTimeout(settle, 1400);
+    setTimeout(settle, 1000);
   }
 
   // 依引擎重建「模型」下拉
