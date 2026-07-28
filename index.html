@@ -38,9 +38,10 @@
       <div class="form" id="form">
         <div class="mode-desc" id="mode-desc"></div>
 
-        <div class="field">
+        <div class="field prompt-wrap">
           <label>提示詞 <span class="hint" id="prompt-hint"></span></label>
           <textarea id="prompt" placeholder="描述你想要的畫面 / 編輯指令…"></textarea>
+          <button type="button" class="ai-btn" id="ai-btn" title="AI 優化提示詞">✦</button>
         </div>
 
         <!-- 圖片上傳（動態） -->
@@ -254,6 +255,7 @@
 
 <div class="lightbox" id="lightbox"><img id="lightbox-img" alt=""></div>
 
+<script src="config.js?v=1"></script>
 <script src="converter.js?v=1"></script>
 <script src="zimage.js?v=1"></script>
 <script src="krea2.js?v=1"></script>

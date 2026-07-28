@@ -2,7 +2,7 @@
 window.YZ_K = {
   // 固定模型
   UNET: 'redcraft23INT8INT4FP8_30Krea2.safetensors',
-  CLIP: 'qwen3vl_4b_fp8_mixed.safetensors',   // type: krea2
+  CLIP: 'qwen3vl_4b_fp8_scaled.safetensors',   // type: krea2
   VAE: 'qwen_image_vae.safetensors',
 
   MODE_ORDER: ['kt2i'],

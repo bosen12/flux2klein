@@ -105,6 +105,20 @@ textarea, input[type=text], input[type=number], select {
 textarea { resize: vertical; min-height: 92px; line-height: 1.55; }
 textarea:focus, input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
+/* AI 優化按鈕 */
+.prompt-wrap { position: relative; }
+.ai-btn {
+  position: absolute; right: 8px; bottom: 8px;
+  width: 28px; height: 28px; border-radius: 50%; border: none;
+  background: var(--accent); color: #fff;
+  font-size: 14px; line-height: 28px; text-align: center;
+  cursor: pointer; opacity: 0; transition: opacity .2s, transform .2s;
+  transform: scale(.8); z-index: 2; box-shadow: 0 2px 8px rgba(0,0,0,.2);
+}
+.prompt-wrap:hover .ai-btn, .ai-btn:focus { opacity: 1; transform: scale(1); }
+.ai-btn.loading { opacity: 1; transform: scale(1); animation: ai-spin 1s linear infinite; }
+@keyframes ai-spin { to { transform: scale(1) rotate(360deg); } }
+
 .row { display: flex; gap: 10px; }
 .row > * { flex: 1; }
 
@@ -439,10 +453,44 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   border-radius: var(--radius-sm); overflow: hidden;
   user-select: none; touch-action: none;
   background: repeating-conic-gradient(#f0f2f5 0% 25%, #fafbfc 0% 50%) 50% / 20px 20px;
+  cursor: zoom-in;
 }
 .cmp img { display: block; }
 .cmp-a { width: 100%; }
 .cmp-b { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+
+/* 對照 lightbox overlay */
+.cmp-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center;
+  cursor: grab;
+}
+.cmp-overlay:active { cursor: grabbing; }
+.cmp-overlay .cmp-viewport {
+  position: relative; overflow: hidden; width: 100%; height: 100%;
+}
+.cmp-overlay .cmp-inner {
+  position: absolute; transform-origin: 0 0; user-select: none;
+}
+.cmp-overlay .cmp-inner img { display: block; pointer-events: none; }
+.cmp-overlay .cmp-inner .cmp-a { width: 100%; }
+.cmp-overlay .cmp-inner .cmp-b { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+.cmp-overlay .cmp-close {
+  position: absolute; top: 16px; right: 16px; z-index: 10;
+  width: 36px; height: 36px; border-radius: 50%; border: none;
+  background: rgba(255,255,255,.15); color: #fff; font-size: 20px; line-height: 36px;
+  text-align: center; cursor: pointer; backdrop-filter: blur(4px);
+}
+.cmp-overlay .cmp-close:hover { background: rgba(255,255,255,.3); }
+.cmp-overlay .cmp-hint {
+  position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+  font-size: 12px; color: rgba(255,255,255,.5); pointer-events: none;
+}
+/* overlay 開場動畫 */
+.cmp-overlay { opacity: 0; transition: opacity .25s ease; }
+.cmp-overlay.open { opacity: 1; }
+/* overlay 分隔線稍粗 */
+.cmp-overlay .cmp-divider { width: 3px; transform: translateX(-1.5px); }
 .cmp-divider { position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.2); transform: translateX(-1px); cursor: ew-resize; }
 .cmp-divider::after { content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 32px; height: 32px; border-radius: 50%; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
 .cmp-divider::before { content: '‹›'; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 1; font-size: 13px; font-weight: 700; color: var(--text-dim); }

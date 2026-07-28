@@ -436,10 +436,19 @@
       tpl[nd.latent].inputs.width = +$('width').value || 1024;
       tpl[nd.latent].inputs.height = +$('height').value || 1024;
     }
-    // 增強開關 + 相依（例如 SeedVR2/SD 放大需先有 Hires）
+    // 增強開關
     const on = {};
     for (const e of E.enhance) on[e.key] = !!($('enh-' + e.key) && $('enh-' + e.key).checked);
     for (const e of E.enhance) if (e.requires && on[e.key]) on[e.requires] = true;
+    // 放大節點：hires 關時改接 base VAEDecode 輸出
+    if (!on.hires) {
+      for (const e of E.enhance) {
+        if (!on[e.key] || !e.imageNode) continue;
+        const node = tpl[e.imageNode];
+        if (node && node.inputs.image && node.inputs.image[0] === '78:57')
+          node.inputs.image = ['77:76', 0];
+      }
+    }
     // 各開啟分支：種子跟隨 + 參考圖上傳
     for (const e of E.enhance) {
       if (!on[e.key]) continue;
@@ -453,8 +462,13 @@
       }
     }
     // 裁剪：關閉的分支移除；一律移除的節點（比較節點等）移除
-    for (const e of E.enhance) if (!on[e.key]) for (const id of e.branch) delete tpl[id];
-    for (const id of (E.alwaysDelete || [])) delete tpl[id];
+    const enhLog = E.enhance.map(e => `${e.name}=${on[e.key] ? '開' : '關'}`).join('、');
+    log(`增強：${enhLog}`, 'info');
+    const deleted = [];
+    for (const e of E.enhance) if (!on[e.key]) for (const id of e.branch) { delete tpl[id]; deleted.push(id); }
+    for (const id of (E.alwaysDelete || [])) { delete tpl[id]; deleted.push(id); }
+    log(`已移除節點：${deleted.join(', ')}`, 'info');
+    log(`送出節點：${Object.keys(tpl).join(', ')}`, 'info');
     // 送出
     $('run').textContent = '送出中…';
     const res = await fetch(API + '/prompt', {
@@ -628,6 +642,7 @@
       started: new Set(),              // 已開始執行過的節點
       cached: new Set(),               // 被快取略過的節點（等同已完成）
       curNode: null, curFrac: 0,       // 目前節點與它的內部進度(0~1)
+      peakFrac: 0, tiles: 0,           // 進度條只進不退 + 分塊計數
       firstT: 0, firstV: 0, lastValue: 0, rate: 0, t0: performance.now(),
       results: [],
     };
@@ -648,7 +663,9 @@
     const running = r.curNode != null ? 1 : 0;
     const completed = r.cached.size + Math.max(0, r.started.size - running);
     let frac = (completed + r.curFrac) / r.total;
-    frac = Math.max(0, Math.min(0.99, frac)); // 收到「完成」訊息前不到 100%
+    frac = Math.max(0, Math.min(0.99, frac));
+    r.peakFrac = Math.max(r.peakFrac, frac);  // 只進不退
+    frac = r.peakFrac;
     const pct = Math.round(frac * 100);
     $('pct').textContent = pct + '%';
     $('bar-fill').style.width = pct + '%';
@@ -657,16 +674,27 @@
   function onProgress(value, max) {
     const r = state.run; if (!r) return;
     const now = performance.now();
-    // 首個進度事件、或進度條重置時，重新錨定起點
+
+    // 偵測分塊重置：progress value 回跳代表上一塊已完成
+    if (r.lastValue > 0 && value < r.lastValue) {
+      r.tiles++;
+      const remaining = 0.99 - r.peakFrac;
+      r.peakFrac = Math.min(r.peakFrac + remaining * 0.08, 0.99);
+    }
+
     if (!r.firstT || value < r.lastValue) { r.firstT = now; r.firstV = value; }
     r.lastValue = value;
-    // 取樣平均 it/s：自第一個進度事件以來 (步數 ÷ 秒)，與 ComfyUI 主控台一致
     const elapsed = (now - r.firstT) / 1000;
     if (elapsed > 0 && value > r.firstV) r.rate = (value - r.firstV) / elapsed;
 
-    r.curFrac = max ? (value / max) : 0;   // 目前節點的內部進度
-    updateOverall();                        // 主進度條以節點為準
-    $('m-step').innerHTML = `${value}<small> / ${max}</small>`;
+    r.curFrac = max ? (value / max) : 0;
+    updateOverall();
+
+    if (r.tiles > 0) {
+      $('m-step').innerHTML = `第${r.tiles + 1}塊 ${value}<small> / ${max}</small>`;
+    } else {
+      $('m-step').innerHTML = `${value}<small> / ${max}</small>`;
+    }
 
     if (r.rate > 0) {
       $('m-speed').innerHTML = r.rate >= 1
@@ -714,11 +742,132 @@
     const set = p => { p = Math.max(0, Math.min(100, p)); before.style.clipPath = `inset(0 ${100 - p}% 0 0)`; divider.style.left = p + '%'; };
     set(50);
     const move = e => { const r = el.getBoundingClientRect(); set(((e.touches ? e.touches[0].clientX : e.clientX) - r.left) / r.width * 100); };
-    let drag = false;
-    el.addEventListener('pointerdown', e => { drag = true; move(e); });
-    window.addEventListener('pointermove', e => { if (drag) move(e); });
+    let drag = false, didDrag = false;
+    el.addEventListener('pointerdown', e => { drag = true; didDrag = false; move(e); });
+    window.addEventListener('pointermove', e => { if (drag) { didDrag = true; move(e); } });
     window.addEventListener('pointerup', () => drag = false);
+    el.addEventListener('click', () => { if (!didDrag) openCompareOverlay(beforeUrl, afterUrl, labelB, labelA, el); });
     return el;
+  }
+
+  function openCompareOverlay(beforeUrl, afterUrl, labelB, labelA, sourceEl) {
+    const overlay = document.createElement('div');
+    overlay.className = 'cmp-overlay';
+    const viewport = document.createElement('div');
+    viewport.className = 'cmp-viewport';
+    // 圖片層（會被 transform）
+    const inner = document.createElement('div');
+    inner.className = 'cmp-inner';
+    inner.innerHTML = `<img class="cmp-a" src="${afterUrl}" alt=""><img class="cmp-b" src="${beforeUrl}" alt="">`;
+    viewport.appendChild(inner);
+    // 分隔線 + 標籤在 viewport 層（不跟著平移）
+    const divider = document.createElement('div'); divider.className = 'cmp-divider';
+    const tagB = document.createElement('span'); tagB.className = 'cmp-tag cmp-tag-b'; tagB.textContent = labelB;
+    const tagA = document.createElement('span'); tagA.className = 'cmp-tag cmp-tag-a'; tagA.textContent = labelA;
+    viewport.append(divider, tagB, tagA);
+    overlay.appendChild(viewport);
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'cmp-close'; closeBtn.textContent = '✕';
+    overlay.appendChild(closeBtn);
+    const hint = document.createElement('div');
+    hint.className = 'cmp-hint'; hint.textContent = '滾輪縮放 · 拖曳平移 · 分隔線比較';
+    overlay.appendChild(hint);
+    document.body.appendChild(overlay);
+
+    const imgA = inner.querySelector('.cmp-a');
+    const before = inner.querySelector('.cmp-b');
+    let scale = 1, tx = 0, ty = 0, imgW = 0, imgH = 0;
+    let divX = 0; // 分隔線在 viewport 的像素位置
+    let divDrag = false, panDrag = false, panStart = null;
+    const applyTransform = () => { inner.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`; };
+
+    // 根據 viewport 空間的 divX 更新 clip 和線位置
+    const updateClip = () => {
+      divider.style.left = divX + 'px';
+      if (!imgW) return;
+      const clipPct = ((divX - tx) / (imgW * scale)) * 100;
+      const clamped = Math.max(0, Math.min(100, clipPct));
+      before.style.clipPath = `inset(0 ${100 - clamped}% 0 0)`;
+    };
+
+    const fitImage = () => {
+      imgW = imgA.naturalWidth || 800;
+      imgH = imgA.naturalHeight || 800;
+      inner.style.width = imgW + 'px';
+      const vw = viewport.clientWidth, vh = viewport.clientHeight;
+      scale = Math.min(vw / imgW, vh / imgH, 1);
+      tx = (vw - imgW * scale) / 2;
+      ty = (vh - imgH * scale) / 2;
+      divX = vw / 2;
+
+      if (sourceEl && !inner.classList.contains('ready')) {
+        const sr = sourceEl.getBoundingClientRect();
+        const startScale = sr.width / imgW;
+        // 第 1 幀：定位在小圖位置
+        inner.style.transition = 'none';
+        inner.style.transform = `translate(${sr.left}px,${sr.top}px) scale(${startScale})`;
+        inner.offsetHeight; // 強制繪製起始幀
+        // 第 2 幀：啟用 transition，飛到目標位置
+        inner.style.transition = 'transform .4s cubic-bezier(.22,1,.36,1)';
+        overlay.classList.add('open');
+        applyTransform();
+        updateClip();
+        setTimeout(() => { inner.style.transition = 'none'; inner.classList.add('ready'); }, 420);
+      } else {
+        overlay.classList.add('open');
+        applyTransform();
+        updateClip();
+        inner.classList.add('ready');
+      }
+    };
+    imgA.onload = fitImage;
+    if (imgA.complete) setTimeout(fitImage, 0);
+
+    divider.addEventListener('pointerdown', e => { e.stopPropagation(); divDrag = true; });
+
+    viewport.addEventListener('pointerdown', e => {
+      if (divDrag) return;
+      panDrag = true;
+      panStart = { x: e.clientX - tx, y: e.clientY - ty };
+    });
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    function onMove(e) {
+      if (divDrag) {
+        divX = Math.max(0, Math.min(viewport.clientWidth, e.clientX));
+        updateClip();
+        return;
+      }
+      if (panDrag && panStart) {
+        tx = e.clientX - panStart.x;
+        ty = e.clientY - panStart.y;
+        applyTransform();
+        updateClip();
+      }
+    }
+    function onUp() { divDrag = false; panDrag = false; panStart = null; }
+
+    viewport.addEventListener('wheel', e => {
+      e.preventDefault();
+      const prev = scale;
+      scale *= e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      scale = Math.max(0.1, Math.min(20, scale));
+      const ratio = scale / prev;
+      tx = e.clientX - (e.clientX - tx) * ratio;
+      ty = e.clientY - (e.clientY - ty) * ratio;
+      applyTransform();
+      updateClip();
+    }, { passive: false });
+
+    const close = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      overlay.remove();
+    };
+    closeBtn.onclick = close;
+    overlay.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+    overlay.tabIndex = -1; overlay.focus();
   }
 
   function buildCompare(c) {
@@ -783,6 +932,7 @@
           r.started.add(String(d.node));
           r.curNode = String(d.node);
           r.curFrac = 0;
+          r.tiles = 0; r.lastValue = 0;
           const cls = classOfNode(d.node);
           const done = r.cached.size + Math.max(0, r.started.size - 1);
           setStage(`執行中：${cls || d.node}` + (r.total ? ` (節點 ${Math.min(done + 1, r.total)}/${r.total})` : ''));
@@ -862,6 +1012,94 @@
       if ($('opt-notify').checked && Notification && Notification.permission === 'default') Notification.requestPermission();
     };
     $('lightbox').onclick = () => $('lightbox').classList.remove('on');
+    $('ai-btn').onclick = aiOptimizePrompt;
+  }
+
+  /* ---------------- AI 提示詞優化（Groq） ---------------- */
+  const GROQ_KEY = window.YZ_CONFIG?.GROQ_API_KEY || '';
+  const AI_SYSTEM = {
+    flux2klein: `You are a prompt engineer for Flux 2 Klein 4B. The user gives a rough idea; you return ONLY the optimized English prompt (no explanation, no quotes).
+CRITICAL RULES for Flux 2 Klein:
+- Write NATURAL LANGUAGE descriptions, NOT comma-separated keyword lists.
+- Uses a Qwen text encoder that understands semantics — do NOT stack quality tags (no "8k, masterpiece, best quality").
+- Structure: subject FIRST (never bury it under scene description) → lighting → style/composition.
+- Optimal length: 100–400 words of rich, flowing description.
+- Example style: "A woman in her 30s standing at a rain-soaked Tokyo crosswalk, neon reflections pooling on wet asphalt, shot from a low angle with shallow depth of field..."`,
+    zimage: `You are a prompt engineer for Z-Image Turbo (pornmasterZImage). The user gives a rough idea; you return ONLY the optimized English prompt (no explanation, no quotes).
+CRITICAL RULES for Z-Image Turbo:
+- Write FULL NATURAL LANGUAGE SENTENCES, not comma-separated tag stacking.
+- Put the most important subject words at the very beginning.
+- Structure in order: 1) Subject description 2) Style modifiers 3) Quality words 4) Emphasis/repetition of key elements 5) Composition directives.
+- Descriptive flowing prose works far better than keyword lists.`,
+    krea2: `You are a prompt engineer for Krea 2 (FLUX-based architecture). The user gives a rough idea; you return ONLY the optimized English prompt (no explanation, no quotes).
+CRITICAL RULES for Krea 2:
+- Write NATURAL LANGUAGE descriptions, same approach as Flux models.
+- Describe real photography details: lighting conditions, lens characteristics, material textures — these are highly effective.
+- Do NOT use traditional SD-style quality tag stacking (no "masterpiece, best quality, 8k" etc.).
+- Subject first, then atmosphere, lighting, and technical photography details.`,
+    illustrious: `You are a prompt engineer for waiIllustrious SDXL v170 (Danbooru-trained anime model). The user gives a rough idea; you return ONLY the optimized English prompt (no explanation, no quotes).
+CRITICAL RULES for Illustrious:
+- Use DANBOORU-STYLE COMMA-SEPARATED TAGS, absolutely NOT natural language sentences.
+- Strict tag order (earlier = higher weight, 77 token limit so front-load important features):
+  1) Quality: masterpiece, best quality, amazing quality
+  2) Subject count/composition: 1girl, solo / 2girls, etc.
+  3) Character/series name if applicable
+  4) Appearance: hair color, eye color, hairstyle
+  5) Outfit/clothing details
+  6) Pose, expression, action
+  7) Background, setting, lighting
+- Keep it concise — every tag past the 77-token window gets diluted.`,
+  };
+
+  async function aiOptimizePrompt() {
+    const ta = $('prompt');
+    const text = ta.value.trim();
+    if (!text) { log('請先輸入提示詞再使用 AI 優化', 'warn'); return; }
+    if (!GROQ_KEY) { log('未設定 Groq API Key，請建立 config.js', 'err'); return; }
+    const btn = $('ai-btn');
+    btn.classList.add('loading');
+    ta.value = '';
+    try {
+      const sys = AI_SYSTEM[state.engine] || AI_SYSTEM.flux2klein;
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [
+            { role: 'system', content: sys },
+            { role: 'user', content: text },
+          ],
+          temperature: 1, max_completion_tokens: 2048, top_p: 1, stream: true,
+        }),
+      });
+      if (!res.ok) throw new Error(`Groq API ${res.status}`);
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const line of lines) {
+          const trimmed = line.replace(/^data: /, '').trim();
+          if (!trimmed || trimmed === '[DONE]') continue;
+          try {
+            const chunk = JSON.parse(trimmed);
+            const delta = chunk.choices?.[0]?.delta?.content;
+            if (delta) ta.value += delta;
+          } catch {}
+        }
+      }
+      log('AI 優化完成', 'ok');
+    } catch (e) {
+      log('AI 優化失敗：' + e.message, 'err');
+      if (!ta.value) ta.value = text;
+    } finally {
+      btn.classList.remove('loading');
+    }
   }
 
   function openLightbox(url) { $('lightbox-img').src = url; $('lightbox').classList.add('on'); }

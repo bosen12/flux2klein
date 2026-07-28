@@ -12,5 +12,8 @@ fake.log
 .DS_Store
 Thumbs.db
 
+# 本地設定（含 API key）
+config.js
+
 # 誤建的空檔
 /ComfyUI

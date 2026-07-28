@@ -152,26 +152,28 @@
   },
   "56": {
     "inputs": {
+      "filename_prefix": "Illustrious_hires",
       "images": [
         "78:57",
         0
       ]
     },
-    "class_type": "PreviewImage",
+    "class_type": "SaveImage",
     "_meta": {
-      "title": "預覽圖片"
+      "title": "儲存圖片"
     }
   },
   "64": {
     "inputs": {
+      "filename_prefix": "Illustrious_cnet",
       "images": [
         "79:63",
         0
       ]
     },
-    "class_type": "PreviewImage",
+    "class_type": "SaveImage",
     "_meta": {
-      "title": "預覽圖片"
+      "title": "儲存圖片"
     }
   },
   "69": {
@@ -187,38 +189,41 @@
   },
   "73": {
     "inputs": {
+      "filename_prefix": "Illustrious",
       "images": [
         "77:76",
         0
       ]
     },
-    "class_type": "PreviewImage",
+    "class_type": "SaveImage",
     "_meta": {
-      "title": "預覽圖片"
+      "title": "儲存圖片"
     }
   },
   "81": {
     "inputs": {
+      "filename_prefix": "Illustrious_seedvr2",
       "images": [
         "80:30",
         0
       ]
     },
-    "class_type": "PreviewImage",
+    "class_type": "SaveImage",
     "_meta": {
-      "title": "預覽圖片"
+      "title": "儲存圖片"
     }
   },
   "83": {
     "inputs": {
+      "filename_prefix": "Illustrious_sdupscale",
       "images": [
         "82:14",
         0
       ]
     },
-    "class_type": "PreviewImage",
+    "class_type": "SaveImage",
     "_meta": {
-      "title": "預覽圖片"
+      "title": "儲存圖片"
     }
   },
   "77:75": {
