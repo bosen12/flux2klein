@@ -27,11 +27,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 body {
-  background:
-    radial-gradient(1100px 560px at 12% -12%, rgba(91,82,240,.07), transparent 60%),
-    radial-gradient(900px 480px at 108% -6%, rgba(16,179,171,.06), transparent 55%),
-    var(--bg);
-  background-attachment: fixed;
+  background: var(--bg);   /* 動態光暈改由 .bg-fx 提供 */
   color: var(--text);
   font-size: 14px;
   line-height: 1.5;
@@ -606,3 +602,40 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 :root[data-engine="illustrious"] .run-loader [stroke="#4f46e5"] { stroke: #ec4899; }
 :root[data-engine="illustrious"] .run-loader [stroke="#0ea5a4"] { stroke: #fb7185; }
 :root[data-engine="illustrious"] .run-loader [stroke="rgba(79,70,229,0.18)"] { stroke: rgba(236,72,153,.18); }
+
+/* ==================== 流動漸層背景特效 ==================== */
+.bg-fx { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.app { position: relative; z-index: 1; }
+.bg-fx .blob {
+  position: absolute; top: 0; left: 0;
+  width: 55vmax; height: 55vmax; border-radius: 50%;
+  filter: blur(60px); opacity: .42; will-change: transform;
+}
+.bg-fx .b1 { background: radial-gradient(circle, color-mix(in srgb, var(--accent)   72%, transparent), transparent 60%); }
+.bg-fx .b2 { background: radial-gradient(circle, color-mix(in srgb, var(--accent-2) 66%, transparent), transparent 60%); }
+.bg-fx .b3 { background: radial-gradient(circle, color-mix(in srgb, var(--accent-3) 60%, transparent), transparent 60%); }
+/* 靜態噪點（SVG feTurbulence，內嵌免外部資源）*/
+.bg-fx .bg-noise {
+  position: absolute; inset: 0; opacity: .16; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat; background-size: 140px 140px;
+}
+/* 減少動態：停止漂移（保留靜態柔光）*/
+@media (prefers-reduced-motion: reduce) {
+  .bg-fx .blob { transition: none; }
+}
+
+/* 色團初始散佈（減少動態時的靜態柔光；JS 動畫會以 inline transform 覆蓋）*/
+.bg-fx .b1 { transform: translate(-8vw, -6vh); }
+.bg-fx .b2 { transform: translate(62vw, 28vh); }
+.bg-fx .b3 { transform: translate(22vw, 58vh); }
+
+/* 切換引擎時：標題以主題漸層掃過（reveal 過渡），結束還原為實色 */
+#brand-title.sweep {
+  background: linear-gradient(100deg, var(--accent), var(--accent-2) 35%, var(--accent-3) 70%, var(--accent));
+  background-size: 250% 100%;
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  animation: title-sweep .85s ease forwards;
+}
+@keyframes title-sweep { from { background-position: 130% 0; } to { background-position: -30% 0; } }
+@media (prefers-reduced-motion: reduce) { #brand-title.sweep { animation: none; } }

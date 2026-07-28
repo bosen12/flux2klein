@@ -53,6 +53,28 @@
     if (!pillReady) { void pill.offsetWidth; pill.style.transition = ''; pillReady = true; }
   }
 
+  // 流動背景：三顆色團在畫面內隨機漂移 + 撞邊反彈（用 transform，GPU 合成、省效能）
+  function startBgFx() {
+    const blobs = [...document.querySelectorAll('.bg-fx .blob')];
+    if (!blobs.length || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const SPD = 0.00007;                       // 佔畫面比例 / 毫秒（很慢的飄移）
+    const rndVel = () => { const a = Math.random() * Math.PI * 2, m = SPD * (0.5 + Math.random()); return [Math.cos(a) * m, Math.sin(a) * m]; };
+    const st = blobs.map(el => { const [vx, vy] = rndVel(); return { el, x: Math.random(), y: Math.random(), vx, vy, hw: el.offsetWidth / 2, hh: el.offsetHeight / 2 }; });
+    addEventListener('resize', () => st.forEach(s => { s.hw = s.el.offsetWidth / 2; s.hh = s.el.offsetHeight / 2; }));
+    let prev = performance.now();
+    (function tick(t) {
+      const dt = Math.min(50, t - prev); prev = t;
+      const vw = innerWidth, vh = innerHeight;
+      for (const s of st) {
+        s.x += s.vx * dt; s.y += s.vy * dt;
+        if (s.x < 0 || s.x > 1) { const [nx, ny] = rndVel(); s.vx = (s.x < 0 ? 1 : -1) * Math.abs(nx); s.vy = ny; s.x = Math.max(0, Math.min(1, s.x)); }
+        if (s.y < 0 || s.y > 1) { const [nx, ny] = rndVel(); s.vy = (s.y < 0 ? 1 : -1) * Math.abs(ny); s.vx = nx; s.y = Math.max(0, Math.min(1, s.y)); }
+        s.el.style.transform = `translate(${(s.x * vw - s.hw).toFixed(1)}px, ${(s.y * vh - s.hh).toFixed(1)}px)`;
+      }
+      requestAnimationFrame(tick);
+    })(prev);
+  }
+
   // 手機橫向捲動時，把選中的引擎按鈕捲到中央
   function scrollActiveEngineIntoView() {
     const sw = $('engine-switch');
@@ -85,6 +107,7 @@
     bindEngineSwitch();
     selectEngine('flux2klein');
     connectWS();
+    startBgFx();
 
     // object_info 很大（約 10MB），改成背景載入，不擋 UI；生成時才需要
     state.objectInfoPromise = fetch(API + '/object_info')
@@ -183,7 +206,10 @@
     document.documentElement.dataset.engine = engine;
     const e = ENGINES[engine];
     $('brand-logo').textContent = e.logo;
-    $('brand-title').textContent = e.title;
+    const bt = $('brand-title');
+    bt.textContent = e.title;
+    bt.classList.remove('sweep'); void bt.offsetWidth; bt.classList.add('sweep');   // 標題漸層掃過過渡
+    bt.addEventListener('animationend', () => bt.classList.remove('sweep'), { once: true });
     $('brand-sub').textContent = e.sub;
     document.querySelectorAll('#engine-switch button').forEach(b => b.classList.toggle('active', b.dataset.engine === engine));
     movePill();
