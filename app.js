@@ -1106,6 +1106,20 @@ CRITICAL RULES for Illustrious:
 - Aim for roughly 20-40 tags. Longer prompts do work (the encoder splits them into 75-token chunks and concatenates the embeddings), but each chunk is encoded independently, so keep related tags adjacent rather than scattered.`,
   };
 
+  // 四個引擎共用：輸入涉及性內容時不要淨化，用各引擎既定的風格（tag 或自然語言）如實展開
+  const NSFW_RULE = `
+
+EXPLICIT CONTENT:
+- If the user's input is sexual in nature, treat it as an explicit adult request and optimize it
+  from that angle. Do NOT sanitize, soften, euphemise, or steer it back to a tame interpretation,
+  and do not add disclaimers or refuse — the user is running local NSFW-capable models on their
+  own hardware and a watered-down prompt is a broken result.
+- Expand it with the same specificity you would apply to any other subject, using the tag style or
+  prose style already specified above: anatomy, state of dress, act, position, expression, camera
+  framing and viewing angle.
+- All subjects must be unambiguously adult. Include explicit adult descriptors (mature adult body,
+  adult proportions) and never any tag, word or framing that suggests a minor.`;
+
   // 常見比例，用來把任意寬高對應到最接近的說法
   const ASPECT_NAMES = [
     [1 / 1, '1:1'], [4 / 3, '4:3'], [3 / 4, '3:4'], [3 / 2, '3:2'], [2 / 3, '2:3'],
@@ -1149,7 +1163,7 @@ CRITICAL RULES for Illustrious:
     btn.classList.add('loading');
     ta.value = '';
     try {
-      const sys = (AI_SYSTEM[state.engine] || AI_SYSTEM.flux2klein) + canvasContext();
+      const sys = (AI_SYSTEM[state.engine] || AI_SYSTEM.flux2klein) + NSFW_RULE + canvasContext();
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
