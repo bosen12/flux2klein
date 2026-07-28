@@ -630,12 +630,21 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .bg-fx .b2 { transform: translate(62vw, 28vh); }
 .bg-fx .b3 { transform: translate(22vw, 58vh); }
 
-/* 切換引擎時：標題以主題漸層掃過（reveal 過渡），結束還原為實色 */
-#brand-title.sweep {
+/* 切換引擎時：標題以主題漸層掃過（reveal 過渡）。平常是墨黑，
+   墨色用 -webkit-text-fill-color 過渡 → 慢慢染回黑、也慢慢淡出成漸層 */
+#brand-title {
   background: linear-gradient(100deg, var(--accent), var(--accent-2) 35%, var(--accent-3) 70%, var(--accent));
   background-size: 250% 100%;
-  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  animation: title-sweep .85s ease forwards;
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: var(--text);
+  transition: -webkit-text-fill-color .6s ease;
+}
+#brand-title.sweep {
+  -webkit-text-fill-color: transparent;
+  animation: title-sweep .85s ease;
 }
 @keyframes title-sweep { from { background-position: 130% 0; } to { background-position: -30% 0; } }
-@media (prefers-reduced-motion: reduce) { #brand-title.sweep { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  #brand-title { transition: none; }
+  #brand-title.sweep { animation: none; -webkit-text-fill-color: var(--text); }
+}
