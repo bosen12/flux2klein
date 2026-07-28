@@ -947,7 +947,7 @@
         break;
       case 'executed':
         if (d.output && d.output.images) {
-          addResults(d.output.images);
+          addResults(d.output.images, d.node);
           if (state.run && state.run.compare) state.run.compare.images[String(d.node)] = viewUrl(d.output.images[0]);
         }
         break;
@@ -989,15 +989,32 @@
     img.src = url; img.dataset.url = url;
   }
 
-  function addResults(images) {
+  // 依輸出節點反查來源標籤；增強引擎查 outputs 對照表，其餘引擎退回模式名稱
+  function sourceLabel(nodeId) {
+    const c = state.run && state.run.compare;
+    if (c && c.E && c.E.outputs) {
+      const id = String(nodeId);
+      for (const key of Object.keys(c.E.outputs)) {
+        if (String(c.E.outputs[key]) !== id) continue;
+        return key === 'base' ? '原圖' : ((c.E.compareLabels && c.E.compareLabels[key]) || key);
+      }
+    }
+    const m = currentModes()[state.mode];
+    return (m && m.label) || '';
+  }
+
+  function addResults(images, nodeId) {
     const gal = $('gallery');
+    const label = sourceLabel(nodeId);
     for (const im of images) {
       if (im.type === 'temp') continue; // 只收最終輸出
       const q = new URLSearchParams({ filename: im.filename, subfolder: im.subfolder || '', type: im.type || 'output' });
       const url = API + '/view?' + q.toString();
       const cell = document.createElement('div');
       cell.className = 'result';
-      cell.innerHTML = `<img src="${url}" alt=""><a class="dl" href="${url}" download="${im.filename}">下載</a>`;
+      cell.innerHTML = `<img src="${url}" alt="">`
+        + (label ? `<span class="src-tag">${label}</span>` : '')
+        + `<a class="dl" href="${url}" download="${im.filename}">下載</a>`;
       cell.querySelector('img').onclick = () => openLightbox(url);
       gal.insertBefore(cell, gal.firstChild);
     }
@@ -1016,6 +1033,7 @@
     };
     $('lightbox').onclick = () => $('lightbox').classList.remove('on');
     $('ai-btn').onclick = aiOptimizePrompt;
+    $('gallery-clear').onclick = () => { $('gallery').innerHTML = ''; };
     document.addEventListener('keydown', onGlobalKey);
   }
 
