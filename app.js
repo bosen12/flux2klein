@@ -33,8 +33,16 @@
 
   // 頁面切換過渡：淡入 + 微幅上移（僅動 opacity/transform → 不觸發 reflow、無版面跳動、不影響捲軸）
   const prefersReduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // el.animate() 產生的 Animation 不會自動釋放，每切換一次就在元素上累積一個。
+  // 開播前先取消同一元素上舊的腳本動畫（animationName 有值的是 CSS 動畫，不要動）。
+  function cancelScriptAnims(el) {
+    if (!el.getAnimations) return;
+    el.getAnimations().forEach(a => { if (!a.animationName) a.cancel(); });
+  }
+
   function animateSwitch(el, dy = 6) {
     if (!el || prefersReduced || !el.animate) return;
+    cancelScriptAnims(el);
     el.animate(
       [{ opacity: 0, transform: `translateY(${dy}px)` }, { opacity: 1, transform: 'translateY(0)' }],
       { duration: 240, easing: 'cubic-bezier(.22,.61,.36,1)' }
@@ -194,7 +202,8 @@
     // 圖片上傳區
     buildUploads(m);
 
-    // 各模式專屬欄位顯示切換
+    // 各模式專屬欄位顯示切換（整批改，交給下面的 animateSwitch 統一淡入）
+    suppressReveal = true;
     show('images-field', m.images.length > 0 && !(m.images.length === 1 && m.images[0].mask));
     show('mask-field', m.images.some(i => i.mask));
     show('size-field', !!m.size);
@@ -204,13 +213,14 @@
     if (eng && eng.enhance) buildEnhance(eng, m);
     show('enhance-field', !!(eng && eng.enhance));      // Krea2 / Illustrious 的增強卡片
     show('model-field', !(eng && eng.enhance));         // 有增強的引擎皆為單一固定模型，隱藏下拉
+    suppressReveal = false;
     $('images-hint').textContent = `需 ${m.images.filter(i => !i.mask).length} 張`;
 
     if (m.size) buildAspectPresets();
     state.images = {}; // 換模式清空已選圖
     state.mask = null;
     animateSwitch($('form'));   // 切換模式：表單淡入
-    } catch (err) { log('切換模式錯誤：' + err.message, 'err'); console.error(err); }
+    } catch (err) { suppressReveal = false; log('切換模式錯誤：' + err.message, 'err'); console.error(err); }
   }
 
   /* ---------------- 引擎切換 ---------------- */
@@ -284,9 +294,25 @@
     }
   }
 
+  // 切換模式時會一次改十幾個欄位，那時由 form 統一淡入，個別欄位不要各播各的
+  let suppressReveal = false;
+
   function show(id, on, isField = false) {
     const el = isField ? $(id).closest('.field') : $(id);
-    if (el) el.style.display = on ? '' : 'none';
+    if (!el) return;
+    const wasVisible = el.style.display !== 'none';
+    el.style.display = on ? '' : 'none';
+    // 只有「從隱藏變顯示」才播；隱藏用瞬間收掉，硬收比硬開自然得多
+    if (on && !wasVisible && !suppressReveal) revealAnim(el);
+  }
+
+  function revealAnim(el) {
+    if (prefersReduced || !el.animate) return;
+    cancelScriptAnims(el);
+    el.animate(
+      [{ opacity: 0, transform: 'translateY(-6px)' }, { opacity: 1, transform: 'translateY(0)' }],
+      { duration: 260, easing: 'cubic-bezier(.22,.61,.36,1)' }
+    );
   }
 
   /* ---------------- 圖片上傳 UI ---------------- */
@@ -965,8 +991,7 @@
       cont.appendChild(makeCompareSlider(base, after, '原圖', label));
       any = true;
     }
-    show('compare-card', any);
-    if (any) animateSwitch($('compare-card'), 8);
+    show('compare-card', any);   // show() 本身已含淡入，不需再 animateSwitch
   }
 
   function resetRunBtn() { $('run').disabled = false; $('run').textContent = '生成'; $('run').dataset.state = 'idle'; $('run-loader').classList.remove('on'); }

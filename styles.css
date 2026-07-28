@@ -277,6 +277,10 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 }
 .card.idle .idle-hint { display: block; }
 .card.idle .progress-top, .card.idle .bar, .card.idle .metrics { display: none; }
+/* 首次生成脫離閒置：讀數與進度條依序浮現，不要三塊同時硬跳出來 */
+#progress-card:not(.idle) .progress-top { animation: soft-in .4s cubic-bezier(.22,.61,.36,1) both; }
+#progress-card:not(.idle) .bar          { animation: soft-in .4s cubic-bezier(.22,.61,.36,1) .06s both; }
+#progress-card:not(.idle) .metrics      { animation: soft-in .4s cubic-bezier(.22,.61,.36,1) .12s both; }
 
 .progress-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .progress-pct {
@@ -301,12 +305,18 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .metric .v small { font-family: var(--mono); font-size: 11px; color: var(--text-dim); font-weight: 500; letter-spacing: 0; }
 
 .preview-live { margin: 14px auto 0; width: fit-content; max-width: 100%; border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--border); background: repeating-conic-gradient(#f0f2f5 0% 25%, #fafbfc 0% 50%) 50% / 20px 20px; display: none; }
-.preview-live.on { display: block; }
+.preview-live.on { display: block; animation: soft-in .32s cubic-bezier(.22,.61,.36,1) both; }
+@keyframes soft-in { from { opacity: 0; transform: translateY(-6px); } }
 .preview-live img { display: block; max-width: 100%; max-height: 320px; width: auto; height: auto; }
 
 .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
 .gallery:empty::after { content: "尚無結果，按下「生成」後成品會出現在這裡。"; color: var(--text-faint); font-size: 13px; grid-column: 1/-1; padding: 24px; text-align: center; }
-.result { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--panel-2); position: relative; }
+.result {
+  border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden;
+  background: var(--panel-2); position: relative;
+  animation: result-in .4s cubic-bezier(.22,1,.36,1) both;   /* 成品不要硬跳出來 */
+}
+@keyframes result-in { from { opacity: 0; transform: scale(.94) translateY(10px); } }
 .result img { display: block; width: 100%; cursor: zoom-in; }
 .result a.dl { position: absolute; bottom: 6px; right: 6px; background: rgba(28,36,48,.75); color: #fff; text-decoration: none; font-size: 11px; padding: 3px 8px; border-radius: 6px; }
 .result .src-tag { position: absolute; top: 6px; left: 6px; background: rgba(28,36,48,.72); color: #fff; font-size: 10.5px; padding: 2px 7px; border-radius: 6px; pointer-events: none; }
@@ -325,22 +335,44 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .card.collapsible .card-head .head-caret { margin-left: auto; color: var(--text-faint); font-size: 12px; transition: transform .2s ease; }
 .card.collapsed .card-head { border-bottom-color: transparent; }
 .card.collapsed .card-head .head-caret { transform: rotate(-90deg); }
-.card.collapsed .card-body { display: none; }
+/* height:auto 沒辦法補間，用 grid-template-rows 1fr→0fr 這招才收得順 */
+.card.collapsible .card-body {
+  display: grid; grid-template-rows: 1fr; overflow: hidden;
+  transition: grid-template-rows .32s cubic-bezier(.22,.61,.36,1),
+              opacity .24s ease, padding .32s cubic-bezier(.22,.61,.36,1);
+}
+.card.collapsible .card-body > * { min-height: 0; overflow: hidden; }
+.card.collapsed .card-body { grid-template-rows: 0fr; opacity: 0; padding-top: 0; padding-bottom: 0; }
 /* 有錯誤時卡頭閃紅提醒 */
 .card-head.flash-err { animation: head-flash 1s ease 2; }
 @keyframes head-flash { 0%, 100% { color: var(--text-dim); } 35% { color: var(--err); } }
 
 /* ---------- log ---------- */
 .log { font-family: var(--mono); font-size: 11.5px; color: var(--text-dim); max-height: 150px; overflow-y: auto; white-space: pre-wrap; }
+.log > div { animation: soft-in .22s ease both; }
 .log .l-err { color: var(--err); }
 .log .l-ok { color: var(--ok); }
 .log .l-warn { color: var(--warn); }
 .log .t { color: var(--text-faint); }
 
 /* ---------- lightbox ---------- */
-.lightbox { position: fixed; inset: 0; background: rgba(12,16,22,.82); display: none; place-items: center; z-index: 50; padding: 30px; }
-.lightbox.on { display: grid; }
-.lightbox img { max-width: 96vw; max-height: 92vh; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+/* 改用 opacity 而非 display 切換才能淡入；visibility 延遲到淡出結束才收，
+   隱藏時同時擋掉點擊與焦點，不會變成看不見卻能點的透明遮罩 */
+.lightbox {
+  position: fixed; inset: 0; background: rgba(12,16,22,.82);
+  display: grid; place-items: center; z-index: 50; padding: 30px;
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity .24s ease, visibility 0s linear .24s;
+}
+.lightbox.on {
+  opacity: 1; visibility: visible; pointer-events: auto;
+  transition: opacity .24s ease;
+}
+.lightbox img {
+  max-width: 96vw; max-height: 92vh; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.5);
+  transform: scale(.94); transition: transform .3s cubic-bezier(.22,1,.36,1);
+}
+.lightbox.on img { transform: scale(1); }
 
 .toggle-inline { display:flex; align-items:center; gap:14px; flex-wrap: wrap; font-size:12.5px; color: var(--text-dim); }
 .toggle-inline label { display:flex; align-items:center; gap:6px; cursor:pointer; }
@@ -479,7 +511,13 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 
 /* 尊重「減少動態」偏好 */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
+  *, *::before, *::after {
+    animation-duration: .001ms !important; animation-iteration-count: 1 !important;
+    animation-delay: 0s !important;            /* 進度讀數的階梯延遲也要清掉 */
+    transition-duration: .001ms !important;
+    transition-delay: 0s !important;           /* 否則 lightbox 的 visibility 延遲仍會卡 .24s */
+    scroll-behavior: auto !important;
+  }
 }
 
 /* ==================== 引擎切換器 ==================== */

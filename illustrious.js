@@ -24,7 +24,7 @@ window.YZ_I = {
       requiresRef: true, seedFollow: '79:62' },
     { key: 'seedvr2', name: 'SeedVR2 放大', desc: '成品再用 SeedVR2 放大到 4K',
       branch: ['80:31', '80:32', '80:30', '81'], imageNode: '80:30' },
-    { key: 'sdupscale', name: 'SD 放大', desc: 'Ultimate SD Upscale 4×（anime）',
+    { key: 'sdupscale', name: 'SD 放大', desc: 'Ultimate SD Upscale 4×',
       branch: ['82:15', '82:25', '82:14', '83'], imageNode: '82:14' },
   ],
   // 各輸出的 PreviewImage 節點（收集圖片做對照）
