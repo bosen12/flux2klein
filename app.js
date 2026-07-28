@@ -1034,6 +1034,7 @@
     $('lightbox').onclick = () => $('lightbox').classList.remove('on');
     $('ai-btn').onclick = aiOptimizePrompt;
     $('gallery-clear').onclick = () => { $('gallery').innerHTML = ''; };
+    $('log-head').onclick = () => $('log-card').classList.toggle('collapsed');
     document.addEventListener('keydown', onGlobalKey);
   }
 
@@ -1159,6 +1160,17 @@ CRITICAL RULES for Illustrious:
     line.innerHTML = `<span class="t">${t}</span>  ${escapeHtml(text)}`;
     el.appendChild(line);
     el.scrollTop = el.scrollHeight;
+    if (cls === 'err') revealLog();
+  }
+
+  // 錯誤訊息：自動展開日誌卡並閃一下卡頭
+  function revealLog() {
+    const card = $('log-card'), head = $('log-head');
+    if (!card || !head) return;
+    card.classList.remove('collapsed');
+    head.classList.remove('flash-err');
+    void head.offsetWidth;              // 強制重繪，讓動畫可重複觸發
+    head.classList.add('flash-err');
   }
   function escapeHtml(s) { return String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
 

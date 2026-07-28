@@ -229,6 +229,16 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 }
 .card-head .head-btn:hover { border-color: var(--border-strong); color: var(--text); background: var(--panel); }
 
+/* ---------- 可收合卡片 ---------- */
+.card.collapsible .card-head { cursor: pointer; user-select: none; }
+.card.collapsible .card-head .head-caret { margin-left: auto; color: var(--text-faint); font-size: 12px; transition: transform .2s ease; }
+.card.collapsed .card-head { border-bottom-color: transparent; }
+.card.collapsed .card-head .head-caret { transform: rotate(-90deg); }
+.card.collapsed .card-body { display: none; }
+/* 有錯誤時卡頭閃紅提醒 */
+.card-head.flash-err { animation: head-flash 1s ease 2; }
+@keyframes head-flash { 0%, 100% { color: var(--text-dim); } 35% { color: var(--err); } }
+
 /* ---------- log ---------- */
 .log { font-family: var(--mono); font-size: 11.5px; color: var(--text-dim); max-height: 150px; overflow-y: auto; white-space: pre-wrap; }
 .log .l-err { color: var(--err); }
