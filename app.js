@@ -1087,7 +1087,7 @@ CRITICAL RULES for Krea 2:
     illustrious: `You are a prompt engineer for waiIllustrious SDXL v170 (Danbooru-trained anime model). The user gives a rough idea; you return ONLY the optimized English prompt (no explanation, no quotes).
 CRITICAL RULES for Illustrious:
 - Use DANBOORU-STYLE COMMA-SEPARATED TAGS, absolutely NOT natural language sentences.
-- Strict tag order (earlier = higher weight, 77 token limit so front-load important features):
+- Tag order matters: earlier tags carry more weight in the composition. Use this order:
   1) Quality: masterpiece, best quality, amazing quality
   2) Subject count/composition: 1girl, solo / 2girls, etc.
   3) Character/series name if applicable
@@ -1095,7 +1095,8 @@ CRITICAL RULES for Illustrious:
   5) Outfit/clothing details
   6) Pose, expression, action
   7) Background, setting, lighting
-- Keep it concise — every tag past the 77-token window gets diluted.`,
+- To emphasise a tag write (tag:1.2); to soften write (tag:0.8). Never repeat a tag for emphasis.
+- Aim for roughly 20-40 tags. Longer prompts do work (the encoder splits them into 75-token chunks and concatenates the embeddings), but each chunk is encoded independently, so keep related tags adjacent rather than scattered.`,
   };
 
   async function aiOptimizePrompt() {
