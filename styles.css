@@ -69,8 +69,11 @@ header.topbar {
 .dot.off { background: var(--err); box-shadow: 0 0 0 3px rgba(220,38,38,.12); }
 
 .main { flex: 1; display: grid; grid-template-columns: minmax(360px, 460px) 1fr; min-height: 0; }
-.left { border-right: 1px solid var(--border); background: var(--panel); overflow-y: auto; }
-.right { overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 18px; }
+/* scrollbar-gutter: stable —— 永遠預留捲軸寬度。
+   否則展開像 ControlNet 參考圖這種會增高的區塊時，捲軸突然出現會吃掉 15px，
+   內容區跟著變窄、增強卡片被壓到文字折行，看起來像左欄寬度自己變了。*/
+.left { border-right: 1px solid var(--border); background: var(--panel); overflow-y: auto; scrollbar-gutter: stable; }
+.right { overflow-y: auto; scrollbar-gutter: stable; padding: 20px; display: flex; flex-direction: column; gap: 18px; }
 
 /* ---------- 模式分頁 ---------- */
 .tabs { position: relative; display: flex; flex-wrap: wrap; gap: 6px; padding: 14px 16px 0; }
