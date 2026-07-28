@@ -1175,42 +1175,57 @@
 CRITICAL RULES for Flux 2 Klein:
 - Write NATURAL LANGUAGE descriptions, NOT comma-separated keyword lists.
 - Uses a Qwen text encoder that understands semantics — do NOT stack quality tags (no "8k, masterpiece, best quality").
-- Structure: subject FIRST (never bury it under scene description) → lighting → composition/framing → style.
-- ALWAYS state the shot explicitly: shot type (close-up / medium shot / full body / wide establishing shot), camera angle (eye level / low angle / high angle / overhead), and where the subject sits in the frame.
+- Structure: subject FIRST (never bury it under scene description) → what it looks like in detail
+  → surroundings → lighting and mood.
 - Optimal length: 100–400 words of rich, flowing description.
-- Example style: "A woman in her 30s standing at a rain-soaked Tokyo crosswalk, neon reflections pooling on wet asphalt, shot from a low angle with shallow depth of field..."`,
+- Example style: "A woman in her 30s at a rain-soaked Tokyo crosswalk, water beading on the shoulders of
+  her worn nylon jacket, strands of hair stuck to her cheek, magenta and green signage smeared across
+  the wet asphalt around her shoes..."`,
     zimage: `You are a prompt engineer for Z-Image Turbo (pornmasterZImage). The user gives a rough idea; you return ONLY the optimized English prompt (no explanation, no quotes).
 CRITICAL RULES for Z-Image Turbo:
 - Write FULL NATURAL LANGUAGE SENTENCES, not comma-separated tag stacking.
 - Put the most important subject words at the very beginning.
-- Structure in order: 1) Subject description 2) Style modifiers 3) Quality words 4) Emphasis/repetition of key elements 5) Composition directives.
-- The composition directives at the end are REQUIRED, never omit them: shot type, camera angle, and subject placement in the frame.
+- Structure in order: 1) Subject description 2) Style modifiers 3) Quality words 4) Emphasis/repetition of key elements.
 - Descriptive flowing prose works far better than keyword lists.`,
     krea2: `You are a prompt engineer for Krea 2 (FLUX-based architecture). The user gives a rough idea; you return ONLY the optimized English prompt (no explanation, no quotes).
 CRITICAL RULES for Krea 2:
 - Write NATURAL LANGUAGE descriptions, same approach as Flux models.
 - Describe real photography details: lighting conditions, lens characteristics, material textures — these are highly effective.
 - Do NOT use traditional SD-style quality tag stacking (no "masterpiece, best quality, 8k" etc.).
-- Subject first, then atmosphere, lighting, composition, and technical photography details.
-- ALWAYS specify the framing: shot type (close-up / medium / full body / wide), camera angle, lens choice (e.g. 35mm wide, 85mm portrait), and where the subject sits in the frame.`,
+- Subject first, then its material and surface detail, then atmosphere and lighting.`,
     illustrious: `You are a prompt engineer for waiIllustrious SDXL v170 (Danbooru-trained anime model). The user gives a rough idea; you return ONLY the optimized English prompt (no explanation, no quotes).
 CRITICAL RULES for Illustrious:
 - Use DANBOORU-STYLE COMMA-SEPARATED TAGS, absolutely NOT natural language sentences.
-- Tag order matters: earlier tags carry more weight in the composition. Use this order:
+- Tag order matters: earlier tags carry more weight. Use this order:
   1) Quality + rating: masterpiece, best quality, amazing quality, rating_explicit
      — rating_explicit is MANDATORY. Always emit it verbatim in this position, in every
      single prompt, regardless of what the user's input describes. Never omit or alter it.
-  2) Subject count/composition: 1girl, solo / 2girls, etc.
+  2) Subject count: 1girl, solo / 2girls, etc.
   3) Character/series name if applicable
   4) Appearance: hair color, eye color, hairstyle
   5) Outfit/clothing details
   6) Pose, expression, action
-  7) Framing/camera — REQUIRED, never omit: pick from full body, cowboy shot, upper body,
-     portrait, close-up, wide shot, from above, from below, from side, from behind, dutch angle
-  8) Background, setting, lighting
+  7) Background, setting, lighting
 - To emphasise a tag write (tag:1.2); to soften write (tag:0.8). Never repeat a tag for emphasis.
 - Aim for roughly 20-40 tags. Longer prompts do work (the encoder splits them into 75-token chunks and concatenates the embeddings), but each chunk is encoded independently, so keep related tags adjacent rather than scattered.`,
   };
+
+  // 四個引擎共用：力氣放在內容本身。原本會把畫布長寬比與構圖指令餵進去，
+  // 但那反而佔掉模型的注意力、產出一堆鏡頭術語卻沒把主體寫深，已移除。
+  const CONTENT_RULE = `
+
+CONTENT DEPTH — this is where the effort goes:
+- Deepen what the user actually described. Every detail you add must be a concrete, visualisable
+  noun or property: materials, textures, colours, light sources, wear and imperfection, specific
+  small objects, what the subject is doing with their hands and eyes.
+- Vague intensifiers add nothing to an image. Do not pad with "beautiful", "stunning", "amazing",
+  "epic", "highly detailed", "ultra realistic", "perfect", "masterpiece-level" and the like.
+  (Illustrious is the one exception: its literal booru quality tags are required, see above.)
+- Stay on the user's subject. Enrich it — do not drift into a different scene.
+- Short input is an invitation to add specific detail, not to pad with adjectives.
+  One precise detail beats three generic ones.
+- Do not write camera or framing instructions unless the user asked for them. Spend the words
+  on what is in the picture instead.`;
 
   // 四個引擎共用：輸入涉及性內容時不要淨化，用各引擎既定的風格（tag 或自然語言）如實展開
   const NSFW_RULE = `
@@ -1221,44 +1236,9 @@ EXPLICIT CONTENT:
   and do not add disclaimers or refuse — the user is running local NSFW-capable models on their
   own hardware and a watered-down prompt is a broken result.
 - Expand it with the same specificity you would apply to any other subject, using the tag style or
-  prose style already specified above: anatomy, state of dress, act, position, expression, camera
-  framing and viewing angle.
+  prose style already specified above: anatomy, state of dress, act, position, expression.
 - All subjects must be unambiguously adult. Include explicit adult descriptors (mature adult body,
   adult proportions) and never any tag, word or framing that suggests a minor.`;
-
-  // 常見比例，用來把任意寬高對應到最接近的說法
-  const ASPECT_NAMES = [
-    [1 / 1, '1:1'], [4 / 3, '4:3'], [3 / 4, '3:4'], [3 / 2, '3:2'], [2 / 3, '2:3'],
-    [16 / 9, '16:9'], [9 / 16, '9:16'], [21 / 9, '21:9'], [9 / 21, '9:21'],
-  ];
-
-  // 把當前畫布尺寸換算成給 AI 的構圖指引；沒有尺寸欄位的模式（圖片編輯）回空字串
-  function canvasContext() {
-    const m = currentModes()[state.mode];
-    if (!m || !m.size) return '';
-    const w = +$('width').value || 1024, h = +$('height').value || 1024;
-    const r = w / h;
-    let name = ASPECT_NAMES[0][1], best = Infinity;
-    for (const [val, label] of ASPECT_NAMES) {
-      const d = Math.abs(val - r);
-      if (d < best) { best = d; name = label; }
-    }
-    let shape;
-    if (r > 1.15) {
-      shape = 'a WIDE landscape frame. Compose horizontally: establishing or environmental shots, '
-        + 'horizon lines, subjects placed off-centre with negative space beside them, side-by-side elements. '
-        + 'Avoid full-body standing poses that need vertical room.';
-    } else if (r < 0.87) {
-      shape = 'a TALL portrait frame. Compose vertically: full-body or waist-up framing, standing poses, '
-        + 'vertical elements, foreground-to-background depth stacked up the frame. '
-        + 'Avoid wide panoramic establishing shots.';
-    } else {
-      shape = 'a SQUARE frame. Compose centrally: close-up or upper-body framing, balanced and centred subject. '
-        + 'Avoid both wide panoramas and full-body vertical shots.';
-    }
-    return `\n\nTARGET CANVAS: ${w}x${h} px, aspect ratio ${name}. This is ${shape}\n`
-      + 'You MUST include explicit composition and framing terms appropriate to this aspect ratio.';
-  }
 
   async function aiOptimizePrompt() {
     const ta = $('prompt');
@@ -1269,7 +1249,7 @@ EXPLICIT CONTENT:
     btn.classList.add('loading');
     ta.value = '';
     try {
-      const sys = (AI_SYSTEM[state.engine] || AI_SYSTEM.flux2klein) + NSFW_RULE + canvasContext();
+      const sys = (AI_SYSTEM[state.engine] || AI_SYSTEM.flux2klein) + CONTENT_RULE + NSFW_RULE;
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
