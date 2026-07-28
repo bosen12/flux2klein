@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Flux2 Klein · ComfyUI 面板</title>
   <!-- SVG 優先（各尺寸都銳利）；不支援的瀏覽器才退回 png / ico -->
-  <!-- ?v=1 會被 serve.py 換成前端檔案 mtime 的雜湊。
-       favicon 的瀏覽器快取特別頑固，沒有版本號改了圖也不會換。 -->
+  <!-- 只留 SVG。同時宣告多個 icon 時瀏覽器會自行挑選，實測 Chrome 會挑走
+       高解析度的 favicon.png（256×256），而那兩個點陣檔還是舊版設計，
+       留著等於備了一條會顯示錯誤品牌的後路。
+       ?v=1 由 serve.py 換成 mtime 雜湊——favicon 的快取特別頑固，沒版本號改了也不會換。 -->
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=1">
-  <link rel="icon" type="image/png" href="/favicon.png?v=1">
-  <link rel="icon" type="image/x-icon" href="/favicon.ico?v=1">
   <link rel="stylesheet" href="styles.css?v=1">
 </head>
 <body>
