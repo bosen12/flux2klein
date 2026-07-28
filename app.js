@@ -439,6 +439,7 @@
   async function generate() {
     if (state.running) { log('目前有任務進行中，請稍候或按中斷。', 'warn'); return; }
     $('run-loader').classList.add('on');   // 顯示生成中星星動畫
+    $('run').dataset.state = 'loading';    // 按鈕本體：spinner 滑入
     show('compare-card', false); $('compare').innerHTML = '';   // 清掉上次對照
     const m = currentModes()[state.mode];
     try {
@@ -750,6 +751,12 @@
     if (!r) return;
     const total = (performance.now() - r.t0) / 1000;
     if (ok) {
+      // 按鈕本體：spinner 化成打勾、文字暫顯「完成」，約 1.3 秒後復原
+      $('run').textContent = '完成'; $('run').dataset.state = 'done';
+      clearTimeout(state._doneT);
+      state._doneT = setTimeout(() => {
+        if (!state.running) { $('run').textContent = '生成'; $('run').dataset.state = 'idle'; }
+      }, 1300);
       $('pct').textContent = '100%'; $('bar-fill').style.width = '100%';
       setStage(`完成 · 耗時 ${fmtTime(total)}`);
       log(`✅ 完成，耗時 ${fmtTime(total)}`, 'ok');
@@ -929,7 +936,7 @@
     if (any) animateSwitch($('compare-card'), 8);
   }
 
-  function resetRunBtn() { $('run').disabled = false; $('run').textContent = '生成'; $('run-loader').classList.remove('on'); }
+  function resetRunBtn() { $('run').disabled = false; $('run').textContent = '生成'; $('run').dataset.state = 'idle'; $('run-loader').classList.remove('on'); }
   function setStage(t) { $('stage').textContent = t; }
 
   /* ---------------- WebSocket ---------------- */
