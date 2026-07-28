@@ -24,7 +24,7 @@
     flux2klein: { logo: '✦', title: 'Flux2 Klein 面板', sub: '文生圖 / 單雙三圖編輯 / 局部重繪 / 圖像擴展' },
     zimage:     { logo: '✦', title: 'Z-Image Turbo 面板', sub: '文生圖 / ControlNet 邊緣參考' },
     krea2:      { logo: '✦', title: 'Krea2 面板', sub: '文生圖（可選 SeedVR2 / 二次採樣）' },
-    illustrious:{ logo: '✦', title: 'Illustrious 面板', sub: 'SDXL 動漫（可選 Hires / ControlNet / SeedVR2 / SD 放大）' },
+    illustrious:{ logo: '✦', title: 'Illustrious 面板', sub: 'SDXL 文生圖（可選放大）' },
   };
   const Z = window.YZ_Z, K = window.YZ_K, I = window.YZ_I;
   const ENG = { zimage: Z, krea2: K, illustrious: I };   // API 格式引擎設定

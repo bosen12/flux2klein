@@ -522,7 +522,7 @@
       "cfg": 6.5,
       "sampler_name": "euler_ancestral",
       "scheduler": "normal",
-      "denoise": 0.6,
+      "denoise": 0.2,
       "mode_type": "Linear",
       "tile_width": 1024,
       "tile_height": 1024,

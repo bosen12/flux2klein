@@ -6,7 +6,7 @@ window.YZ_I = {
   MODE_ORDER: ['it2i'],
   MODES: {
     it2i: {
-      key: 'it2i', label: '文生圖', desc: 'Illustrious SDXL 文生圖（可選 Hires / ControlNet / SeedVR2 / SD 放大）',
+      key: 'it2i', label: '文生圖', desc: 'Illustrious SDXL 文生圖（可選放大）',
       template: 'illustrious.json',
       nodes: { ckpt: '4', prompt: '5', neg: '6', ksampler: '77:75', latent: '7', ref: '39' },
       images: [],
