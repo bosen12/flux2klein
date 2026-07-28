@@ -1069,7 +1069,8 @@
 CRITICAL RULES for Flux 2 Klein:
 - Write NATURAL LANGUAGE descriptions, NOT comma-separated keyword lists.
 - Uses a Qwen text encoder that understands semantics — do NOT stack quality tags (no "8k, masterpiece, best quality").
-- Structure: subject FIRST (never bury it under scene description) → lighting → style/composition.
+- Structure: subject FIRST (never bury it under scene description) → lighting → composition/framing → style.
+- ALWAYS state the shot explicitly: shot type (close-up / medium shot / full body / wide establishing shot), camera angle (eye level / low angle / high angle / overhead), and where the subject sits in the frame.
 - Optimal length: 100–400 words of rich, flowing description.
 - Example style: "A woman in her 30s standing at a rain-soaked Tokyo crosswalk, neon reflections pooling on wet asphalt, shot from a low angle with shallow depth of field..."`,
     zimage: `You are a prompt engineer for Z-Image Turbo (pornmasterZImage). The user gives a rough idea; you return ONLY the optimized English prompt (no explanation, no quotes).
@@ -1077,13 +1078,15 @@ CRITICAL RULES for Z-Image Turbo:
 - Write FULL NATURAL LANGUAGE SENTENCES, not comma-separated tag stacking.
 - Put the most important subject words at the very beginning.
 - Structure in order: 1) Subject description 2) Style modifiers 3) Quality words 4) Emphasis/repetition of key elements 5) Composition directives.
+- The composition directives at the end are REQUIRED, never omit them: shot type, camera angle, and subject placement in the frame.
 - Descriptive flowing prose works far better than keyword lists.`,
     krea2: `You are a prompt engineer for Krea 2 (FLUX-based architecture). The user gives a rough idea; you return ONLY the optimized English prompt (no explanation, no quotes).
 CRITICAL RULES for Krea 2:
 - Write NATURAL LANGUAGE descriptions, same approach as Flux models.
 - Describe real photography details: lighting conditions, lens characteristics, material textures — these are highly effective.
 - Do NOT use traditional SD-style quality tag stacking (no "masterpiece, best quality, 8k" etc.).
-- Subject first, then atmosphere, lighting, and technical photography details.`,
+- Subject first, then atmosphere, lighting, composition, and technical photography details.
+- ALWAYS specify the framing: shot type (close-up / medium / full body / wide), camera angle, lens choice (e.g. 35mm wide, 85mm portrait), and where the subject sits in the frame.`,
     illustrious: `You are a prompt engineer for waiIllustrious SDXL v170 (Danbooru-trained anime model). The user gives a rough idea; you return ONLY the optimized English prompt (no explanation, no quotes).
 CRITICAL RULES for Illustrious:
 - Use DANBOORU-STYLE COMMA-SEPARATED TAGS, absolutely NOT natural language sentences.
@@ -1094,10 +1097,46 @@ CRITICAL RULES for Illustrious:
   4) Appearance: hair color, eye color, hairstyle
   5) Outfit/clothing details
   6) Pose, expression, action
-  7) Background, setting, lighting
+  7) Framing/camera — REQUIRED, never omit: pick from full body, cowboy shot, upper body,
+     portrait, close-up, wide shot, from above, from below, from side, from behind, dutch angle
+  8) Background, setting, lighting
 - To emphasise a tag write (tag:1.2); to soften write (tag:0.8). Never repeat a tag for emphasis.
 - Aim for roughly 20-40 tags. Longer prompts do work (the encoder splits them into 75-token chunks and concatenates the embeddings), but each chunk is encoded independently, so keep related tags adjacent rather than scattered.`,
   };
+
+  // 常見比例，用來把任意寬高對應到最接近的說法
+  const ASPECT_NAMES = [
+    [1 / 1, '1:1'], [4 / 3, '4:3'], [3 / 4, '3:4'], [3 / 2, '3:2'], [2 / 3, '2:3'],
+    [16 / 9, '16:9'], [9 / 16, '9:16'], [21 / 9, '21:9'], [9 / 21, '9:21'],
+  ];
+
+  // 把當前畫布尺寸換算成給 AI 的構圖指引；沒有尺寸欄位的模式（圖片編輯）回空字串
+  function canvasContext() {
+    const m = currentModes()[state.mode];
+    if (!m || !m.size) return '';
+    const w = +$('width').value || 1024, h = +$('height').value || 1024;
+    const r = w / h;
+    let name = ASPECT_NAMES[0][1], best = Infinity;
+    for (const [val, label] of ASPECT_NAMES) {
+      const d = Math.abs(val - r);
+      if (d < best) { best = d; name = label; }
+    }
+    let shape;
+    if (r > 1.15) {
+      shape = 'a WIDE landscape frame. Compose horizontally: establishing or environmental shots, '
+        + 'horizon lines, subjects placed off-centre with negative space beside them, side-by-side elements. '
+        + 'Avoid full-body standing poses that need vertical room.';
+    } else if (r < 0.87) {
+      shape = 'a TALL portrait frame. Compose vertically: full-body or waist-up framing, standing poses, '
+        + 'vertical elements, foreground-to-background depth stacked up the frame. '
+        + 'Avoid wide panoramic establishing shots.';
+    } else {
+      shape = 'a SQUARE frame. Compose centrally: close-up or upper-body framing, balanced and centred subject. '
+        + 'Avoid both wide panoramas and full-body vertical shots.';
+    }
+    return `\n\nTARGET CANVAS: ${w}x${h} px, aspect ratio ${name}. This is ${shape}\n`
+      + 'You MUST include explicit composition and framing terms appropriate to this aspect ratio.';
+  }
 
   async function aiOptimizePrompt() {
     const ta = $('prompt');
@@ -1108,7 +1147,7 @@ CRITICAL RULES for Illustrious:
     btn.classList.add('loading');
     ta.value = '';
     try {
-      const sys = AI_SYSTEM[state.engine] || AI_SYSTEM.flux2klein;
+      const sys = (AI_SYSTEM[state.engine] || AI_SYSTEM.flux2klein) + canvasContext();
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
