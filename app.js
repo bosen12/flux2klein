@@ -750,6 +750,9 @@
     return el;
   }
 
+  // 目前開啟中的對照 overlay 的關閉函式（供全域 Esc 使用）
+  let activeOverlayClose = null;
+
   function openCompareOverlay(beforeUrl, afterUrl, labelB, labelA, sourceEl) {
     const overlay = document.createElement('div');
     overlay.className = 'cmp-overlay';
@@ -864,10 +867,10 @@
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       overlay.remove();
+      if (activeOverlayClose === close) activeOverlayClose = null;
     };
     closeBtn.onclick = close;
-    overlay.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
-    overlay.tabIndex = -1; overlay.focus();
+    activeOverlayClose = close;   // Esc 由全域監聽處理
   }
 
   function buildCompare(c) {
@@ -1013,6 +1016,20 @@
     };
     $('lightbox').onclick = () => $('lightbox').classList.remove('on');
     $('ai-btn').onclick = aiOptimizePrompt;
+    document.addEventListener('keydown', onGlobalKey);
+  }
+
+  /* 全域快捷鍵：Ctrl/Cmd+Enter 生成、Esc 關閉浮層 */
+  function onGlobalKey(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      if (!state.running) generate();
+      return;
+    }
+    if (e.key === 'Escape') {
+      if (activeOverlayClose) { activeOverlayClose(); return; }
+      $('lightbox').classList.remove('on');
+    }
   }
 
   /* ---------------- AI 提示詞優化（Groq） ---------------- */
