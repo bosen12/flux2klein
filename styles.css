@@ -54,11 +54,29 @@ header.topbar {
 }
 .brand { display: flex; align-items: center; gap: 11px; font-weight: 700; letter-spacing: -.01em; }
 .brand .logo {
+  position: relative; overflow: hidden;
   width: 32px; height: 32px; border-radius: 9px;
   background: linear-gradient(140deg, var(--accent), var(--accent-2));
-  display: grid; place-items: center; color: #fff; font-size: 17px;
-  box-shadow: 0 4px 12px -2px rgba(91,82,240,.5), inset 0 1px 0 rgba(255,255,255,.35);
+  display: grid; place-items: center; color: #fff;
+  box-shadow: 0 4px 12px -2px color-mix(in srgb, var(--accent) 52%, transparent),
+              inset 0 1px 0 rgba(255,255,255,.35);
+  transition: box-shadow .6s ease;   /* 水位漲的同時光暈跟著換色 */
 }
+.brand .logo > svg { position: relative; z-index: 2; width: 19px; height: 19px; }
+
+/* 換引擎時「裝水」：底層用 inline style 凍結舊色，這一層是新色、從底部漲上來 */
+.brand .logo .logo-fill {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 100%; z-index: 1;
+  background: linear-gradient(140deg, var(--accent), var(--accent-2));
+  transform: translateY(100%);
+}
+/* 液面：一顆扁橢圓騎在水位上緣，讓它有弧度而不是一條直線 */
+.brand .logo .logo-fill::before {
+  content: ''; position: absolute; left: -18%; right: -18%; top: -4px; height: 9px;
+  border-radius: 50%; background: var(--accent);
+}
+/* 上漲動畫由 JS 的 Web Animations API 驅動（見 riseLogoWater）：
+   class 加減那套在連續切換時無法可靠重啟，finished promise 才收得到收尾。*/
 .brand small { font-weight: 500; color: var(--text-faint); font-size: 12px; }
 .spacer { flex: 1; }
 

@@ -47,6 +47,7 @@ STATIC_FILES = {
     "/zimage_controlnet.json": "zimage_controlnet.json",
     "/krea2.json": "krea2.json",
     "/illustrious.json": "illustrious.json",
+    "/favicon.svg": "favicon.svg",
     "/favicon.ico": "favicon.ico",
     "/favicon.png": "favicon.png",
 }

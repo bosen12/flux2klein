@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logo 方案比較</title>
+<style>
+:root{
+  --bg:#eceef5; --panel:#fff; --border:#e3e6f0; --text:#161824;
+  --text-dim:#5f6779; --text-faint:#969db0;
+  --sans:system-ui,-apple-system,"Segoe UI","PingFang TC","Microsoft JhengHei",sans-serif;
+  --mono:ui-monospace,"Cascadia Code",Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;padding:32px 24px 80px}
+.wrap{max-width:1080px;margin:0 auto}
+h1{font-size:22px;letter-spacing:-.02em;margin-bottom:6px}
+.sub{color:var(--text-dim);font-size:13.5px;line-height:1.7;margin-bottom:28px}
+.sub code{font-family:var(--mono);font-size:12px;background:#fff;border:1px solid var(--border);border-radius:5px;padding:1px 5px}
+
+.opt{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:20px 22px;margin-bottom:14px}
+.opt-head{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+.tag{font-family:var(--mono);font-size:11px;font-weight:700;color:#fff;background:#5b52f0;border-radius:5px;padding:2px 7px}
+.opt h2{font-size:15.5px;letter-spacing:-.01em}
+.opt p{color:var(--text-dim);font-size:12.8px;line-height:1.7;margin:6px 0 16px}
+.opt .note{color:var(--text-faint);font-size:12px}
+
+.row{display:flex;align-items:center;gap:26px;flex-wrap:wrap}
+.cell{display:flex;flex-direction:column;align-items:center;gap:7px}
+.cell span{font-size:10.5px;color:var(--text-faint);font-family:var(--mono)}
+
+/* 四個引擎的品牌色 */
+.e1{--a:#5b52f0;--b:#10b3ab}   /* Flux2 Klein 靛紫→青 */
+.e2{--a:#f4511e;--b:#ff9f1c}   /* Z-Image 橘紅→琥珀 */
+.e3{--a:#7c3aed;--b:#a855f7}   /* Krea2 紫 */
+.e4{--a:#ec4899;--b:#fb7185}   /* Illustrious 粉→玫 */
+
+.mark{
+  width:32px;height:32px;border-radius:9px;flex:none;
+  background:linear-gradient(140deg,var(--a),var(--b));
+  display:grid;place-items:center;color:#fff;
+  box-shadow:0 4px 12px -2px color-mix(in srgb,var(--a) 55%,transparent),
+             inset 0 1px 0 rgba(255,255,255,.35);
+}
+.mark.lg{width:56px;height:56px;border-radius:15px}
+.mark svg{width:60%;height:60%;display:block}
+.mark .glyph{font-size:17px;line-height:1}
+.mark.lg .glyph{font-size:30px}
+
+/* 容器變體 */
+.mark.circle{border-radius:50%}
+.mark.squircle{border-radius:34%}
+.mark.soft{border-radius:11px;background:color-mix(in srgb,var(--a) 14%,#fff);color:var(--a);box-shadow:none;border:1px solid color-mix(in srgb,var(--a) 26%,transparent)}
+.mark.soft svg{color:var(--a)}
+.mark.outline{background:none;border:1.8px solid var(--a);color:var(--a);box-shadow:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Logo 圖形方案</h1>
+  <p class="sub">
+    現況是字型字符 <code>✦</code>，四個引擎共用。以下方案 B 之後都改成內嵌 SVG——
+    字型字符會因作業系統而異、也無法控制筆畫粗細，SVG 則各平台一致且能隨主題變色。
+    每個方案都用四個引擎的漸層各畫一次，右邊放大版看細節。
+  </p>
+
+  <!-- A -->
+  <div class="opt">
+    <div class="opt-head"><span class="tag">A</span><h2>現況：字型星芒 ✦</h2></div>
+    <p>基準線。優點是零成本；缺點是各系統字型不同、筆畫偏細，放大後邊緣不夠俐落。</p>
+    <div class="row">
+      <div class="cell e1"><div class="mark"><span class="glyph">✦</span></div><span>Klein</span></div>
+      <div class="cell e2"><div class="mark"><span class="glyph">✦</span></div><span>Z-Image</span></div>
+      <div class="cell e3"><div class="mark"><span class="glyph">✦</span></div><span>Krea2</span></div>
+      <div class="cell e4"><div class="mark"><span class="glyph">✦</span></div><span>Illustrious</span></div>
+      <div class="cell e1"><div class="mark lg"><span class="glyph">✦</span></div><span>放大</span></div>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="opt">
+    <div class="opt-head"><span class="tag">B</span><h2>銳利星芒（SVG）</h2></div>
+    <p>維持現有識別，只把字符換成手繪路徑。四角更收斂、中央更飽滿，小尺寸下比字型清楚。改動最小，風險最低。</p>
+    <div class="row">
+      <div class="cell e1"><div class="mark">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.4c.55 6 3.1 9.05 9.6 9.6-6.5.55-9.05 3.6-9.6 9.6-.55-6-3.1-9.05-9.6-9.6 6.5-.55 9.05-3.6 9.6-9.6Z"/></svg>
+      </div><span>Klein</span></div>
+      <div class="cell e2"><div class="mark">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.4c.55 6 3.1 9.05 9.6 9.6-6.5.55-9.05 3.6-9.6 9.6-.55-6-3.1-9.05-9.6-9.6 6.5-.55 9.05-3.6 9.6-9.6Z"/></svg>
+      </div><span>Z-Image</span></div>
+      <div class="cell e3"><div class="mark">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.4c.55 6 3.1 9.05 9.6 9.6-6.5.55-9.05 3.6-9.6 9.6-.55-6-3.1-9.05-9.6-9.6 6.5-.55 9.05-3.6 9.6-9.6Z"/></svg>
+      </div><span>Krea2</span></div>
+      <div class="cell e4"><div class="mark">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.4c.55 6 3.1 9.05 9.6 9.6-6.5.55-9.05 3.6-9.6 9.6-.55-6-3.1-9.05-9.6-9.6 6.5-.55 9.05-3.6 9.6-9.6Z"/></svg>
+      </div><span>Illustrious</span></div>
+      <div class="cell e1"><div class="mark lg">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.4c.55 6 3.1 9.05 9.6 9.6-6.5.55-9.05 3.6-9.6 9.6-.55-6-3.1-9.05-9.6-9.6 6.5-.55 9.05-3.6 9.6-9.6Z"/></svg>
+      </div><span>放大</span></div>
+    </div>
+  </div>
+
+  <!-- C -->
+  <div class="opt">
+    <div class="opt-head"><span class="tag">C</span><h2>節點圖（ComfyUI 語意）</h2></div>
+    <p>三個節點加連線，直接呼應這個工具的本質——你是在驅動一張 workflow 圖。辨識度最高、最不像通用 AI 工具的萬用星星。</p>
+    <div class="row">
+      <div class="cell e1"><div class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M8.4 6.6 15.6 9.4M7.6 8.6 9.4 15.2"/><circle cx="6" cy="5.4" r="2.6" fill="currentColor" stroke="none"/><circle cx="18" cy="10.4" r="2.6" fill="currentColor" stroke="none"/><circle cx="10.4" cy="18" r="2.6" fill="currentColor" stroke="none"/></svg>
+      </div><span>Klein</span></div>
+      <div class="cell e2"><div class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M8.4 6.6 15.6 9.4M7.6 8.6 9.4 15.2"/><circle cx="6" cy="5.4" r="2.6" fill="currentColor" stroke="none"/><circle cx="18" cy="10.4" r="2.6" fill="currentColor" stroke="none"/><circle cx="10.4" cy="18" r="2.6" fill="currentColor" stroke="none"/></svg>
+      </div><span>Z-Image</span></div>
+      <div class="cell e3"><div class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M8.4 6.6 15.6 9.4M7.6 8.6 9.4 15.2"/><circle cx="6" cy="5.4" r="2.6" fill="currentColor" stroke="none"/><circle cx="18" cy="10.4" r="2.6" fill="currentColor" stroke="none"/><circle cx="10.4" cy="18" r="2.6" fill="currentColor" stroke="none"/></svg>
+      </div><span>Krea2</span></div>
+      <div class="cell e4"><div class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M8.4 6.6 15.6 9.4M7.6 8.6 9.4 15.2"/><circle cx="6" cy="5.4" r="2.6" fill="currentColor" stroke="none"/><circle cx="18" cy="10.4" r="2.6" fill="currentColor" stroke="none"/><circle cx="10.4" cy="18" r="2.6" fill="currentColor" stroke="none"/></svg>
+      </div><span>Illustrious</span></div>
+      <div class="cell e1"><div class="mark lg">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M8.4 6.6 15.6 9.4M7.6 8.6 9.4 15.2"/><circle cx="6" cy="5.4" r="2.6" fill="currentColor" stroke="none"/><circle cx="18" cy="10.4" r="2.6" fill="currentColor" stroke="none"/><circle cx="10.4" cy="18" r="2.6" fill="currentColor" stroke="none"/></svg>
+      </div><span>放大</span></div>
+    </div>
+  </div>
+
+  <!-- D -->
+  <div class="opt">
+    <div class="opt-head"><span class="tag">D</span><h2>光圈</h2></div>
+    <p>相機光圈葉片。攝影語意直接，四個引擎都在產圖所以通用。造型比星芒穩重，適合想走工具感而非玩具感。</p>
+    <div class="row">
+      <div class="cell e1"><div class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><circle cx="12" cy="12" r="9.2"/><path d="M12 2.8 12 12 20.5 7.4M20.5 16.6 12 12 3.5 16.6M3.5 7.4 12 12 12 21.2"/></svg>
+      </div><span>Klein</span></div>
+      <div class="cell e2"><div class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><circle cx="12" cy="12" r="9.2"/><path d="M12 2.8 12 12 20.5 7.4M20.5 16.6 12 12 3.5 16.6M3.5 7.4 12 12 12 21.2"/></svg>
+      </div><span>Z-Image</span></div>
+      <div class="cell e3"><div class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><circle cx="12" cy="12" r="9.2"/><path d="M12 2.8 12 12 20.5 7.4M20.5 16.6 12 12 3.5 16.6M3.5 7.4 12 12 12 21.2"/></svg>
+      </div><span>Krea2</span></div>
+      <div class="cell e4"><div class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><circle cx="12" cy="12" r="9.2"/><path d="M12 2.8 12 12 20.5 7.4M20.5 16.6 12 12 3.5 16.6M3.5 7.4 12 12 12 21.2"/></svg>
+      </div><span>Illustrious</span></div>
+      <div class="cell e1"><div class="mark lg">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><circle cx="12" cy="12" r="9.2"/><path d="M12 2.8 12 12 20.5 7.4M20.5 16.6 12 12 3.5 16.6M3.5 7.4 12 12 12 21.2"/></svg>
+      </div><span>放大</span></div>
+    </div>
+  </div>
+
+  <!-- E -->
+  <div class="opt">
+    <div class="opt-head"><span class="tag">E</span><h2>層疊方框</h2></div>
+    <p>三層錯位方框，像是 latent 一層層堆疊、也像多引擎並存。幾何最乾淨，縮到 16px 仍然清楚，做 favicon 最保險。</p>
+    <div class="row">
+      <div class="cell e1"><div class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="3" y="8.6" width="12.4" height="12.4" rx="3"/><path d="M8.6 5.6h8.2a3 3 0 0 1 3 3v8.2" opacity=".62"/><path d="M13 2.6h4.6a4 4 0 0 1 4 4v4.6" opacity=".34"/></svg>
+      </div><span>Klein</span></div>
+      <div class="cell e2"><div class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="3" y="8.6" width="12.4" height="12.4" rx="3"/><path d="M8.6 5.6h8.2a3 3 0 0 1 3 3v8.2" opacity=".62"/><path d="M13 2.6h4.6a4 4 0 0 1 4 4v4.6" opacity=".34"/></svg>
+      </div><span>Z-Image</span></div>
+      <div class="cell e3"><div class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="3" y="8.6" width="12.4" height="12.4" rx="3"/><path d="M8.6 5.6h8.2a3 3 0 0 1 3 3v8.2" opacity=".62"/><path d="M13 2.6h4.6a4 4 0 0 1 4 4v4.6" opacity=".34"/></svg>
+      </div><span>Krea2</span></div>
+      <div class="cell e4"><div class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="3" y="8.6" width="12.4" height="12.4" rx="3"/><path d="M8.6 5.6h8.2a3 3 0 0 1 3 3v8.2" opacity=".62"/><path d="M13 2.6h4.6a4 4 0 0 1 4 4v4.6" opacity=".34"/></svg>
+      </div><span>Illustrious</span></div>
+      <div class="cell e1"><div class="mark lg">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="3" y="8.6" width="12.4" height="12.4" rx="3"/><path d="M8.6 5.6h8.2a3 3 0 0 1 3 3v8.2" opacity=".62"/><path d="M13 2.6h4.6a4 4 0 0 1 4 4v4.6" opacity=".34"/></svg>
+      </div><span>放大</span></div>
+    </div>
+  </div>
+
+  <!-- F -->
+  <div class="opt">
+    <div class="opt-head"><span class="tag">F</span><h2>稜鏡分光</h2></div>
+    <p>一道光進去、分成多道出來——提示詞進、圖出來的隱喻。概念最貼切，但小尺寸下細節較容易糊，要接受它在 16px favicon 會偏簡略。</p>
+    <div class="row">
+      <div class="cell e1"><div class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3.2 21 19.4H3.4L11 3.2Z"/><path d="M2 9.4h6.4" opacity=".85"/><path d="M14.6 12.6h7.6M14.2 15.4h6.2M13.8 9.8h7" opacity=".55"/></svg>
+      </div><span>Klein</span></div>
+      <div class="cell e2"><div class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3.2 21 19.4H3.4L11 3.2Z"/><path d="M2 9.4h6.4" opacity=".85"/><path d="M14.6 12.6h7.6M14.2 15.4h6.2M13.8 9.8h7" opacity=".55"/></svg>
+      </div><span>Z-Image</span></div>
+      <div class="cell e3"><div class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3.2 21 19.4H3.4L11 3.2Z"/><path d="M2 9.4h6.4" opacity=".85"/><path d="M14.6 12.6h7.6M14.2 15.4h6.2M13.8 9.8h7" opacity=".55"/></svg>
+      </div><span>Krea2</span></div>
+      <div class="cell e4"><div class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3.2 21 19.4H3.4L11 3.2Z"/><path d="M2 9.4h6.4" opacity=".85"/><path d="M14.6 12.6h7.6M14.2 15.4h6.2M13.8 9.8h7" opacity=".55"/></svg>
+      </div><span>Illustrious</span></div>
+      <div class="cell e1"><div class="mark lg">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3.2 21 19.4H3.4L11 3.2Z"/><path d="M2 9.4h6.4" opacity=".85"/><path d="M14.6 12.6h7.6M14.2 15.4h6.2M13.8 9.8h7" opacity=".55"/></svg>
+      </div><span>放大</span></div>
+    </div>
+  </div>
+
+  <!-- G -->
+  <div class="opt">
+    <div class="opt-head"><span class="tag">G</span><h2>每個引擎不同符號</h2></div>
+    <p>圖形本身不變，但四個引擎各給一個字符，logo 同時告訴你現在在哪個引擎。改動只需editENGINES 設定一行，成本最低。缺點是失去單一品牌識別。</p>
+    <div class="row">
+      <div class="cell e1"><div class="mark"><span class="glyph">✦</span></div><span>Klein</span></div>
+      <div class="cell e2"><div class="mark"><span class="glyph">⚡</span></div><span>Z-Image</span></div>
+      <div class="cell e3"><div class="mark"><span class="glyph">◈</span></div><span>Krea2</span></div>
+      <div class="cell e4"><div class="mark"><span class="glyph">❋</span></div><span>Illustrious</span></div>
+    </div>
+  </div>
+
+  <!-- 容器 -->
+  <div class="opt">
+    <div class="opt-head"><span class="tag">＋</span><h2>容器造型（可與上面任一圖形搭配）</h2></div>
+    <p>目前是 <code>border-radius: 9px</code> 的漸層方塊。以下是同一個星芒換不同容器的樣子。「柔色」與「線框」兩種在深色背景下會比實心漸層耐看。</p>
+    <div class="row">
+      <div class="cell e1"><div class="mark"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.4c.55 6 3.1 9.05 9.6 9.6-6.5.55-9.05 3.6-9.6 9.6-.55-6-3.1-9.05-9.6-9.6 6.5-.55 9.05-3.6 9.6-9.6Z"/></svg></div><span>現況 9px</span></div>
+      <div class="cell e1"><div class="mark squircle"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.4c.55 6 3.1 9.05 9.6 9.6-6.5.55-9.05 3.6-9.6 9.6-.55-6-3.1-9.05-9.6-9.6 6.5-.55 9.05-3.6 9.6-9.6Z"/></svg></div><span>方圓 34%</span></div>
+      <div class="cell e1"><div class="mark circle"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.4c.55 6 3.1 9.05 9.6 9.6-6.5.55-9.05 3.6-9.6 9.6-.55-6-3.1-9.05-9.6-9.6 6.5-.55 9.05-3.6 9.6-9.6Z"/></svg></div><span>圓形</span></div>
+      <div class="cell e1"><div class="mark soft"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.4c.55 6 3.1 9.05 9.6 9.6-6.5.55-9.05 3.6-9.6 9.6-.55-6-3.1-9.05-9.6-9.6 6.5-.55 9.05-3.6 9.6-9.6Z"/></svg></div><span>柔色底</span></div>
+      <div class="cell e1"><div class="mark outline"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.4c.55 6 3.1 9.05 9.6 9.6-6.5.55-9.05 3.6-9.6 9.6-.55-6-3.1-9.05-9.6-9.6 6.5-.55 9.05-3.6 9.6-9.6Z"/></svg></div><span>線框</span></div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

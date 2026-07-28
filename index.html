@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Flux2 Klein · ComfyUI 面板</title>
+  <!-- SVG 優先（各尺寸都銳利）；不支援的瀏覽器才退回 png / ico -->
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="stylesheet" href="styles.css?v=1">
@@ -18,7 +20,14 @@
 <div class="app">
   <header class="topbar">
     <div class="brand">
-      <div class="logo" id="brand-logo">✦</div>
+      <div class="logo" id="brand-logo">
+        <i class="logo-fill" id="logo-fill"></i>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M11 3.2 21 19.4H3.4L11 3.2Z"/>
+          <path d="M2 9.4h6.4" opacity=".85"/>
+          <path d="M14.6 12.6h7.6M14.2 15.4h6.2M13.8 9.8h7" opacity=".55"/>
+        </svg>
+      </div>
       <div><span id="brand-title">Flux2 Klein 面板</span><br><small id="brand-sub">文生圖 / 單雙三圖編輯 / 局部重繪 / 圖像擴展</small></div>
     </div>
     <div class="engine-switch" id="engine-switch">

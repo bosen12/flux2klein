@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5b52f0"/>
+      <stop offset="1" stop-color="#10b3ab"/>
+    </linearGradient>
+  </defs>
+  <rect width="24" height="24" rx="5.5" fill="url(#g)"/>
+  <!-- 稜鏡分光：一道光進、多道光出。筆畫比面板內的 logo 粗，16px 下才不會糊掉 -->
+  <g fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+     transform="translate(2.7 2.7) scale(.775)">
+    <path d="M11 3.2 21 19.4H3.4L11 3.2Z"/>
+    <path d="M2 9.4h6.4"/>
+    <path d="M14.6 12.6h7.6M14.2 15.4h6.2M13.8 9.8h7" opacity=".72"/>
+  </g>
+</svg>

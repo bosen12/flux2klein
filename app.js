@@ -21,10 +21,10 @@
 
   // 兩個引擎的品牌與主題資訊
   const ENGINES = {
-    flux2klein: { logo: '✦', title: 'Flux2 Klein 面板', sub: '文生圖 / 單雙三圖編輯 / 局部重繪 / 圖像擴展' },
-    zimage:     { logo: '✦', title: 'Z-Image Turbo 面板', sub: '文生圖 / ControlNet 邊緣參考' },
-    krea2:      { logo: '✦', title: 'Krea2 面板', sub: '文生圖（可選 SeedVR2 / 二次採樣）' },
-    illustrious:{ logo: '✦', title: 'Illustrious 面板', sub: 'SDXL 文生圖（可選放大）' },
+    flux2klein: { title: 'Flux2 Klein 面板', sub: '文生圖 / 單雙三圖編輯 / 局部重繪 / 圖像擴展' },
+    zimage:     { title: 'Z-Image Turbo 面板', sub: '文生圖 / ControlNet 邊緣參考' },
+    krea2:      { title: 'Krea2 面板', sub: '文生圖（可選 SeedVR2 / 二次採樣）' },
+    illustrious:{ title: 'Illustrious 面板', sub: 'SDXL 文生圖（可選放大）' },
   };
   const Z = window.YZ_Z, K = window.YZ_K, I = window.YZ_I;
   const ENG = { zimage: Z, krea2: K, illustrious: I };   // API 格式引擎設定
@@ -245,10 +245,11 @@
       movePill();
       return;
     }
+    freezeLogoColor();                              // 抓舊色，必須在 dataset 改變之前
     state.engine = engine;
     document.documentElement.dataset.engine = engine;
+    riseLogoWater();                                // 新色從底部漲上來
     const e = ENGINES[engine];
-    $('brand-logo').textContent = e.logo;
     const bt = $('brand-title');
     bt.textContent = e.title;
     bt.classList.remove('sweep'); void bt.offsetWidth; bt.classList.add('sweep');   // 標題漸層掃過過渡
@@ -263,7 +264,40 @@
     buildTabs();
     selectMode(state.mode);        // 內含表單淡入
     animateSwitch($('tabs'), 0);   // 分頁列淡入
-    animateSwitch(document.querySelector('.brand'), 0);  // 品牌淡入
+    // 品牌區刻意不做淡入位移：logo 靠水位漲上來換色，位置保持不動
+  }
+
+  /* ---------- logo 換色：裝水 ---------- */
+  // 分成兩步是因為底層要顯示「舊色」、水層要顯示「新色」，
+  // 而兩者都來自 var(--accent)，所以必須在 dataset.engine 改變前先把舊色凍進 inline style。
+  function freezeLogoColor() {
+    const logo = $('brand-logo');
+    if (!logo || prefersReduced) return;
+    const cs = getComputedStyle(document.documentElement);
+    const a = cs.getPropertyValue('--accent').trim();
+    const b = cs.getPropertyValue('--accent-2').trim();
+    logo.style.background = `linear-gradient(140deg, ${a}, ${b})`;
+  }
+
+  function riseLogoWater() {
+    const logo = $('brand-logo'), fill = $('logo-fill');
+    if (!logo || !fill) return;
+    if (prefersReduced || !fill.animate) { logo.style.background = ''; return; }
+    // 用 WAAPI 而非 CSS class：連續切換時 remove→reflow→add 無法可靠重啟動畫
+    // （實測第二次之後連 animationstart 都不會觸發），finished promise 則穩定得多。
+    cancelScriptAnims(fill);
+    const anim = fill.animate(
+      [{ transform: 'translateY(100%)' }, { transform: 'translateY(0)' }],
+      { duration: 820, easing: 'cubic-bezier(.42,0,.22,1)', fill: 'forwards' }
+    );
+    const settle = () => {
+      logo.style.background = '';   // 底層交還給 var()，此時已是新色
+      anim.cancel();                // 水位歸零，等下一次
+    };
+    anim.finished.then(settle).catch(() => {});   // 被下一次切換取消會 reject，忽略即可
+    // 保險：分頁在背景時 rAF 不觸發、動畫不前進，finished 永遠不會結算，
+    // 沒有這道 logo 會卡在舊色。settle 重複呼叫是無害的。
+    setTimeout(settle, 1400);
   }
 
   // 依引擎重建「模型」下拉
