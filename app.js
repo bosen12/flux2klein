@@ -1389,7 +1389,7 @@
     // Tab 會跑進看不見的面板裡。
     el.inert = !open;
     btn.setAttribute('aria-expanded', String(open));
-    if (open) $('asst-mic').focus();
+    if (open) $('asst-input').focus();   // 打字是比開麥更輕量的入口，焦點給它
   }
 
   function asstSay(kind, text) {
@@ -1455,7 +1455,12 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
       return;
     }
     if (t === 'response.audio.delta' && ev.delta) { playAsstAudio(ev.delta); asstState('回覆中', 'speaking'); return; }
-    if (t === 'response.done') { asst.bubble = null; asstState(asst.live ? '聆聽中' : '已停止', asst.live ? 'listening' : null); return; }
+    // 麥克風開著就回到聆聽；純打字模式沒有「聆聽」可回，顯示待命而不是「已停止」
+    if (t === 'response.done') {
+      asst.bubble = null;
+      asstState(asst.live ? '聆聽中' : '待命中（可繼續打字）', asst.live ? 'listening' : null);
+      return;
+    }
     if (t === 'error') { asstSay('act', '服務錯誤：' + (ev.error?.message || JSON.stringify(ev))); return; }
 
     // 連線握手與其他純狀態通知，收到是正常的，不必記
@@ -1503,6 +1508,41 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
     play.srcs.forEach(s => { try { s.stop(); } catch (e) {} });
     play.srcs = [];
     if (play.ctx) play.at = play.ctx.currentTime;
+  }
+
+  /* ---------- 打字輸入 ---------- */
+  // 打字不需要麥克風，也不需要安全來源——所以只連 WS，不碰 getUserMedia。
+  // 這也讓助理在手機用 http 連（拿不到麥克風）時仍然可用。
+  async function asstSubmitText() {
+    const input = $('asst-input');
+    const text = input.value.trim();
+    if (!text) return;
+    const btn = $('asst-send');
+    btn.disabled = true;
+    try {
+      if (!asst.ws || asst.ws.readyState !== WebSocket.OPEN) {
+        asstState('連線中…', 'thinking');
+        await asstConnect();
+      }
+      input.value = '';
+      stopAsstAudio();            // 打斷正在播的回覆，跟開口說話同語意
+      asst.bubble = null;
+      asstSay('me', text);
+      // 服務端明確要求兩步：item.create 只把訊息塞進 LLM 脈絡，不會觸發生成，
+      // 要再送 response.create 才會回應（見 handlers/conversation.py 的註解）。
+      asstSend({
+        type: 'conversation.item.create',
+        item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
+      });
+      asstSend({ type: 'response.create' });
+      asstState('思考中…', 'thinking');
+    } catch (e) {
+      asstSay('act', '送出失敗：' + e.message);
+      asstState(asst.live ? '聆聽中' : '尚未啟動', asst.live ? 'listening' : null);
+    } finally {
+      btn.disabled = false;
+      input.focus();
+    }
   }
 
   /* ---------- 連線與音訊擷取 ---------- */
@@ -1605,7 +1645,11 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
         res();
       };
       ws.onerror = fail;
-      ws.onclose = () => { if (asst.live) { asstSay('act', '連線中斷'); asstStop(); } };
+      ws.onclose = () => {
+        // 一定要清掉，否則打字模式會拿著已關閉的 ws 當作「還連著」而送不出去
+        if (asst.ws === ws) asst.ws = null;
+        if (asst.live) { asstSay('act', '連線中斷'); asstStop(); }
+      };
       ws.onmessage = ev => { try { onAsstEvent(JSON.parse(ev.data)); } catch (e) {} };
     });
   }
@@ -1650,6 +1694,11 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
     $('assistant-btn').onclick = () => setAssistant(!asst.open);
     $('asst-close').onclick = () => setAssistant(false);
     $('asst-mic').onclick = asstToggleMic;
+    $('asst-send').onclick = asstSubmitText;
+    $('asst-input').onkeydown = e => {
+      // 只認 Enter；輸入法組字中的 Enter（isComposing）是在選字，不能當送出
+      if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); asstSubmitText(); }
+    };
     setAssistant(false);   // 初始收合，並讓 inert 生效
     document.addEventListener('keydown', onGlobalKey);
     // 沒有這兩行的話，把圖片拖到上傳區以外會讓瀏覽器直接開啟該檔案、離開整個面板

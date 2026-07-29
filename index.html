@@ -304,16 +304,28 @@
   </header>
 
   <div class="asst-log" id="asst-log" role="log" aria-live="polite">
-    <p class="asst-empty">按下方「開始聆聽」後直接說話，例如：<br>
+    <p class="asst-empty">直接打字，或按「開始聆聽」用說的。例如：<br>
       「用 Illustrious 畫一個抱著吉他的少女，直式」</p>
   </div>
 
   <footer class="asst-foot">
-    <button type="button" class="asst-mic" id="asst-mic">
-      <span class="asst-mic-icon" aria-hidden="true"></span>
-      <span id="asst-mic-label">開始聆聽</span>
-    </button>
-    <div class="asst-level" id="asst-level" aria-hidden="true"><i></i></div>
+    <div class="asst-type">
+      <input type="text" id="asst-input" placeholder="打字問助理…（Enter 送出）"
+             autocomplete="off" aria-label="輸入訊息給助理">
+      <button type="button" class="asst-send" id="asst-send" title="送出" aria-label="送出">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 12h15M13 6l6 6-6 6"/>
+        </svg>
+      </button>
+    </div>
+    <div class="asst-mic-row">
+      <button type="button" class="asst-mic" id="asst-mic">
+        <span class="asst-mic-icon" aria-hidden="true"></span>
+        <span id="asst-mic-label">開始聆聽</span>
+      </button>
+      <div class="asst-level" id="asst-level" aria-hidden="true"><i></i></div>
+    </div>
   </footer>
 </aside>
 

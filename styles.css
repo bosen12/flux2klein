@@ -1007,6 +1007,28 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .asst-mic.on .asst-mic-icon { animation: step-pulse 1.4s ease-out infinite; }
 
 /* 音量條：讓人確定麥克風真的有收到聲音 */
+/* 打字輸入列：跟麥克風並存，兩種輸入方式都在 footer */
+.asst-mic-row { display: flex; flex-direction: column; gap: 10px; }
+.asst-type { display: flex; gap: 8px; align-items: stretch; }
+.asst-type input {
+  flex: 1; min-width: 0;   /* flex 子項要 min-width:0 才收得住長文字 */
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--panel); color: var(--text);
+  font-family: inherit; font-size: var(--fs-md); outline: none;
+  transition: border-color var(--dur-1), box-shadow var(--dur-1);
+}
+.asst-type input:focus { border-color: var(--accent); box-shadow: var(--focus-ring); }
+.asst-send {
+  flex: none; width: 40px; display: grid; place-items: center;
+  border: none; border-radius: var(--radius-sm); cursor: pointer;
+  background: linear-gradient(135deg, var(--accent), var(--accent-3)); color: #fff;
+  transition: filter var(--dur-1), transform var(--dur-1) var(--ease-spring);
+}
+.asst-send svg { width: 17px; height: 17px; }
+.asst-send:hover { filter: brightness(1.06); }
+.asst-send:active { transform: scale(.94); }
+.asst-send:disabled { opacity: .45; cursor: not-allowed; transform: none; filter: none; }
+
 .asst-level { height: 3px; border-radius: 999px; background: var(--panel-2); overflow: hidden; }
 .asst-level > i {
   display: block; height: 100%; width: 0; border-radius: 999px;
