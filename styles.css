@@ -824,6 +824,11 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 /* ==================== 流動漸層背景特效 ==================== */
 .bg-fx { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
 .app { position: relative; z-index: 1; }
+/* Vanta.js FOG 的 WebGL canvas 容器（app.js 注入 canvas） */
+#vanta-bg { position: absolute; inset: 0; }
+#vanta-bg canvas { display: block; }
+/* Vanta 成功初始化 → 淡出 CSS 色團 fallback（噪點保留，替 WebGL 加一層質感） */
+.bg-fx.vanta-on .blob { opacity: 0; transition: opacity .8s ease; }
 .bg-fx .blob {
   position: absolute; top: 0; left: 0;
   width: 55vmax; height: 55vmax; border-radius: 50%;

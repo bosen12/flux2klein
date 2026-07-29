@@ -4,7 +4,9 @@
 
 ## 這是什麼
 
-呼叫本機 ComfyUI 的網頁面板，支援四組繪圖引擎。**純前端 vanilla JS，沒有建置步驟、沒有框架、沒有 npm 依賴**；後端 `serve.py` 只用 Python 標準函式庫。改完存檔重整瀏覽器就生效，不要引入打包工具或前端框架。
+呼叫本機 ComfyUI 的網頁面板，支援四組繪圖引擎。**純前端 vanilla JS，沒有建置步驟、沒有框架、沒有 npm**；後端 `serve.py` 只用 Python 標準函式庫。改完存檔重整瀏覽器就生效，**不要引入打包工具、前端框架或 npm 建置流程**。
+
+**依賴政策（2026-07-29 起放寬）**：可以使用第三方前端函式庫來提升體驗（例如 WebGL 背景用的 `three.min.js` + `vanta.fog.min.js`），但必須：① **本機 vendored**——把 min.js 檔案下載進專案，不掛外部 CDN（面板可能離線跑）；② 加進 `serve.py` 的 `STATIC_FILES` 與 `VERSIONED_ASSETS`；③ 在 `index.html` 用 `?v=1` 引用（serve.py 會換成雜湊）；④ 尊重 `prefers-reduced-motion`、並提供退化方案（WebGL 失敗時要能 fallback）。仍然**不引入 build step / npm / 前端框架**。
 
 ## 怎麼跑與怎麼驗證
 
@@ -69,6 +71,7 @@ API 格式的範本在啟動時一次 fetch 進 `state.zTemplates`，送出前 d
 - **每完成一項獨立改動就 commit + push**，不要累積成一個大 commit
 - **commit message**：標題簡短講做了什麼，內文說明**為什麼**這樣改。git log 現有風格就是如此，照著寫
 - **commit 之後要在 [進度.md](進度.md) 最上方補一筆**，格式 `### YYYY-MM-DD HH:MM · <hash> <標題>`，寫改了什麼與為什麼。這份檔案的用途是換 AI 工具時能快速接手，所以要寫得讓沒有對話脈絡的人也看得懂。發現新的待辦或已知問題也一併更新該檔的「待辦與可能的下一步」
+- **每次改動都要同步更新 [README.md](README.md)。** README 是給使用者看的說明書（功能、檔案結構、快速開始、疑難排解），只要改動影響到這些就要一起更新，不能讓它跟實際行為脫節。進度.md 記「為什麼」給接手的人，README.md 記「怎麼用」給使用者，兩份都要維護
 - 註解只寫程式碼本身表達不出來的約束（例如「膠囊是 absolute 定位在捲動容器內，offsetLeft 不受捲動影響」），不要寫「這行在做什麼」
 
 ## 事實查證

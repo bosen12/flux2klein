@@ -54,6 +54,11 @@
 - Krea2：SeedVR2 放大 / 二次採樣
 - 放大可不經過二次採樣，直接從 base 輸出放大
 
+### 動態背景
+- 整頁 WebGL 流動彩霧背景（Vanta.js FOG），配色自動跟隨當前引擎主題色
+- 函式庫（`three.min.js` + `vanta.fog.min.js`）**已 vendored 在專案內、離線可用**，不需另外安裝
+- 尊重系統「減少動態」設定：開啟時自動退回靜態柔光背景；WebGL 不可用時也會 fallback，不會空白
+
 ---
 
 ## 快速開始
@@ -125,6 +130,8 @@ python serve.py 127.0.0.1:8188 8190     # 面板改用 8190
 | `krea2.json` | Krea2 workflow（API 格式） |
 | `illustrious.js` | Illustrious SDXL 引擎設定 |
 | `illustrious.json` | Illustrious workflow（API 格式） |
+| `three.min.js` | Three.js r134（Vanta 依賴，vendored） |
+| `vanta.fog.min.js` | Vanta.js FOG WebGL 背景（vendored） |
 | `config.js` | 本地設定（API Key，不進版控） |
 
 ---

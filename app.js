@@ -61,10 +61,49 @@
     if (!pillReady) { void pill.offsetWidth; pill.style.transition = ''; pillReady = true; }
   }
 
-  // 流動背景：三顆色團在畫面內隨機漂移 + 撞邊反彈（用 transform，GPU 合成、省效能）
+  // 背景：優先用 Vanta.js FOG（WebGL 流動彩霧）；reduced-motion 或 WebGL 失敗時
+  // 退回原本的 CSS 色團漂移。兩者都在 .bg-fx 裡，Vanta 成功就把色團淡出。
   function startBgFx() {
+    if (!prefersReduced) {
+      try { if (initVanta()) return; }
+      catch (e) { log('WebGL 背景初始化失敗，改用 CSS 光暈：' + e.message, 'warn'); }
+    }
+    startBlobDrift();
+  }
+
+  // 讀引擎主題色（CSS 變數是 #rrggbb 字面值）轉成 Vanta 要的 0xRRGGBB 整數
+  function cssHex(name) {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return parseInt(v.replace('#', ''), 16);
+  }
+  function vantaColors() {
+    return {
+      highlightColor: cssHex('--accent-3'),
+      midtoneColor:   cssHex('--accent-2'),
+      lowlightColor:  cssHex('--accent'),
+      baseColor:      cssHex('--bg'),
+    };
+  }
+  // 引擎切換時更新彩霧配色，讓背景跟著主題走
+  function applyVantaColors() {
+    if (state.vanta) { try { state.vanta.setOptions(vantaColors()); } catch (e) {} }
+  }
+  function initVanta() {
+    const el = document.getElementById('vanta-bg');
+    if (!el || !window.VANTA || !window.VANTA.FOG || !window.THREE) return false;
+    state.vanta = window.VANTA.FOG(Object.assign({
+      el, THREE: window.THREE,
+      blurFactor: 0.62, speed: 1.0, zoom: 0.85,
+      mouseControls: false, touchControls: false, gyroControls: false,
+    }, vantaColors()));
+    document.querySelector('.bg-fx').classList.add('vanta-on');
+    return true;
+  }
+
+  // 流動背景（fallback）：三顆色團在畫面內隨機漂移 + 撞邊反彈（用 transform，GPU 合成、省效能）
+  function startBlobDrift() {
     const blobs = [...document.querySelectorAll('.bg-fx .blob')];
-    if (!blobs.length || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (!blobs.length || prefersReduced) return;
     const SPD = 0.00007;                       // 佔畫面比例 / 毫秒（很慢的飄移）
     const rndVel = () => { const a = Math.random() * Math.PI * 2, m = SPD * (0.5 + Math.random()); return [Math.cos(a) * m, Math.sin(a) * m]; };
     const st = blobs.map(el => { const [vx, vy] = rndVel(); return { el, x: Math.random(), y: Math.random(), vx, vy, hw: el.offsetWidth / 2, hh: el.offsetHeight / 2 }; });
@@ -249,6 +288,7 @@
     state.engine = engine;
     document.documentElement.dataset.engine = engine;
     riseLogoWater();                                // 新色從底部漲上來
+    applyVantaColors();                             // WebGL 背景彩霧跟著換色
     const e = ENGINES[engine];
     const bt = $('brand-title');
     bt.textContent = e.title;

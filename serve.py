@@ -41,6 +41,8 @@ STATIC_FILES = {
     "/zimage.js": "zimage.js",
     "/krea2.js": "krea2.js",
     "/illustrious.js": "illustrious.js",
+    "/three.min.js": "three.min.js",             # Vanta.js 依賴（本機 vendored，r134）
+    "/vanta.fog.min.js": "vanta.fog.min.js",     # WebGL 流動彩霧背景
     "/styles.css": "styles.css",
     "/workflow.json": "workflow.json",
     "/zimage_t2i.json": "zimage_t2i.json",
@@ -103,7 +105,8 @@ def recv_headers(sock):
 # index.html 裡的 ?v= 會被換成這些檔案 mtime 的雜湊：只要改過任何一支，
 # 網址就不同，瀏覽器一定重抓，不會再發生「改了 JS 但頁面跑舊版」。
 VERSIONED_ASSETS = ("app.js", "config.js", "converter.js", "zimage.js",
-                    "krea2.js", "illustrious.js", "styles.css", "favicon.svg")
+                    "krea2.js", "illustrious.js", "styles.css", "favicon.svg",
+                    "three.min.js", "vanta.fog.min.js")
 
 
 def asset_version():
