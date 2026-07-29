@@ -382,6 +382,40 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   transition: width .25s cubic-bezier(.4,0,.2,1);
 }
 
+/* 執行階段列：內嵌在進度卡裡，不遮擋任何東西。
+   階段由送出的 prompt 物件推導（哪些 class_type 存在就有哪一段），
+   再由 WebSocket 的 executing 事件推進——資訊全是真的，不用計時器假裝。*/
+.pipeline {
+  display: flex; flex-wrap: wrap; align-items: center;
+  list-style: none; margin: 14px 0 0; padding: 0;
+  font-size: var(--fs-xs); color: var(--text-faint);
+}
+.pipeline li { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.pipeline li + li::before {
+  content: ''; width: 16px; height: 1px; margin: 0 8px;
+  background: var(--border-strong); flex: none;
+}
+.pipeline .dot {
+  width: 15px; height: 15px; border-radius: 50%; flex: none;
+  border: 1.5px solid var(--border-strong);
+  display: grid; place-items: center; font-size: 9px; line-height: 1;
+  transition: background-color .3s, border-color .3s, box-shadow .3s;
+}
+.pipeline li.done { color: var(--text-dim); }
+.pipeline li.done .dot { background: var(--accent); border-color: var(--accent); color: #fff; }
+.pipeline li.now { color: var(--accent); font-weight: 600; }
+.pipeline li.now .dot {
+  border-color: var(--accent);
+  animation: step-pulse 1.6s ease-out infinite;
+}
+@keyframes step-pulse {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+  70%  { box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent); }
+}
+.card.idle .pipeline { display: none; }
+.pipeline:empty { display: none; }
+
 .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; }
 .metric { background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 11px 13px; }
 .metric .k { font-family: var(--mono); font-size: var(--fs-micro); letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); }

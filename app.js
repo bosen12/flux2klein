@@ -21,7 +21,7 @@
 
   // 兩個引擎的品牌與主題資訊
   const ENGINES = {
-    flux2klein: { title: 'Flux2 Klein 面板', sub: '文生圖 / 單雙三圖編輯 / 局部重繪 / 圖像擴展' },
+    flux2klein: { title: 'Flux2 Klein 面板', sub: '文生圖 / 多圖編輯 / 局部重繪 / 圖像擴展' },
     zimage:     { title: 'Z-Image Turbo 面板', sub: '文生圖 / ControlNet 邊緣參考' },
     krea2:      { title: 'Krea2 面板', sub: '文生圖（可選 SeedVR2 / 二次採樣）' },
     illustrious:{ title: 'Illustrious 面板', sub: 'SDXL 文生圖（可選放大）' },
@@ -632,7 +632,7 @@
       return;
     }
     log(`已排入佇列（prompt_id=${data.prompt_id?.slice(0, 8)}…），共 ${countNodes(tpl)} 個節點`, 'ok');
-    startRun(data.prompt_id, steps, countNodes(tpl));
+    startRun(data.prompt_id, steps, countNodes(tpl), tpl, E, on);
     state.run.compare = { E, on, images: {} };   // 收集輸出做對照
     if (!$('seed-fixed').checked) $('seed').value = Math.floor(Math.random() * 1e15);
   }
@@ -723,7 +723,7 @@
         return;
       }
       log(`已排入佇列（prompt_id=${data.prompt_id?.slice(0, 8)}…），共 ${countNodes(prompt)} 個節點`, 'ok');
-      startRun(data.prompt_id, steps, countNodes(prompt));
+      startRun(data.prompt_id, steps, countNodes(prompt), prompt);
 
       // 非固定種子 → 下次自動換
       if (!$('seed-fixed').checked) $('seed').value = Math.floor(Math.random() * 1e15);
@@ -775,14 +775,94 @@
       return;
     }
     log(`已排入佇列（prompt_id=${data.prompt_id?.slice(0, 8)}…），共 ${countNodes(tpl)} 個節點`, 'ok');
-    startRun(data.prompt_id, steps, countNodes(tpl));
+    startRun(data.prompt_id, steps, countNodes(tpl), tpl);
     if (!$('seed-fixed').checked) $('seed').value = Math.floor(Math.random() * 1e15);
   }
 
   function countNodes(p) { return Object.keys(p).length; }
 
+  /* ---------------- 執行階段（Multi Step Loader） ---------------- */
+  // 順序即執行順序，first-match wins，所以規則的排列有意義：
+  // UpscaleModelLoader 會先命中「載入」而不是「放大」，LatentUpscaleBy 先命中
+  // 「取樣」（它是 hires 取樣的前置）而不是「放大」。
+  const STAGE_RULES = [
+    // 用「包含 Load」而非「結尾是 Loader」：CheckpointLoaderSimple 結尾是 Simple、
+    // SeedVR2LoadDiTModel 的 Load 在中間，兩者都會被漏掉。
+    { key: 'load',    label: '載入模型', test: t => /Load/.test(t) },
+    // 大小寫不敏感：QwenImageDiffsynthControlnet 的 net 是小寫。
+    // ControlNetLoader 同時含 Load 與 ControlNet，但 load 規則在前所以歸「載入」，正確。
+    { key: 'encode',  label: '編碼',     test: t => /CLIPTextEncode|ControlNet|SetUnion|Preprocessor|Canny/i.test(t) },
+    { key: 'sample',  label: '取樣',     test: t => /KSampler|SamplerCustom|LatentUpscale|EmptyLatent|EmptySD3|Latent/.test(t) },
+    { key: 'decode',  label: '解碼',     test: t => /VAEDecode|VAEEncode/.test(t) },
+    { key: 'upscale', label: '放大',     test: t => /Upscale|SeedVR2Video/.test(t) },
+    { key: 'output',  label: '輸出',     test: t => /SaveImage|PreviewImage/.test(t) },
+  ];
+  const stageOf = ct => (STAGE_RULES.find(r => r.test(ct || '')) || {}).key || null;
+
+  // 階段怎麼分，兩種引擎不一樣。
+  //
+  // 增強引擎（Krea2 / Illustrious）用「分支」當階段——那才是使用者認得的流程
+  // （基礎生成 / 第二階段採樣 / SD 放大），而且分支資訊引擎設定檔裡本來就有。
+  // 其餘引擎的工作流是線性的，用 class_type 分階段就夠。
+  //
+  // 不用 ComfyUI 的節點類別硬套順序，是因為它的執行順序是相依驅動的：
+  // SD 放大用的 UpscaleModelLoader 會拖到最後才跑，若照「載入→編碼→取樣」的
+  // 固定順序判定，整趟都會卡在「載入模型」。
+  function planStages(prompt, E, on) {
+    if (E && E.enhance) {
+      const inBranch = new Set();
+      E.enhance.forEach(e => (e.branch || []).forEach(id => inBranch.add(String(id))));
+      const out = [{ key: 'base', label: '基礎生成',
+                     nodes: new Set(Object.keys(prompt).filter(id => !inBranch.has(id))) }];
+      for (const e of E.enhance) {
+        if (!on || !on[e.key]) continue;
+        const ns = new Set((e.branch || []).map(String).filter(id => prompt[id]));
+        if (ns.size) out.push({ key: e.key, label: e.name, nodes: ns });
+      }
+      return out;
+    }
+    const buckets = new Map();
+    for (const id in prompt) {
+      const k = stageOf(prompt[id] && prompt[id].class_type);
+      if (!k) continue;
+      if (!buckets.has(k)) buckets.set(k, new Set());
+      buckets.get(k).add(String(id));
+    }
+    return STAGE_RULES.filter(r => buckets.has(r.key))
+                      .map(r => ({ key: r.key, label: r.label, nodes: buckets.get(r.key) }));
+  }
+
+  // 高亮的是「目前執行中的節點屬於哪一段」，打勾的是「該段節點都跑完了」。
+  // 不假設階段有嚴格先後——ControlNet 這類分支本來就是平行的，硬排順序反而會說謊。
+  function updateStages() {
+    const r = state.run; if (!r || !r.stages || !r.stages.length) return;
+    const fin = id => r.cached.has(id) || (r.started.has(id) && id !== r.curNode);
+    const done = r.stages.map(s => [...s.nodes].every(fin));
+    const cur = r.stages.findIndex(s => s.nodes.has(String(r.curNode)));
+    paintStages(done, cur);
+  }
+
+  function paintStages(done, cur) {
+    const el = $('pipeline'); if (!el) return;
+    [...el.children].forEach((li, i) => {
+      li.classList.toggle('done', !!done[i]);
+      li.classList.toggle('now', i === cur && !done[i]);
+    });
+  }
+
+  function renderStages(list) {
+    const el = $('pipeline'); if (!el) return;
+    el.innerHTML = '';
+    for (const s of list) {
+      const li = document.createElement('li');
+      li.dataset.key = s.key;
+      li.innerHTML = `<span class="dot"></span><span>${s.label}</span>`;
+      el.appendChild(li);
+    }
+  }
+
   /* ---------------- 進度狀態機 ---------------- */
-  function startRun(promptId, plannedSteps, totalNodes) {
+  function startRun(promptId, plannedSteps, totalNodes, promptObj, stageEngine, stageOn) {
     state.running = true;
     $('run').disabled = true;
     state.run = {
@@ -792,9 +872,11 @@
       cached: new Set(),               // 被快取略過的節點（等同已完成）
       curNode: null, curFrac: 0,       // 目前節點與它的內部進度(0~1)
       peakFrac: 0, tiles: 0,           // 進度條只進不退 + 分塊計數
+      stages: planStages(promptObj || {}, stageEngine, stageOn),
       firstT: 0, firstV: 0, lastValue: 0, rate: 0, t0: performance.now(),
       results: [],
     };
+    renderStages(state.run.stages);
     $('progress-card').classList.remove('idle');   // 首次生成後就不再回到閒置外觀
     $('pct').textContent = '0%'; $('bar-fill').style.width = '0%';
     setRunning(true);                        // 進行中：後半段流動條紋
@@ -870,6 +952,7 @@
         if (!state.running) { $('run').textContent = '生成'; $('run').dataset.state = 'idle'; }
       }, 1300);
       $('pct').textContent = '100%'; $('bar-fill').style.width = '100%';
+      paintStages(state.run.stages.map(() => true), -1);
       setStage(`完成 · 耗時 ${fmtTime(total)}`);
       log(`✅ 完成，耗時 ${fmtTime(total)}`, 'ok');
       if (r.compare) buildCompare(r.compare);
@@ -1092,6 +1175,7 @@
           r.curFrac = 0;
           r.tiles = 0; r.lastValue = 0;
           const cls = classOfNode(d.node);
+          updateStages();
           const done = r.cached.size + Math.max(0, r.started.size - 1);
           setStage(`執行中：${cls || d.node}` + (r.total ? ` (節點 ${Math.min(done + 1, r.total)}/${r.total})` : ''));
           updateOverall();
