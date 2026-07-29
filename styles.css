@@ -112,6 +112,23 @@ header.topbar {
    否則展開像 ControlNet 參考圖這種會增高的區塊時，捲軸突然出現會吃掉 15px，
    內容區跟著變窄、增強卡片被壓到文字折行，看起來像左欄寬度自己變了。*/
 .left { border-right: 1px solid var(--border); background: var(--panel); overflow-y: auto; scrollbar-gutter: stable; }
+
+/* 捲軸：因為 scrollbar-gutter: stable，這條寬度永遠佔著版面、永遠看得到，
+   用系統預設的話它會是整個介面上唯一還長得像作業系統元件的東西。
+   標準屬性給新版 Chrome / Firefox / Safari；::-webkit-* 給舊版 Safari
+   （Chrome 只要設了 scrollbar-color 就會忽略 webkit 那組，兩者不會打架）。
+   順帶一提 thin 也讓預留的溝槽從 16px 縮到約 9px，內容區多拿回一些寬度。*/
+.left, .right, .log, .cmp-overlay {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.left::-webkit-scrollbar, .right::-webkit-scrollbar, .log::-webkit-scrollbar { width: 10px; height: 10px; }
+.left::-webkit-scrollbar-track, .right::-webkit-scrollbar-track, .log::-webkit-scrollbar-track { background: transparent; }
+.left::-webkit-scrollbar-thumb, .right::-webkit-scrollbar-thumb, .log::-webkit-scrollbar-thumb {
+  background: var(--border-strong); border-radius: 999px;
+  border: 3px solid transparent; background-clip: content-box;   /* 內縮讓拇指看起來更細 */
+}
+.left:hover, .right:hover, .log:hover { scrollbar-color: var(--text-faint) transparent; }
 .right { overflow-y: auto; scrollbar-gutter: stable; padding: 20px; display: flex; flex-direction: column; gap: 18px; }
 
 /* ---------- 模式分頁 ---------- */
@@ -168,6 +185,7 @@ textarea, input[type=text], input[type=number], select {
   font-size: var(--fs-md); font-family: inherit; outline: none; transition: .15s;
 }
 textarea { resize: vertical; min-height: 92px; line-height: 1.55; }
+::placeholder { color: var(--text-faint); opacity: 1; }
 textarea:focus, input:focus, select:focus { border-color: var(--accent); box-shadow: var(--focus-ring); }
 
 /* AI 優化按鈕 */
@@ -373,9 +391,12 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .result {
   border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden;
   background: var(--panel-2); position: relative;
-  animation: result-in .4s cubic-bezier(.22,1,.36,1) both;   /* 成品不要硬跳出來 */
+  animation: result-in .4s cubic-bezier(.22,1,.36,1) backwards;   /* 成品不要硬跳出來 */
+  /* 用 backwards 不用 both：both 會在動畫結束後繼續持有 transform，把下面 :hover 的 transform 蓋掉 */
+  transition: transform .22s cubic-bezier(.22,1,.36,1), box-shadow .22s, border-color .22s;
 }
 @keyframes result-in { from { opacity: 0; transform: scale(.94) translateY(10px); } }
+.result:hover { transform: translateY(-2px); box-shadow: var(--shadow); border-color: var(--border-strong); }
 .result img { display: block; width: 100%; cursor: zoom-in; }
 .result a.dl { position: absolute; bottom: 6px; right: 6px; background: rgba(28,36,48,.75); color: #fff; text-decoration: none; font-size: var(--fs-xs); padding: 3px 8px; border-radius: var(--radius-xs); }
 .result .src-tag { position: absolute; top: 6px; left: 6px; background: rgba(28,36,48,.72); color: #fff; font-size: var(--fs-micro); padding: 2px 7px; border-radius: var(--radius-xs); pointer-events: none; }
@@ -649,7 +670,9 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   user-select: none; touch-action: none;
   background: repeating-conic-gradient(#f0f2f5 0% 25%, #fafbfc 0% 50%) 50% / 20px 20px;
   cursor: zoom-in;
+  transition: box-shadow .22s ease, transform .22s cubic-bezier(.22,1,.36,1);
 }
+.cmp:hover { box-shadow: var(--shadow); transform: translateY(-2px); }
 .cmp img { display: block; }
 .cmp-a { width: 100%; }
 .cmp-b { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
