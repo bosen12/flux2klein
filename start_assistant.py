@@ -26,6 +26,16 @@ S2S_EXE = VENV / "Scripts" / "speech-to-speech.exe"
 GROQ_BASE = "https://api.groq.com/openai/v1"
 GROQ_MODEL = "llama-3.3-70b-versatile"
 
+# ---- 斷句靈敏度（收音環境不同差很多，這三個最值得自己調）----
+# thresh：VAD 觸發門檻。預設 0.6 偏高，要講得夠大聲清楚才會觸發，感覺「不靈敏」。
+#         調低比較容易聽到你，但太低會被環境噪音誤觸發。建議 0.35~0.45 之間試。
+VAD_THRESH = "0.4"
+# min_silence_ms：靜音多久算你講完。預設 64ms 短得離譜——中文句子中間的自然停頓
+#         都不只 64ms，於是一句話被切成好幾段各自送去辨識，就會聽成片段。
+VAD_MIN_SILENCE = "500"
+# min_speech_ms：短於這個長度的聲音不算說話，用來擋掉咳嗽、鍵盤聲。
+VAD_MIN_SPEECH = "384"
+
 
 def groq_key():
     """從 config.js 取金鑰。那份檔案已 gitignore，是專案放密鑰的既定位置。"""
@@ -71,6 +81,13 @@ def main():
         # 預設會送 chat_template_kwargs.enable_thinking=false（給 Together 的 Qwen3.5 用），
         # Groq 不支援這個屬性，會直接回 400 property 'chat_template_kwargs' is unsupported
         "--no_responses_api_disable_thinking",
+        # 斷句靈敏度，三個常數的說明見檔案上方
+        "--thresh", VAD_THRESH,
+        "--min_silence_ms", VAD_MIN_SILENCE,
+        "--min_speech_ms", VAD_MIN_SPEECH,
+        # 預設是貪婪解碼（beams=1）。中文同音字多，加一點 beam search 明顯少聽錯，
+        # Whisper turbo 夠快，多這點運算不影響對話節奏。
+        "--stt_gen_num_beams", "3",
         # TTS 預設走 ggml 後端，需要另外編譯的 qwentts_cpp（pip 裝不到）。
         # torch 後端用已經裝好的 CUDA PyTorch，不用額外依賴。
         "--qwen3_tts_backend", "torch",
@@ -80,7 +97,11 @@ def main():
     # --tts qwen3 與 --ws_port 8765 本來就是預設值，這裡明寫是為了自我說明
 
     print(f"▶ 語音服務啟動中… ws://127.0.0.1:{port}/v1/realtime")
-    print(f"  STT=whisper  LLM={GROQ_MODEL}@Groq  TTS=Qwen3-TTS(預設)")
+    print(f"  STT=whisper-large-v3-turbo  LLM={GROQ_MODEL}@Groq  TTS=Qwen3-TTS")
+    print(f"  斷句：thresh={VAD_THRESH}（越低越靈敏）"
+          f"  靜音={VAD_MIN_SILENCE}ms（越大越不會把句子切斷）"
+          f"  最短語音={VAD_MIN_SPEECH}ms")
+    print("  覺得不靈敏就把 thresh 調小、句子被切碎就把靜音調大，改本檔上方的常數。")
     print("  第一次執行會下載模型權重，請耐心等候。\n")
     # 金鑰不印出來
     try:
