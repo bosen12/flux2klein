@@ -13,6 +13,9 @@
   --accent-soft: #edecff;
   /* 頂部開關：關=中性灰（一眼看出是關的），開=引擎主色。
      原本關閉態是飽和的蘭紫、開啟態是淺藍，兩個都是有彩度的顏色，看不出誰是開誰是關。*/
+  /* 焦點環：--accent-soft 太淡（#edecff 之類），在白底上幾乎看不見。
+     用 color-mix 從主色調出足夠對比，四個引擎自動跟隨。*/
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
   --switch-off: #cbd5e1;
   --switch-on:  var(--accent);
   --ok: #12a150;
@@ -129,7 +132,7 @@ header.topbar {
   position: relative; z-index: 1;
   border: 1px solid var(--border); background: var(--panel-2);
   padding: 7px 13px; border-radius: 999px; cursor: pointer;
-  font-size: 13px; color: var(--text-dim); transition: color .2s, border-color .2s, background .2s;
+  font-size: 13px; color: var(--text-dim); transition: color .2s, border-color .2s, background .2s, transform .12s cubic-bezier(.34,1.4,.64,1);
   /* 字重固定 600：選中才變粗會讓分頁寬度改變、其他分頁跟著位移，膠囊就會追到過期的座標 */
   font-weight: 600;
 }
@@ -152,7 +155,7 @@ textarea, input[type=text], input[type=number], select {
   font-size: 13.5px; font-family: inherit; outline: none; transition: .15s;
 }
 textarea { resize: vertical; min-height: 92px; line-height: 1.55; }
-textarea:focus, input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+textarea:focus, input:focus, select:focus { border-color: var(--accent); box-shadow: var(--focus-ring); }
 
 /* AI 優化按鈕 */
 .prompt-wrap { position: relative; }
@@ -180,6 +183,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .btn-mini {
   border: 1px solid var(--border); background: var(--panel-2); color: var(--text-dim);
   border-radius: var(--radius-sm); padding: 0 12px; cursor: pointer; font-size: 12.5px; white-space: nowrap;
+  transition: border-color .15s, color .15s, transform .12s cubic-bezier(.34,1.4,.64,1);
 }
 .btn-mini:hover { border-color: #cfd6e0; color: var(--text); }
 .chk { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text-dim); font-weight: 400; }
@@ -276,8 +280,26 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   .btn-run[data-state="loading"]::before { animation: run-spin .9s linear infinite; }
   .btn-run[data-state="done"]::before { animation: none; }
 }
-.btn-ghost { border: 1px solid var(--border); background: var(--panel); color: var(--text-dim); border-radius: var(--radius-sm); padding: 0 16px; cursor: pointer; font-size: 13px; }
+.btn-ghost { border: 1px solid var(--border); background: var(--panel); color: var(--text-dim); border-radius: var(--radius-sm); padding: 0 16px; cursor: pointer; font-size: 13px;
+  transition: color .15s, border-color .15s, transform .12s cubic-bezier(.34,1.4,.64,1); }
 .btn-ghost:hover { color: var(--err); border-color: #f1c4c4; }
+
+/* ---------- 鍵盤焦點與按壓回饋 ---------- */
+/* 焦點用 outline 不用 box-shadow：多數元件的 box-shadow 已拿去做陰影或光暈，
+   兩者會互相覆蓋；outline 是獨立通道，且現代瀏覽器會沿 border-radius 描邊。
+   包在 :where() 裡讓特異性為 0，個別元件要自訂焦點樣式時能直接蓋掉。 */
+:where(button, a[href], select, textarea, input, [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* 這兩個 input 視覺上是隱藏的（寬高 0），焦點環畫在它們控制的開關上，見各自的規則 */
+.yz-switch input:focus-visible,
+.enh input:focus-visible { outline: none; }
+
+/* 按壓回饋：原本只有 .btn-run 有，其餘按下去毫無反應，介面因此顯得沒回應。
+   過渡要補進各元件既有的 transition 宣告裡——寫成獨立的 :where 規則會被
+   它們自己的 transition（特異性較高）整條蓋掉，transform 就不會有過渡。 */
+:where(.tab, .aspect, .btn-mini, .btn-ghost, .head-btn, .engine-switch button):active { transform: scale(.96); }
 
 /* ---------- 右側：即時主控台 ---------- */
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
@@ -427,7 +449,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   transition:transform .3s cubic-bezier(.68,-.55,.27,1.55);   /* 彈跳 */
 }
 .yz-switch input:checked ~ .yz-knob { transform:translateX(16px) translateY(-50%); }
-.yz-switch input:focus-visible + .yz-slider { box-shadow:0 0 0 3px color-mix(in srgb, var(--switch-on) 45%, transparent); }
+.yz-switch input:focus-visible + .yz-slider { box-shadow: var(--focus-ring); }
 
 @media (max-width: 900px) {
   .main { grid-template-columns: 1fr; }
@@ -566,7 +588,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   position: relative; z-index: 1;
   border: none; background: transparent; color: var(--text-dim);
   font-size: 12.5px; font-weight: 600; padding: 6px 13px; border-radius: 999px; cursor: pointer;
-  transition: color .2s ease; font-family: inherit;
+  transition: color .2s ease, transform .12s cubic-bezier(.34,1.4,.64,1); font-family: inherit;
 }
 .engine-switch button:hover { color: var(--text); }
 .engine-switch button.active { color: #fff; }
@@ -712,7 +734,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .enh input:checked ~ .enh-body .enh-sw { background: linear-gradient(135deg, var(--accent), var(--accent-3)); }
 .enh input:checked ~ .enh-body .enh-sw::after { transform: translateX(14px); }
 .enh.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 3px var(--accent-soft); }
-.enh input:focus-visible ~ .enh-body .enh-sw { box-shadow: 0 0 0 3px var(--accent-soft); }
+.enh input:focus-visible ~ .enh-body .enh-sw { box-shadow: var(--focus-ring); }
 
 /* ==================== 長寬比 chip ==================== */
 #aspect-presets { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -721,7 +743,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   border: 1px solid var(--border); background: var(--panel-2); color: var(--text-dim);
   padding: 5px 11px 5px 9px; border-radius: 999px; cursor: pointer;
   font-size: 12px; font-variant-numeric: tabular-nums; font-family: inherit;
-  transition: border-color .15s, background .15s, color .15s, box-shadow .15s;
+  transition: border-color .15s, background .15s, color .15s, box-shadow .15s, transform .12s cubic-bezier(.34,1.4,.64,1);
 }
 .aspect:hover { border-color: var(--border-strong); color: var(--text); background: var(--panel); }
 .aspect .ar-box { display: block; flex: none; background: currentColor; border-radius: 2px; opacity: .45; transition: opacity .15s; }

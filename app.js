@@ -1184,7 +1184,15 @@
     $('lightbox').onclick = () => $('lightbox').classList.remove('on');
     $('ai-btn').onclick = aiOptimizePrompt;
     $('gallery-clear').onclick = () => { $('gallery').innerHTML = ''; };
-    $('log-head').onclick = () => $('log-card').classList.toggle('collapsed');
+    const toggleLog = () => {
+      const collapsed = $('log-card').classList.toggle('collapsed');
+      $('log-head').setAttribute('aria-expanded', String(!collapsed));
+    };
+    $('log-head').onclick = toggleLog;
+    // div 掛了 role=button 就得自己補鍵盤操作，瀏覽器只對真正的 button 自動處理
+    $('log-head').onkeydown = e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleLog(); }
+    };
     document.addEventListener('keydown', onGlobalKey);
     // 分頁膠囊由 ResizeObserver 顧，這裡只需補引擎切換器（它沒有尺寸變化可觀察）
     addEventListener('resize', movePill);
@@ -1356,6 +1364,7 @@ EXPLICIT CONTENT:
     const card = $('log-card'), head = $('log-head');
     if (!card || !head) return;
     card.classList.remove('collapsed');
+    head.setAttribute('aria-expanded', 'true');
     head.classList.remove('flash-err');
     void head.offsetWidth;              // 強制重繪，讓動畫可重複觸發
     head.classList.add('flash-err');
