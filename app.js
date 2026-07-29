@@ -284,6 +284,17 @@
       movePill();
       return;
     }
+    // 換色改用 View Transitions：讓整個主題（所有主色衍生的按鈕/邊框/膠囊/陰影）
+    // 交叉淡入，繞開「CSS 變數不能直接 transition」的坑。不支援或 reduced-motion 就直接換。
+    // 標題掃過與 logo 水位是各自的效果，照舊疊在上面。
+    if (document.startViewTransition && !prefersReduced) {
+      document.startViewTransition(() => applyEngine(engine));
+    } else {
+      applyEngine(engine);
+    }
+  }
+
+  function applyEngine(engine) {
     freezeLogoColor();                              // 抓舊色，必須在 dataset 改變之前
     state.engine = engine;
     document.documentElement.dataset.engine = engine;

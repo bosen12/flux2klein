@@ -856,6 +856,14 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 #vanta-bg canvas { display: block; }
 /* Vanta 成功初始化 → 淡出 CSS 色團 fallback（噪點保留，替 WebGL 加一層質感） */
 .bg-fx.vanta-on .blob { opacity: 0; transition: opacity .8s ease; }
+
+/* 引擎切換：整個主題交叉淡入（View Transitions API，見 app.js selectEngine） */
+::view-transition-old(root), ::view-transition-new(root) {
+  animation-duration: .4s; animation-timing-function: ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+}
 .bg-fx .blob {
   position: absolute; top: 0; left: 0;
   width: 55vmax; height: 55vmax; border-radius: 50%;
