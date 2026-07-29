@@ -40,12 +40,17 @@
     el.getAnimations().forEach(a => { if (!a.animationName) a.cancel(); });
   }
 
-  function animateSwitch(el, dy = 6) {
+  // 切換引擎的編排節拍。原本 8 個動效全在 t=0 起跑、沒有閱讀順序；
+  // 改為主角（主題交叉淡入 + logo 水位）先動，配角依序跟上。
+  // 間隔取 60ms，落在 animation-systems 建議的 40~90ms 區間。
+  const BEAT = { title: 90, tabs: 150, form: 210 };
+
+  function animateSwitch(el, dy = 6, delay = 0) {
     if (!el || prefersReduced || !el.animate) return;
     cancelScriptAnims(el);
     el.animate(
       [{ opacity: 0, transform: `translateY(${dy}px)` }, { opacity: 1, transform: 'translateY(0)' }],
-      { duration: 240, easing: 'cubic-bezier(.22,.61,.36,1)' }
+      { duration: 240, easing: 'cubic-bezier(.22,.61,.36,1)', delay, fill: 'backwards' }
     );
   }
 
@@ -224,7 +229,7 @@
     };
   }
 
-  function selectMode(key) {
+  function selectMode(key, formDelay = 0) {
     state.mode = key;
     try {
     const order = currentOrder();
@@ -258,7 +263,7 @@
     if (m.size) buildAspectPresets();
     state.images = {}; // 換模式清空已選圖
     state.mask = null;
-    animateSwitch($('form'));   // 切換模式：表單淡入
+    animateSwitch($('form'), 6, formDelay);   // 表單淡入（換引擎時會延後，見 BEAT）
     } catch (err) { suppressReveal = false; log('切換模式錯誤：' + err.message, 'err'); console.error(err); }
   }
 
@@ -303,8 +308,9 @@
     const e = ENGINES[engine];
     const bt = $('brand-title');
     bt.textContent = e.title;
+    bt.style.animationDelay = prefersReduced ? '' : BEAT.title + 'ms';
     bt.classList.remove('sweep'); void bt.offsetWidth; bt.classList.add('sweep');   // 標題漸層掃過過渡
-    bt.addEventListener('animationend', () => bt.classList.remove('sweep'), { once: true });
+    bt.addEventListener('animationend', () => { bt.classList.remove('sweep'); bt.style.animationDelay = ''; }, { once: true });
     $('brand-sub').textContent = e.sub;
     document.querySelectorAll('#engine-switch button').forEach(b => b.classList.toggle('active', b.dataset.engine === engine));
     movePill();
@@ -313,8 +319,8 @@
     buildModelOptions();
     state.mode = currentOrder()[0];
     buildTabs();
-    selectMode(state.mode);        // 內含表單淡入
-    animateSwitch($('tabs'), 0);   // 分頁列淡入
+    selectMode(state.mode, BEAT.form);   // 內含表單淡入，依節拍延後
+    animateSwitch($('tabs'), 0, BEAT.tabs);   // 分頁列淡入
     // 品牌區刻意不做淡入位移：logo 靠水位漲上來換色，位置保持不動
   }
 

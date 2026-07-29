@@ -913,7 +913,9 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 }
 #brand-title.sweep {
   -webkit-text-fill-color: transparent;
-  animation: title-sweep .85s var(--ease-out);
+  /* backwards：切換引擎時掃過會被延後 90ms（見 app.js 的 BEAT），
+     沒有它的話 background-position 會在動畫起跑那一刻跳一下 */
+  animation: title-sweep .85s var(--ease-out) backwards;
 }
 @keyframes title-sweep { from { background-position: 130% 0; } to { background-position: -30% 0; } }
 @media (prefers-reduced-motion: reduce) {
