@@ -93,6 +93,10 @@ API 格式的範本在啟動時一次 fetch 進 `state.zTemplates`，送出前 d
 
 **用 class 加減重啟 CSS 動畫並不可靠。** `remove → void offsetWidth → add` 這個常見招式，在連續快速觸發時第二次之後可能完全不觸發（實測連 `animationstart` 都收不到）。需要重複播放的動畫改用 `element.animate()`，並用 `finished` promise 收尾。
 
+**新增 DOM 元素前先確認 id 沒被佔用。** 曾經給執行階段列加了 `id="steps"`，跟既有的「步數」輸入框撞名——`getElementById` 回傳那個 `input`，於是渲染函式把 `<li>` 寫進步數欄位，而送出時讀的正是 `$('steps').value`，直接炸掉生成。
+
+**要表現 ComfyUI 的執行流程時，用引擎設定裡的「分支」而不是節點的 `class_type`。** ComfyUI 的執行順序是相依驅動的，不照階段分組——SD 放大的 `UpscaleModelLoader` 會拖到最後才跑，任何「載入→編碼→取樣」的固定順序假設都會失準。而每條增強分支的節點 ID 在 `illustrious.js` / `krea2.js` 裡本來就有，天然有序、也才是使用者認得的說法。
+
 **引擎主題色一律用 `color-mix` 從 `--accent` 衍生，不要為各引擎另寫覆寫規則。** 陰影、條紋、選取色等透明度變體全部寫成 `color-mix(in srgb, var(--accent) N%, transparent)`，四個引擎自動跟隨。曾經有 33 條規則只是把同一件事寫四遍。新增引擎只需在 `:root[data-engine="..."]` 裡給 4 個變數。同理，內嵌 SVG 要換色時用 class + 變數，**不要用 `[stroke="#xxxxxx"]` 屬性選擇器比對硬編色碼**——SVG 一改就無聲失效。
 
 **顏色值來自 CSS 變數又要過渡時，不能直接 transition 那個屬性。** `background: var(--x)` 搭配 `transition: background-color`，當引擎切換改了 `--x`，Chrome 不會重啟過渡，顏色會卡在舊值（頂部開關就這樣四個引擎全停在同一色）。註冊 `@property` 沒用，反而會被釘在 `initial-value`。正解是兩層堆疊、只對 `opacity` 過渡：把新顏色放在 `::after` 上淡入淡出，變數變動立即生效。
