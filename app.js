@@ -1488,7 +1488,11 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
   // 避免用 <audio> 逐段載入造成的爆音與間隙。
   const play = { ctx: null, at: 0, srcs: [] };
   function playAsstAudio(b64) {
-    const rate = (window.YZ_CONFIG && window.YZ_CONFIG.ASSISTANT_TTS_RATE) || 24000;
+    // 播放取樣率必須等於服務端送出的取樣率。這裡原本寫 24000（Qwen3-TTS 的原生
+    // 取樣率），但服務端會先把音訊重取樣成 PIPELINE_SR=16000 才送出——用 24000
+    // 播 16k 的資料等於 1.5 倍速，聽起來又快又尖。輸入端的 ASST_RATE 一直都是
+    // 16000，是同一條管線的兩端寫了不同數字。
+    const rate = (window.YZ_CONFIG && window.YZ_CONFIG.ASSISTANT_TTS_RATE) || ASST_RATE;
     if (!play.ctx) play.ctx = new AudioContext();
     const bin = atob(b64);
     const i16 = new Int16Array(bin.length / 2);
