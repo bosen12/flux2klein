@@ -1378,7 +1378,7 @@
   const ASST_URL = (window.YZ_CONFIG && window.YZ_CONFIG.ASSISTANT_WS) || 'ws://127.0.0.1:8765/v1/realtime';
   const ASST_RATE = 16000;   // 服務端要求 16kHz int16 mono PCM
 
-  const asst = { open: false, ws: null, ctx: null, stream: null, node: null, live: false };
+  const asst = { open: false, ws: null, ctx: null, stream: null, node: null, mute: null, live: false };
 
   function setAssistant(open) {
     const el = $('assistant'), btn = $('assistant-btn');
@@ -1446,6 +1446,9 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
     if (t === 'response.done') { asstState(asst.live ? '聆聽中' : '已停止', asst.live ? 'listening' : null); return; }
     if (t === 'error') { asstSay('act', '服務錯誤：' + (ev.error?.message || JSON.stringify(ev))); return; }
 
+    // 連線握手與其他純狀態通知，收到是正常的，不必記
+    if (ASST_BENIGN.has(t)) return;
+
     // 沒認得的事件寫進日誌。Realtime 協定各家實作的欄位會有出入，
     // 這是把實際格式撈出來的唯一辦法——tool call 要接對就靠這個。
     if (!asstSeen.has(t)) {
@@ -1454,6 +1457,14 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
     }
   }
   const asstSeen = new Set();
+  const ASST_BENIGN = new Set([
+    'session.created', 'session.updated', 'rate_limits.updated',
+    'response.created', 'response.output_item.added', 'response.output_item.done',
+    'response.content_part.added', 'response.content_part.done',
+    'conversation.item.created', 'conversation.item.added',
+    'input_audio_buffer.committed', 'input_audio_buffer.cleared',
+    'response.audio.done', 'response.audio_transcript.delta', 'output_audio_buffer.started',
+  ]);
 
   /* ---------- 串流播放 ---------- */
   // 伺服器送來的是 base64 PCM。用 AudioContext 排隊播放：每塊接在前一塊尾巴，
@@ -1511,7 +1522,10 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
     const src = asst.ctx.createMediaStreamSource(asst.stream);
     // ScriptProcessor 雖已標記淘汰，但相容性最好、程式碼最短。
     // 這是本地工具且只在對話時啟用，用 AudioWorklet 的複雜度不划算。
-    asst.node = asst.ctx.createScriptProcessor(2048, 1, 0);
+    // 輸出聲道必須是 1 不能是 0：0 輸出的節點無法 connect 到任何 destination
+    // （會丟 cannot connect a ScriptProcessorNode with 0 output channels），
+    // 而 Chrome 不接上 destination 又根本不會觸發 onaudioprocess。
+    asst.node = asst.ctx.createScriptProcessor(4096, 1, 1);
     asst.node.onaudioprocess = e => {
       const f32 = e.inputBuffer.getChannelData(0);
       let peak = 0;
@@ -1524,8 +1538,13 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
       asstLevel(peak);
       asstSend({ type: 'input_audio_buffer.append', audio: b64FromBytes(new Uint8Array(i16.buffer)) });
     };
+    // 中間夾一顆增益 0 的節點：節點要被拉才會觸發 onaudioprocess，但直接接喇叭
+    // 會把麥克風的聲音播出來造成回授。靜音接法兩者兼顧。
+    asst.mute = asst.ctx.createGain();
+    asst.mute.gain.value = 0;
     src.connect(asst.node);
-    asst.node.connect(asst.ctx.destination);   // Chrome 不接上就不會觸發 onaudioprocess
+    asst.node.connect(asst.mute);
+    asst.mute.connect(asst.ctx.destination);
 
     asst.live = true;
     setMicUI(true);
@@ -1535,6 +1554,7 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
   function asstStop() {
     asst.live = false;
     if (asst.node) { asst.node.onaudioprocess = null; asst.node.disconnect(); asst.node = null; }
+    if (asst.mute) { asst.mute.disconnect(); asst.mute = null; }
     if (asst.stream) { asst.stream.getTracks().forEach(t => t.stop()); asst.stream = null; }
     if (asst.ctx) { asst.ctx.close().catch(() => {}); asst.ctx = null; }
     if (asst.ws) { try { asst.ws.close(); } catch (e) {} asst.ws = null; }
