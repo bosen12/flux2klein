@@ -117,6 +117,8 @@ python serve.py 127.0.0.1:8188 8190     # 面板改用 8190
 python serve.py --https
 ```
 
+Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188 7801 https`）。
+
 - 第一次會用 `openssl` 自動產生自簽憑證（`cert.pem` / `key.pem`，不進版控）
 - 手機開 `https://<區網IP>:7801/klein`，第一次會跳「不安全」警告，選「繼續前往」即可
 - Android Chrome 可用；**iOS Safari 對語音辨識支援不穩**，可能仍無法使用
