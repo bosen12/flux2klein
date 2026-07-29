@@ -44,14 +44,26 @@ TTS_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 # voices/ 已 gitignore——這是本人聲音，不進公開版控。
 REF_AUDIO = "voices/my_voice_10s.wav"
 # 克隆模式二選一（見 faster_qwen3_tts/cli.py 的 _validate_clone_refs）：
-#   xvec_only=True  只取聲紋嵌入，不需要逐字稿。套件自己標註 "recommended for
-#                   cleaner starts and language switching"。
-#   xvec_only=False ICL 模式，連語調風格一起學、擬真度較高，但**必須**提供
-#                   ref_text（ref_audio 的正確逐字稿），填錯音色會走樣。
-# 這裡用 xvec_only：參考音訊的 Whisper 逐字稿實測不可靠（同一段音訊切 3 秒與
-# 10 秒轉出的內容對不起來），寧可不餵也不要餵錯的。
+#   xvec_only=True  只取聲紋嵌入。不需要逐字稿，但**只有音色會跟過來**——
+#                   腔調、語調、說話節奏都不會（model.py 的 docstring：xvec 是
+#                   "instead of the full ICL acoustic prompt"）。
+#   xvec_only=False ICL 模式，完整參考音訊的聲學 token 進脈絡，**連腔調與語氣
+#                   一起學**，但必須提供正確的 ref_text，填錯音色會走樣。
+#
+# 要讓台灣腔跟過來就得用 ICL。模型本身沒有腔調開關——config 的
+# codec_language_id 只有籠統的 "chinese"，沒有 zh-TW 或方言變體，
+# 腔調的唯一來源就是參考音訊。
+#
+# 換 ICL 的做法：照下面 REF_SCRIPT 唸一遍錄下來（用聊天語氣，不要用朗讀語氣
+# ——ICL 會把語氣一起學走），存成 24kHz 單聲道 wav 放進 voices/，把 REF_AUDIO
+# 指過去，再把這裡改成 False。逐字稿照稿唸就保證正確，不必靠 Whisper 轉
+# （實測它對舊的參考音訊辨識不可靠，同一段切 3 秒與 10 秒轉出的內容對不起來）。
 TTS_XVEC_ONLY = True
-REF_TEXT = ""   # 僅 TTS_XVEC_ONLY = False 時才需要填
+
+# 錄音講稿。REF_TEXT 必須與實際唸出來的內容逐字一致，所以兩者共用同一個常數：
+# 改稿就一起改，不會出現稿子與逐字稿不同步的情況。
+REF_SCRIPT = "欸，這張圖真的拍得不錯耶！我昨天去河邊走走，天氣超好的，就順手拍了幾張。等一下傳給你看看，你應該會喜歡。"
+REF_TEXT = REF_SCRIPT   # 僅 TTS_XVEC_ONLY = False 時才會用到
 
 
 def groq_key():
