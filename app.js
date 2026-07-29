@@ -1428,7 +1428,10 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
 
   /* ---------- 伺服器事件 ---------- */
   function onAsstEvent(ev) {
-    const t = ev.type || '';
+    // OpenAI Realtime GA 把 response.audio.* 改名為 response.output_audio.*，
+    // 這個實作送的是新名。把前綴正規化掉就能同時吃兩種命名，
+    // 不必為四個事件各寫一份分支。
+    const t = (ev.type || '').replace('response.output_audio', 'response.audio');
     // 使用者開口 → 打斷正在播的回覆，像跟真人講話一樣
     if (t === 'input_audio_buffer.speech_started') { stopAsstAudio(); asst.bubble = null; asstState('聆聽中', 'listening'); return; }
     if (t === 'input_audio_buffer.speech_stopped') { asstState('辨識中…', 'thinking'); return; }
