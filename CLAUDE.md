@@ -13,9 +13,12 @@
 ```bash
 python serve.py                      # ComfyUI=127.0.0.1:8188, 面板=7801
 python serve.py 127.0.0.1:8188 8190  # 自訂
+python serve.py --https              # HTTPS 模式（手機才能用麥克風/語音輸入）
 ```
 
 Windows 上有 `start.bat` / `stop_panel.bat` 可用。
+
+`--https` 會用 `openssl` 自動產生自簽憑證（`cert.pem` / `key.pem`，SAN 含本機區網 IP，已 gitignore）。**為什麼需要**：`getUserMedia`／Web Speech API 這類要麥克風的功能只在「安全來源」可用——桌面 `localhost` 算安全、但手機透過 `http://192.168.x.x` 連不算，只有 HTTPS 能解。換到不同網路（區網 IP 變了）時刪掉 `cert.pem` 重跑即可重產。前端已 HTTPS-ready（WS 用 `location.protocol` 選 `wss`、API 用 `location.origin`），不用改。
 
 沒有測試框架。可用的驗證手段只有兩個：
 

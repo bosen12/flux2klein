@@ -26,8 +26,13 @@ import datetime
 import gzip
 import hashlib
 import urllib.request
+import ssl
+import shutil
+import subprocess
 
 BASE = os.path.dirname(os.path.abspath(__file__))
+CERT_FILE = os.path.join(BASE, "cert.pem")
+KEY_FILE = os.path.join(BASE, "key.pem")
 
 # 只有這些路徑會由本伺服器提供本地檔案，其餘一律轉發給 ComfyUI
 STATIC_FILES = {
@@ -70,6 +75,11 @@ def parse_args():
     return comfy_host, comfy_port, listen_port
 
 
+# --https 可放在任何位置；先剝掉再做位置參數解析
+USE_HTTPS = "--https" in sys.argv
+if USE_HTTPS:
+    sys.argv = [a for a in sys.argv if a != "--https"]
+
 COMFY_HOST, COMFY_PORT, LISTEN_PORT = parse_args()
 LISTEN_HOST = "0.0.0.0"   # 綁所有介面，同網路的手機/其他電腦可用區網 IP 連
 
@@ -84,6 +94,37 @@ def lan_ip():
         return "127.0.0.1"
     finally:
         s.close()
+
+
+def ensure_cert():
+    """HTTPS 模式需要憑證。缺就用 openssl 產一張自簽憑證，SAN 含 localhost 與本機區網 IP
+    （手機用區網 IP 連才不會被瀏覽器判成憑證不符）。回傳 True 表示憑證就緒。
+    換到不同網路（區網 IP 變了）時，刪掉 cert.pem 重跑即可重新產生。"""
+    if os.path.isfile(CERT_FILE) and os.path.isfile(KEY_FILE):
+        return True
+    openssl = shutil.which("openssl")
+    if not openssl:
+        print("[HTTPS] 找不到 openssl，無法自動產生憑證。")
+        print("        請自備 cert.pem / key.pem 放專案目錄，或拿掉 --https 改用 HTTP。")
+        return False
+    ip = lan_ip()
+    san = "subjectAltName=IP:127.0.0.1,DNS:localhost,IP:%s" % ip
+    cmd = [openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+           "-keyout", KEY_FILE, "-out", CERT_FILE, "-days", "3650",
+           "-subj", "/CN=flux2klein-panel", "-addext", san]
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (subprocess.CalledProcessError, OSError) as e:
+        print("[HTTPS] 產生憑證失敗：%s" % e)
+        return False
+    print("[HTTPS] 已自簽憑證 cert.pem / key.pem（SAN 含 %s）" % ip)
+    return True
+
+
+def make_ssl_context():
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(certfile=CERT_FILE, keyfile=KEY_FILE)
+    return ctx
 
 
 def recv_headers(sock):
@@ -302,9 +343,20 @@ def serve_object_info(client, initial):
     return True
 
 
-def handle(client):
+def handle(client, ssl_ctx=None):
     try:
         client.settimeout(30)
+        # HTTPS：在 worker thread 內做 TLS 交握（不擋 accept 迴圈）。
+        # 非 TLS 連線打到 HTTPS 埠會交握失敗，直接丟掉。
+        if ssl_ctx is not None:
+            try:
+                client = ssl_ctx.wrap_socket(client, server_side=True)
+            except (ssl.SSLError, OSError):
+                try:
+                    client.close()
+                except OSError:
+                    pass
+                return
         initial = recv_headers(client)
         if not initial:
             client.close()
@@ -357,17 +409,30 @@ def main():
         print("       換一個埠：start.bat 127.0.0.1:8188 7802")
         sys.exit(1)
     srv.listen(128)
+
+    ssl_ctx = None
+    if USE_HTTPS:
+        if ensure_cert():
+            ssl_ctx = make_ssl_context()
+        else:
+            print("[HTTPS] 憑證未就緒，退回 HTTP。")
+    scheme = "https" if ssl_ctx else "http"
+    ip = lan_ip()
     print("=" * 60)
     print("  Flux2 Klein ComfyUI 面板已啟動")
-    print(f"  ▶ 本機： http://127.0.0.1:{LISTEN_PORT}/klein")
-    print(f"  ▶ 區網（手機/其他電腦）： http://{lan_ip()}:{LISTEN_PORT}/klein")
+    print(f"  ▶ 本機： {scheme}://127.0.0.1:{LISTEN_PORT}/klein")
+    print(f"  ▶ 區網（手機/其他電腦）： {scheme}://{ip}:{LISTEN_PORT}/klein")
     print(f"  ▶ 代理到 ComfyUI： {COMFY_HOST}:{COMFY_PORT}")
-    print("  （綁 0.0.0.0：同網路皆可連，無登入驗證；按 Ctrl+C 停止）")
+    if ssl_ctx:
+        print("  （HTTPS 自簽憑證：手機第一次會跳「不安全」警告，選「繼續前往」即可；")
+        print("    語音輸入等需要麥克風的功能只有 HTTPS 或 localhost 才可用；按 Ctrl+C 停止）")
+    else:
+        print("  （綁 0.0.0.0：同網路皆可連，無登入驗證；按 Ctrl+C 停止）")
     print("=" * 60)
     try:
         while True:
             client, _ = srv.accept()
-            threading.Thread(target=handle, args=(client,), daemon=True).start()
+            threading.Thread(target=handle, args=(client, ssl_ctx), daemon=True).start()
     except KeyboardInterrupt:
         print("\n已停止。")
     finally:

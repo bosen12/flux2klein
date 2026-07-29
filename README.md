@@ -109,6 +109,21 @@ python serve.py 127.0.0.1:8188 8190     # 面板改用 8190
 
 ---
 
+## 手機語音輸入（HTTPS）
+
+語音輸入需要麥克風權限，而瀏覽器只在「安全來源」給麥克風——桌面用 `localhost` 沒問題，但**手機透過區網 `http://192.168.x.x` 連不算安全來源**，語音按鈕不會出現。要讓手機能用語音，改用 HTTPS 啟動：
+
+```bash
+python serve.py --https
+```
+
+- 第一次會用 `openssl` 自動產生自簽憑證（`cert.pem` / `key.pem`，不進版控）
+- 手機開 `https://<區網IP>:7801/klein`，第一次會跳「不安全」警告，選「繼續前往」即可
+- Android Chrome 可用；**iOS Safari 對語音辨識支援不穩**，可能仍無法使用
+- 換到不同網路（區網 IP 變了）時，刪掉 `cert.pem` 重跑即可重新產生
+
+---
+
 ## 運作原理
 
 - **`serve.py` 同源反向代理** — 瀏覽器直接打 ComfyUI 會被 CORS 擋。`serve.py` 把靜態網頁與 API 變成同源，所有請求（`/prompt`、`/object_info`、`/upload/image`、`/view`、`/ws`）透明轉發到 ComfyUI。純 Python 標準函式庫，免安裝。
@@ -172,6 +187,7 @@ python serve.py 127.0.0.1:8188 8190     # 面板改用 8190
 | 面板埠被占用 | `python serve.py 127.0.0.1:8188 8190` |
 | AI 優化按鈕無反應 | 建立 `config.js` 並填入 Groq API Key |
 | Illustrious 生成後沒成品 | 確認使用最新版 `illustrious.json`（輸出節點需為 SaveImage） |
+| 手機看不到 🎤 語音鈕 | 手機需要 HTTPS：改用 `python serve.py --https`（見「手機語音輸入」） |
 
 ---
 

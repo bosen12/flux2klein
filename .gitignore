@@ -15,5 +15,9 @@ Thumbs.db
 # 本地設定（含 API key）
 config.js
 
+# HTTPS 自簽憑證（含私鑰，每台機器自己產）
+cert.pem
+key.pem
+
 # 誤建的空檔
 /ComfyUI
