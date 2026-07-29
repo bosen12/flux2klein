@@ -1445,7 +1445,15 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
     if (t === 'response.audio.delta' && ev.delta) { playAsstAudio(ev.delta); asstState('回覆中', 'speaking'); return; }
     if (t === 'response.done') { asstState(asst.live ? '聆聽中' : '已停止', asst.live ? 'listening' : null); return; }
     if (t === 'error') { asstSay('act', '服務錯誤：' + (ev.error?.message || JSON.stringify(ev))); return; }
+
+    // 沒認得的事件寫進日誌。Realtime 協定各家實作的欄位會有出入，
+    // 這是把實際格式撈出來的唯一辦法——tool call 要接對就靠這個。
+    if (!asstSeen.has(t)) {
+      asstSeen.add(t);
+      log('助理未處理事件：' + t + ' → ' + JSON.stringify(ev).slice(0, 240), 'warn');
+    }
   }
+  const asstSeen = new Set();
 
   /* ---------- 串流播放 ---------- */
   // 伺服器送來的是 base64 PCM。用 AudioContext 排隊播放：每塊接在前一塊尾巴，
