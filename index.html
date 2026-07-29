@@ -41,6 +41,17 @@
       <button type="button" data-engine="krea2">Krea2</button>
       <button type="button" data-engine="illustrious">Illustrious</button>
     </div>
+    <!-- 助理不是第五個引擎：它自己不產圖，而是操作那四個，所以放在切換器外面、
+         不參與 engine-pill 的滑動，也不會改 data-engine 主題色。 -->
+    <button type="button" class="assistant-btn" id="assistant-btn"
+            aria-expanded="false" aria-controls="assistant" title="AI 助理（語音操作面板）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 3a4 4 0 0 1 4 4v4a4 4 0 0 1-8 0V7a4 4 0 0 1 4-4Z"/>
+        <path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>
+      </svg>
+      <span>AI Assistant</span>
+    </button>
     <div class="spacer"></div>
     <div class="toggle-inline">
       <label class="opt"><span>完成音效</span><span class="yz-switch"><input type="checkbox" id="opt-sound" checked><span class="yz-slider"></span><span class="yz-knob"></span></span></label>
@@ -279,6 +290,32 @@
     </section>
   </div>
 </div>
+
+<!-- AI 助理抽屜。刻意不加背景遮罩：它的價值是「你說話、面板動起來」，
+     遮住面板就看不到成果，所以面板保持可見且可操作。 -->
+<aside class="assistant" id="assistant" aria-label="AI 助理" inert>
+  <header class="asst-head">
+    <span class="asst-dot" id="asst-dot" aria-hidden="true"></span>
+    <div>
+      <strong>AI 助理</strong>
+      <small id="asst-state">尚未啟動</small>
+    </div>
+    <button type="button" class="asst-close" id="asst-close" title="關閉助理">✕</button>
+  </header>
+
+  <div class="asst-log" id="asst-log" role="log" aria-live="polite">
+    <p class="asst-empty">按下方「開始聆聽」後直接說話，例如：<br>
+      「用 Illustrious 畫一個抱著吉他的少女，直式」</p>
+  </div>
+
+  <footer class="asst-foot">
+    <button type="button" class="asst-mic" id="asst-mic">
+      <span class="asst-mic-icon" aria-hidden="true"></span>
+      <span id="asst-mic-label">開始聆聽</span>
+    </button>
+    <div class="asst-level" id="asst-level" aria-hidden="true"><i></i></div>
+  </footer>
+</aside>
 
 <div class="lightbox" id="lightbox"><img id="lightbox-img" alt=""></div>
 

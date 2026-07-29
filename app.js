@@ -1370,6 +1370,39 @@
     setTimeout(wipe, 220 + 8 * 30 + 200);
   }
 
+  /* ==================== AI 助理 ==================== */
+  // 助理不是第五個引擎——它自己不產圖，而是操作那四個。所以不走 selectEngine，
+  // 也不動 data-engine（那會改主題色、重建分頁）。
+  const asst = { open: false };
+
+  function setAssistant(open) {
+    const el = $('assistant'), btn = $('assistant-btn');
+    if (!el || !btn) return;
+    asst.open = open;
+    el.classList.toggle('open', open);
+    // inert 讓收合時鍵盤與報讀器跳過它；用 transform 收合的抽屜若不加，
+    // Tab 會跑進看不見的面板裡。
+    el.inert = !open;
+    btn.setAttribute('aria-expanded', String(open));
+    if (open) $('asst-mic').focus();
+  }
+
+  function asstSay(kind, text) {
+    const log = $('asst-log'); if (!log) return;
+    log.querySelector('.asst-empty')?.remove();
+    const p = document.createElement('div');
+    p.className = 'asst-msg ' + kind;   // me / bot / act
+    p.textContent = text;
+    log.appendChild(p);
+    log.scrollTop = log.scrollHeight;
+    return p;
+  }
+
+  function asstState(text, dotClass) {
+    $('asst-state').textContent = text;
+    $('asst-dot').className = 'asst-dot' + (dotClass ? ' ' + dotClass : '');
+  }
+
   /* ---------------- 雜項 UI ---------------- */
   function bindGlobalControls() {
     $('run').onclick = generate;
@@ -1407,6 +1440,9 @@
     $('log-head').onkeydown = e => {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleLog(); }
     };
+    $('assistant-btn').onclick = () => setAssistant(!asst.open);
+    $('asst-close').onclick = () => setAssistant(false);
+    setAssistant(false);   // 初始收合，並讓 inert 生效
     document.addEventListener('keydown', onGlobalKey);
     // 沒有這兩行的話，把圖片拖到上傳區以外會讓瀏覽器直接開啟該檔案、離開整個面板
     ['dragover', 'drop'].forEach(t => document.addEventListener(t, e => e.preventDefault()));
@@ -1423,7 +1459,8 @@
     }
     if (e.key === 'Escape') {
       if (activeOverlayClose) { activeOverlayClose(); return; }
-      $('lightbox').classList.remove('on');
+      if ($('lightbox').classList.contains('on')) { $('lightbox').classList.remove('on'); return; }
+      if (asst.open) setAssistant(false);
     }
   }
 
