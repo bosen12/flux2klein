@@ -65,6 +65,13 @@ def main():
         "--model_name", GROQ_MODEL,
         "--responses_api_base_url", GROQ_BASE,
         "--responses_api_api_key", groq_key(),
+        # 預設會送 chat_template_kwargs.enable_thinking=false（給 Together 的 Qwen3.5 用），
+        # Groq 不支援這個屬性，會直接回 400 property 'chat_template_kwargs' is unsupported
+        "--no_responses_api_disable_thinking",
+        # TTS 預設走 ggml 後端，需要另外編譯的 qwentts_cpp（pip 裝不到）。
+        # torch 後端用已經裝好的 CUDA PyTorch，不用額外依賴。
+        "--qwen3_tts_backend", "torch",
+        "--qwen3_tts_device", "cuda",
         "--ws_port", port,
     ]
     # --tts qwen3 與 --ws_port 8765 本來就是預設值，這裡明寫是為了自我說明
