@@ -111,7 +111,7 @@ python serve.py 127.0.0.1:8188 8190     # 面板改用 8190
 
 ## 手機語音輸入（HTTPS）
 
-語音輸入需要麥克風權限，而瀏覽器只在「安全來源」給麥克風——桌面用 `localhost` 沒問題，但**手機透過區網 `http://192.168.x.x` 連不算安全來源**，語音按鈕不會出現。要讓手機能用語音，改用 HTTPS 啟動：
+語音輸入需要麥克風權限，而瀏覽器只在「安全來源」給麥克風——桌面用 `localhost` 沒問題，但**手機透過 `http://192.168.x.x` 或 `http://100.x.x.x`（Tailscale）連都不算安全來源**，語音按鈕不會出現。要讓手機能用語音，改用 HTTPS 啟動：
 
 ```bash
 python serve.py --https
@@ -120,9 +120,12 @@ python serve.py --https
 Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188 7801 https`）。
 
 - 第一次會用 `openssl` 自動產生自簽憑證（`cert.pem` / `key.pem`，不進版控）
-- 手機開 `https://<區網IP>:7801/klein`，第一次會跳「不安全」警告，選「繼續前往」即可
+- 憑證 SAN 自動含**區網 IP 與 Tailscale IP**，所以手機開 `https://<區網IP>:7801/klein` **或** `https://<Tailscale IP>:7801/klein` 都可以，不會憑證主機不符
+- 第一次會跳「不安全」警告（自簽憑證正常現象），選「繼續前往」即可
+- 換網路或 Tailscale 上線導致 IP 變動時，**憑證會自動重新產生**，不用手動刪
 - Android Chrome 可用；**iOS Safari 對語音辨識支援不穩**，可能仍無法使用
-- 換到不同網路（區網 IP 變了）時，刪掉 `cert.pem` 重跑即可重新產生
+
+> 若你用 Tailscale 且想**完全免除警告**：改用 `tailscale serve --https=443 http://127.0.0.1:7801`（需在 Tailscale 後台開啟 MagicDNS 與 HTTPS Certificates），它會用真憑證代理到面板，手機開 `https://<裝置>.<tailnet>.ts.net/klein` 就沒有任何警告。
 
 ---
 

@@ -96,28 +96,89 @@ def lan_ip():
         s.close()
 
 
+def _in_cgnat(ip):
+    """是否落在 Tailscale 用的 100.64.0.0/10。"""
+    try:
+        parts = ip.split(".")
+        return parts[0] == "100" and 64 <= int(parts[1]) <= 127
+    except (ValueError, IndexError):
+        return False
+
+
+def tailscale_ip():
+    """取本機 Tailscale IPv4（100.64.0.0/10）。先問 tailscale CLI，失敗再掃本機介面。
+    沒裝或沒連 Tailscale 就回 None。"""
+    exe = shutil.which("tailscale")
+    if not exe:
+        fallback = r"C:\Program Files\Tailscale\tailscale.exe"
+        if os.path.isfile(fallback):
+            exe = fallback
+    if exe:
+        try:
+            out = subprocess.run([exe, "ip", "-4"], capture_output=True, text=True, timeout=5)
+            for line in out.stdout.splitlines():
+                ip = line.strip()
+                if _in_cgnat(ip):
+                    return ip
+        except (OSError, subprocess.SubprocessError):
+            pass
+    try:
+        for res in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = res[4][0]
+            if _in_cgnat(ip):
+                return ip
+    except OSError:
+        pass
+    return None
+
+
+def _san_value():
+    """組 subjectAltName：localhost + 127.0.0.1 + 本機區網 IP +（若有）Tailscale IP。"""
+    entries = ["IP:127.0.0.1", "DNS:localhost"]
+    ip = lan_ip()
+    if ip and ip != "127.0.0.1":
+        entries.append("IP:" + ip)
+    ts = tailscale_ip()
+    if ts:
+        entries.append("IP:" + ts)
+    return ",".join(entries)
+
+
 def ensure_cert():
-    """HTTPS 模式需要憑證。缺就用 openssl 產一張自簽憑證，SAN 含 localhost 與本機區網 IP
-    （手機用區網 IP 連才不會被瀏覽器判成憑證不符）。回傳 True 表示憑證就緒。
-    換到不同網路（區網 IP 變了）時，刪掉 cert.pem 重跑即可重新產生。"""
-    if os.path.isfile(CERT_FILE) and os.path.isfile(KEY_FILE):
-        return True
+    """HTTPS 需要憑證。用 openssl 自簽，SAN 含 localhost / 區網 IP / Tailscale IP，
+    這樣手機不論走區網或 Tailscale IP 連都不會憑證主機不符。SAN 內容變了（換網路、
+    Tailscale 上線）會自動重產，不必手動刪 cert.pem。回傳 True 表示憑證就緒。"""
+    san = _san_value()
+    marker = CERT_FILE + ".san"
+    have = os.path.isfile(CERT_FILE) and os.path.isfile(KEY_FILE)
+    if have and os.path.isfile(marker):
+        try:
+            if open(marker, encoding="utf-8").read().strip() == san:
+                return True   # 現有憑證已涵蓋目前所有位址
+        except OSError:
+            pass
     openssl = shutil.which("openssl")
     if not openssl:
+        if have:
+            print("[HTTPS] 找不到 openssl，沿用現有憑證（SAN 可能未含新位址）。")
+            return True
         print("[HTTPS] 找不到 openssl，無法自動產生憑證。")
         print("        請自備 cert.pem / key.pem 放專案目錄，或拿掉 --https 改用 HTTP。")
         return False
-    ip = lan_ip()
-    san = "subjectAltName=IP:127.0.0.1,DNS:localhost,IP:%s" % ip
     cmd = [openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes",
            "-keyout", KEY_FILE, "-out", CERT_FILE, "-days", "3650",
-           "-subj", "/CN=flux2klein-panel", "-addext", san]
+           "-subj", "/CN=flux2klein-panel", "-addext", "subjectAltName=" + san]
     try:
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except (subprocess.CalledProcessError, OSError) as e:
         print("[HTTPS] 產生憑證失敗：%s" % e)
-        return False
-    print("[HTTPS] 已自簽憑證 cert.pem / key.pem（SAN 含 %s）" % ip)
+        return have   # 產失敗但有舊憑證就先用
+    try:
+        with open(marker, "w", encoding="utf-8") as f:
+            f.write(san)
+    except OSError:
+        pass
+    print("[HTTPS] 已自簽憑證（SAN: %s）" % san)
     return True
 
 
