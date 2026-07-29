@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;   /* 淺色主題：原生控制項、捲軸、表單元件都用淺色渲染 */
   --bg: #eceef5;
   --panel: #ffffff;
   --panel-2: #f6f7fc;
@@ -182,11 +183,16 @@ header.topbar {
 textarea, input[type=text], input[type=number], select {
   width: 100%; padding: 10px 12px; border: 1px solid var(--border);
   border-radius: var(--radius-sm); background: #fff; color: var(--text);
-  font-size: var(--fs-md); font-family: inherit; outline: none; transition: .15s;
+  font-size: var(--fs-md); font-family: inherit; outline: none;
+  transition: border-color .15s, box-shadow .15s;
 }
 textarea { resize: vertical; min-height: 92px; line-height: 1.55; }
 ::placeholder { color: var(--text-faint); opacity: 1; }
 textarea:focus, input:focus, select:focus { border-color: var(--accent); box-shadow: var(--focus-ring); }
+/* 觸控裝置：輸入框字級 >=16px，否則 iOS Safari 一 focus 就自動放大整頁 */
+@media (pointer: coarse) {
+  textarea, input[type=text], input[type=number], select { font-size: 16px; }
+}
 
 /* AI 優化按鈕 */
 .prompt-wrap { position: relative; }

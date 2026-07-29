@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#eceef5">
   <title>Flux2 Klein · ComfyUI 面板</title>
   <!-- SVG 優先（各尺寸都銳利）；不支援的瀏覽器才退回 png / ico -->
   <!-- 只留 SVG。同時宣告多個 icon 時瀏覽器會自行挑選，實測 Chrome 會挑走
@@ -64,7 +65,7 @@
               <rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="21"/>
             </svg>
           </button>
-          <button type="button" class="ai-btn" id="ai-btn" title="AI 優化提示詞">✦</button>
+          <button type="button" class="ai-btn" id="ai-btn" title="AI 優化提示詞" aria-label="AI 優化提示詞">✦</button>
         </div>
 
         <!-- 圖片上傳（動態） -->
