@@ -1347,6 +1347,29 @@
     }
   }
 
+  // 清除生成結果：原本 innerHTML='' 一次抹掉整片，是全站最突兀的硬切。
+  // 退場比進場快（220ms vs 進場的 400ms）且用 ease-in——animation-systems 的
+  // 原則是「進場慢收、退場快走」，退場拖沓會讓人等。
+  function clearGallery() {
+    const gal = $('gallery');
+    const cells = [...gal.children];
+    if (!cells.length) return;
+    if (prefersReduced || !gal.animate) { gal.innerHTML = ''; return; }
+
+    const wipe = () => { gal.innerHTML = ''; };
+    let left = cells.length;
+    cells.forEach((c, i) => {
+      const a = c.animate(
+        [{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(.94)' }],
+        // 錯開但封頂：結果很多時不該等上好幾秒才清完
+        { duration: 220, delay: Math.min(i, 8) * 30, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' }
+      );
+      a.finished.then(() => { if (--left === 0) wipe(); }).catch(() => {});
+    });
+    // 保險：分頁在背景時 rAF 不觸發、動畫不前進，finished 永遠不結算
+    setTimeout(wipe, 220 + 8 * 30 + 200);
+  }
+
   /* ---------------- 雜項 UI ---------------- */
   function bindGlobalControls() {
     $('run').onclick = generate;
@@ -1374,7 +1397,7 @@
     $('lightbox').onclick = () => $('lightbox').classList.remove('on');
     $('ai-btn').onclick = aiOptimizePrompt;
     setupVoiceInput();
-    $('gallery-clear').onclick = () => { $('gallery').innerHTML = ''; };
+    $('gallery-clear').onclick = clearGallery;
     const toggleLog = () => {
       const collapsed = $('log-card').classList.toggle('collapsed');
       $('log-head').setAttribute('aria-expanded', String(!collapsed));
