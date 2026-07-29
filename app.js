@@ -403,14 +403,41 @@
       cb.addEventListener('change', () => {
         card.classList.toggle('on', cb.checked);
         if (e.requiresRef) show('ref-upload', cb.checked);
+        if (e.denoise) show('tune-' + e.key, cb.checked);
       });
       list.appendChild(card);
       if (e.requiresRef) hasRef = true;
     }
+    buildTunes(E, m);
     // ControlNet 參考圖上傳（需要時才顯示）
     show('ref-upload', false);
     const refBox = $('uploads-ref'); refBox.innerHTML = '';
     if (hasRef && m.nodes.ref) refBox.appendChild(makeDrop({ node: 'ref', label: '參考圖' }));
+  }
+
+  // 有指定 denoise 節點的增強分支，開啟後長出重繪強度滑桿。
+  // 預設值直接讀工作流範本，不在引擎設定裡再抄一份，免得兩邊對不上。
+  function buildTunes(E, m) {
+    const box = $('enh-tune'); if (!box) return;
+    box.innerHTML = '';
+    const tpl = state.zTemplates[m.template] || {};
+    for (const e of E.enhance) {
+      if (!e.denoise) continue;
+      const def = ((tpl[e.denoise] || {}).inputs || {}).denoise;
+      if (def == null) continue;
+      const row = document.createElement('div');
+      row.className = 'field tune'; row.id = 'tune-' + e.key;
+      row.style.display = 'none';
+      row.innerHTML =
+        `<label>${e.name}強度 <span class="hint">低=忠於原圖，高=變化大</span></label>
+         <div class="tune-row">
+           <input type="range" id="denoise-${e.key}" min="0" max="1" step="0.05" value="${def}">
+           <output id="denoise-${e.key}-out">${(+def).toFixed(2)}</output>
+         </div>`;
+      box.appendChild(row);
+      const rng = row.querySelector('input'), out = row.querySelector('output');
+      rng.addEventListener('input', () => out.textContent = (+rng.value).toFixed(2));
+    }
   }
 
   function onPickImage(nodeId, file, dropEl) {
@@ -602,6 +629,10 @@
     for (const e of E.enhance) {
       if (!on[e.key]) continue;
       if (e.seedFollow && tpl[e.seedFollow]) tpl[e.seedFollow].inputs.seed = seed;
+      if (e.denoise && tpl[e.denoise]) {
+        const el = $('denoise-' + e.key);
+        if (el) tpl[e.denoise].inputs.denoise = parseFloat(el.value);
+      }
       if (e.requiresRef && nd.ref) {
         const item = state.images['ref'];
         if (!item) throw new Error(`「${e.name}」需要先上傳參考圖`);

@@ -18,7 +18,8 @@ window.YZ_I = {
   // 增強分支（預設不開；關閉時移除該分支所有節點，含其 PreviewImage）
   enhance: [
     { key: 'hires', name: '第二階段採樣', desc: 'latent 放大 1.5× 後重採樣補細節',
-      branch: ['48', '78:58', '78:57', '56'], seedFollow: '78:58' },
+      branch: ['48', '78:58', '78:57', '56'], seedFollow: '78:58',
+      denoise: '78:58' },   // 開啟後 UI 會長出重繪強度滑桿
     { key: 'controlnet', name: 'ControlNet', desc: '上傳參考圖，用深度控制構圖',
       branch: ['39', '79:44', '79:38', '79:37', '79:36', '79:62', '79:63', '64', '45'],
       requiresRef: true, seedFollow: '79:62' },

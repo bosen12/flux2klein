@@ -759,6 +759,20 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 
 /* ==================== 增強卡片式開關（Krea2）==================== */
 .enh-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+
+/* 增強分支的參數微調（目前只有重繪強度）。放在卡片格線外面而不是卡片裡，
+   因為 .enh 是包住 checkbox 的 <label>，任何點擊都會切換該開關——
+   滑桿放進去會一拖就把分支關掉。 */
+#enh-tune { display: flex; flex-direction: column; gap: 12px; }
+#enh-tune:not(:empty) { margin-top: 12px; }
+.tune-row { display: flex; align-items: center; gap: 12px; }
+.tune-row input[type=range] { flex: 1; accent-color: var(--accent); }
+.tune-row output {
+  min-width: 46px; text-align: center; flex: none;
+  font-family: var(--mono); font-size: var(--fs-sm); font-weight: 600;
+  color: var(--accent); background: var(--accent-soft);
+  border-radius: var(--radius-xs); padding: 3px 0;
+}
 .enh {
   position: relative; display: block; cursor: pointer;
   border: 1px solid var(--border); border-radius: var(--radius-sm);

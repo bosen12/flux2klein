@@ -20,7 +20,8 @@ window.YZ_K = {
     { key: 'seedvr2', name: 'SeedVR2 高清放大', desc: '用 SeedVR2 模型把成品放大到更高解析度',
       branch: ['129', '131', '133', '69'] },
     { key: 'second', name: '二次採樣', desc: 'latent 放大 2× 後重採樣，補更多細節',
-      branch: ['154:137', '154:136', '154:130', '179'], seedFollow: '154:136' },
+      branch: ['154:137', '154:136', '154:130', '179'], seedFollow: '154:136',
+      denoise: '154:136' },   // 開啟後 UI 會長出重繪強度滑桿
   ],
   outputs: { base: '29', seedvr2: '69', second: '179' },
   compareLabels: { seedvr2: 'SeedVR2', second: '二次採樣' },
