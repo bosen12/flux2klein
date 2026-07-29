@@ -357,13 +357,30 @@
     d.className = 'drop';
     d.innerHTML = `<span class="tag">${slot.label}</span>
       <button class="clear" type="button" title="移除">✕</button>
-      <span class="ph">＋ 點擊上傳<br>${slot.label}</span>
+      <span class="ph">＋ 點擊或拖曳<br>${slot.label}</span>
       <input type="file" accept="image/*" hidden>`;
     const input = d.querySelector('input');
     d.onclick = (e) => { if (e.target.closest('.clear')) return; input.click(); };
     input.onchange = () => onPickImage(slot.node, input.files[0], d);
     d.querySelector('.clear').onclick = (e) => { e.stopPropagation(); e.preventDefault(); delete state.images[slot.node]; d.classList.remove('has-img'); d.querySelectorAll('img').forEach(x => x.remove()); };
+    attachDropZone(d, file => onPickImage(slot.node, file, d));
     return d;
+  }
+
+  // 拖放上傳。dragenter/dragleave 會因為滑過子元素而反覆觸發，用計數器記錄
+  // 進出層數才不會閃爍；dragover 一定要 preventDefault，否則瀏覽器會直接開啟檔案。
+  function attachDropZone(el, onFile) {
+    let depth = 0;
+    const clear = () => { depth = 0; el.classList.remove('drag-over'); };
+    el.addEventListener('dragenter', e => { e.preventDefault(); depth++; el.classList.add('drag-over'); });
+    el.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+    el.addEventListener('dragleave', e => { e.preventDefault(); if (--depth <= 0) clear(); });
+    el.addEventListener('drop', e => {
+      e.preventDefault(); e.stopPropagation(); clear();
+      const f = [...(e.dataTransfer.files || [])].find(x => x.type.startsWith('image/'));
+      if (f) onFile(f);
+      else log('拖進來的不是圖片檔', 'warn');
+    });
   }
 
   function buildUploads(m) {
@@ -411,11 +428,12 @@
   function setupMaskUpload(slot) {
     const stage = $('mask-stage');
     stage.innerHTML = `<div class="drop" style="width:100%;aspect-ratio:auto;min-height:120px" id="mask-drop">
-        <span class="ph">＋ 點擊上傳圖片後即可塗抹</span>
+        <span class="ph">＋ 點擊或拖曳圖片，之後即可塗抹</span>
         <input type="file" accept="image/*" hidden></div>`;
     const input = stage.querySelector('input');
     stage.querySelector('#mask-drop').onclick = () => input.click();
     input.onchange = () => loadMaskImage(slot.node, input.files[0]);
+    attachDropZone(stage.querySelector('#mask-drop'), f => loadMaskImage(slot.node, f));
     $('mask-clear').onclick = () => { if (state.mask) { const s = state.mask.strokeCanvas; s.getContext('2d').clearRect(0,0,s.width,s.height); renderMask(); } };
     $('brush').oninput = () => {};
   }
@@ -1194,6 +1212,8 @@
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleLog(); }
     };
     document.addEventListener('keydown', onGlobalKey);
+    // 沒有這兩行的話，把圖片拖到上傳區以外會讓瀏覽器直接開啟該檔案、離開整個面板
+    ['dragover', 'drop'].forEach(t => document.addEventListener(t, e => e.preventDefault()));
     // 分頁膠囊由 ResizeObserver 顧，這裡只需補引擎切換器（它沒有尺寸變化可觀察）
     addEventListener('resize', movePill);
   }
