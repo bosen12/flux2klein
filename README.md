@@ -49,6 +49,12 @@
 - 根據當前引擎自動切換 system prompt（自然語言 vs Danbooru tag）
 - 需要設定 API Key（見下方）
 
+### 語音輸入
+- 提示詞框右下角 🎤 按鈕，點一下開始講、再點一下停止，辨識結果即時接在現有文字後面
+- 使用瀏覽器內建的 Web Speech API（預設 zh-TW 中文），只在 **Chrome / Edge** 且**安全來源**（`localhost` 或 HTTPS）可用
+- ⚠️ Chrome 的實作會把**語音音訊送到 Google 伺服器**辨識（見下方隱私說明）；不支援的瀏覽器會自動隱藏此按鈕
+- 手機透過區網 IP（`http://192.168.x.x`）連線時，瀏覽器不會授予麥克風權限
+
 ### 增強分支
 - Illustrious：Hires 二次採樣 / ControlNet / SeedVR2 放大 / SD 放大（可獨立開關）
 - Krea2：SeedVR2 放大 / 二次採樣
@@ -171,4 +177,5 @@ python serve.py 127.0.0.1:8188 8190     # 面板改用 8190
 
 ## 隱私
 - 面板在本機與 ComfyUI 之間溝通，圖片和提示詞不會送到外部服務
-- 唯一例外：AI 提示詞優化會將提示詞文字送到 Groq API（可選功能，不開就不送）
+- 例外一：AI 提示詞優化會將提示詞文字送到 Groq API（可選功能，不開就不送）
+- 例外二：語音輸入使用 Chrome 內建 Web Speech API，語音音訊會送到 Google 伺服器辨識（不點 🎤 就不送）

@@ -1356,6 +1356,7 @@
     };
     $('lightbox').onclick = () => $('lightbox').classList.remove('on');
     $('ai-btn').onclick = aiOptimizePrompt;
+    setupVoiceInput();
     $('gallery-clear').onclick = () => { $('gallery').innerHTML = ''; };
     const toggleLog = () => {
       const collapsed = $('log-card').classList.toggle('collapsed');
@@ -1507,6 +1508,53 @@ EXPLICIT CONTENT:
     } finally {
       btn.classList.remove('loading');
     }
+  }
+
+  /* ---------------- 語音輸入（Web Speech API）---------------- */
+  // 注意：Chrome 的實作會把語音音訊送到 Google 伺服器辨識（見 README 隱私說明）。
+  // 只在 localhost / HTTPS 等安全來源可用；手機透過 http 區網 IP 連線時瀏覽器不給麥克風。
+  let voiceRecog = null, voiceOn = false, voiceCommitted = '';
+  function setupVoiceInput() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const btn = $('mic-btn'), ta = $('prompt');
+    if (!btn) return;
+    if (!SR) { btn.style.display = 'none'; return; }   // 不支援（如 Firefox）就藏起來
+    voiceRecog = new SR();
+    voiceRecog.lang = 'zh-TW';
+    voiceRecog.interimResults = true;
+    voiceRecog.continuous = true;
+    voiceRecog.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) voiceCommitted += r[0].transcript;
+        else interim += r[0].transcript;
+      }
+      ta.value = voiceCommitted + interim;        // 已定稿的接在後面，臨時結果即時預覽
+    };
+    voiceRecog.onerror = (e) => {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed')
+        log('麥克風權限被拒，請在瀏覽器網址列允許麥克風後再試。', 'err');
+      else if (e.error === 'no-speech') log('沒聽到聲音，請再說一次。', 'warn');
+      else if (e.error !== 'aborted') log('語音辨識錯誤：' + e.error, 'warn');
+    };
+    voiceRecog.onend = () => setVoiceState(false);   // 靜音一段或呼叫 stop 都會觸發
+    btn.onclick = () => voiceOn ? stopVoice() : startVoice();
+  }
+  function startVoice() {
+    if (!voiceRecog) return;
+    const cur = $('prompt').value;
+    voiceCommitted = cur ? cur.replace(/\s+$/, '') + ' ' : '';   // 接在既有文字之後
+    try { voiceRecog.start(); setVoiceState(true); }
+    catch (e) { /* 已在錄音中重複 start 會丟錯，忽略 */ }
+  }
+  function stopVoice() { if (voiceRecog) { try { voiceRecog.stop(); } catch (e) {} } setVoiceState(false); }
+  function setVoiceState(on) {
+    voiceOn = on;
+    const btn = $('mic-btn');
+    if (!btn) return;
+    btn.classList.toggle('on', on);
+    btn.title = on ? '停止語音輸入' : '語音輸入（點一下開始／停止）';
   }
 
   function openLightbox(url) { $('lightbox-img').src = url; $('lightbox').classList.add('on'); }
