@@ -1373,7 +1373,12 @@
   /* ==================== AI 助理 ==================== */
   // 助理不是第五個引擎——它自己不產圖，而是操作那四個。所以不走 selectEngine，
   // 也不動 data-engine（那會改主題色、重建分頁）。
-  const asst = { open: false };
+  // 語音管線跑在本地的 huggingface/speech-to-speech（VAD + Whisper + Qwen3-TTS），
+  // 只有 LLM 那段由它轉呼叫 Groq。面板這側只是個 OpenAI Realtime 客戶端。
+  const ASST_URL = (window.YZ_CONFIG && window.YZ_CONFIG.ASSISTANT_WS) || 'ws://127.0.0.1:8765/v1/realtime';
+  const ASST_RATE = 16000;   // 服務端要求 16kHz int16 mono PCM
+
+  const asst = { open: false, ws: null, ctx: null, stream: null, node: null, live: false };
 
   function setAssistant(open) {
     const el = $('assistant'), btn = $('assistant-btn');
@@ -1401,6 +1406,168 @@
   function asstState(text, dotClass) {
     $('asst-state').textContent = text;
     $('asst-dot').className = 'asst-dot' + (dotClass ? ' ' + dotClass : '');
+  }
+
+  // 說話規則不是囉嗦，是必需的：TTS 會把 markdown、編號、emoji、括號裡的動作
+  // 描寫逐字念出來，不限制長度的話一句回覆能讀三十秒，體驗直接崩掉。
+  const ASST_PROMPT = `你是這個 ComfyUI 繪圖面板的語音助理，用繁體中文回答。
+
+面板有四個繪圖引擎：flux2klein（寫實、吃自然語言長描述）、zimage（快速、風格化）、
+krea2（寫實攝影感）、illustrious（動漫，吃 Danbooru 逗號分隔 tag）。
+你可以用工具切換引擎、填寫提示詞、設定尺寸與步數、開關增強分支、送出生成。
+
+使用者說要畫什麼時，先判斷該用哪個引擎，再依該引擎的風格寫提示詞：
+illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描述。
+
+說話規則（務必遵守）：
+一、每次回覆不超過兩句話，總共不超過四十個字。
+二、用口語，不要書面語。禁止 markdown、列表、編號。
+三、禁止任何 emoji、顏文字、括號內的動作描寫。
+四、不要複述問題，直接回應。
+五、數字用中文寫（說「三十步」不說「30 步」），否則語音合成會念錯。`;
+
+  /* ---------- 伺服器事件 ---------- */
+  function onAsstEvent(ev) {
+    const t = ev.type || '';
+    // 使用者開口 → 打斷正在播的回覆，像跟真人講話一樣
+    if (t === 'input_audio_buffer.speech_started') { stopAsstAudio(); asstState('聆聽中', 'listening'); return; }
+    if (t === 'input_audio_buffer.speech_stopped') { asstState('辨識中…', 'thinking'); return; }
+
+    // 使用者說的話（Whisper 轉出來的）
+    if (t.includes('input_audio_transcription') && (ev.transcript || ev.text)) {
+      asstSay('me', ev.transcript || ev.text); asstState('思考中…', 'thinking'); return;
+    }
+    // 助理的文字回覆
+    if (t === 'response.audio_transcript.done' || t === 'response.output_text.done') {
+      if (ev.transcript || ev.text) asstSay('bot', ev.transcript || ev.text);
+      return;
+    }
+    if (t === 'response.audio.delta' && ev.delta) { playAsstAudio(ev.delta); asstState('回覆中', 'speaking'); return; }
+    if (t === 'response.done') { asstState(asst.live ? '聆聽中' : '已停止', asst.live ? 'listening' : null); return; }
+    if (t === 'error') { asstSay('act', '服務錯誤：' + (ev.error?.message || JSON.stringify(ev))); return; }
+  }
+
+  /* ---------- 串流播放 ---------- */
+  // 伺服器送來的是 base64 PCM。用 AudioContext 排隊播放：每塊接在前一塊尾巴，
+  // 避免用 <audio> 逐段載入造成的爆音與間隙。
+  const play = { ctx: null, at: 0, srcs: [] };
+  function playAsstAudio(b64) {
+    const rate = (window.YZ_CONFIG && window.YZ_CONFIG.ASSISTANT_TTS_RATE) || 24000;
+    if (!play.ctx) play.ctx = new AudioContext();
+    const bin = atob(b64);
+    const i16 = new Int16Array(bin.length / 2);
+    for (let i = 0; i < i16.length; i++) i16[i] = (bin.charCodeAt(i * 2 + 1) << 8) | bin.charCodeAt(i * 2);
+    const buf = play.ctx.createBuffer(1, i16.length, rate);
+    const ch = buf.getChannelData(0);
+    for (let i = 0; i < i16.length; i++) ch[i] = (i16[i] >= 0x8000 ? i16[i] - 0x10000 : i16[i]) / 0x8000;
+    const src = play.ctx.createBufferSource();
+    src.buffer = buf; src.connect(play.ctx.destination);
+    play.at = Math.max(play.at, play.ctx.currentTime);
+    src.start(play.at);
+    play.at += buf.duration;
+    play.srcs.push(src);
+    src.onended = () => { play.srcs = play.srcs.filter(s => s !== src); };
+  }
+  function stopAsstAudio() {
+    play.srcs.forEach(s => { try { s.stop(); } catch (e) {} });
+    play.srcs = [];
+    if (play.ctx) play.at = play.ctx.currentTime;
+  }
+
+  /* ---------- 連線與音訊擷取 ---------- */
+  async function asstToggleMic() {
+    if (asst.live) { asstStop(); return; }
+    // 提示詞的 🎤 與助理不能同時佔用麥克風
+    if (voiceOn) stopVoice();
+    try { await asstStart(); }
+    catch (e) {
+      asstState('無法啟動', null);
+      asstSay('act', '啟動失敗：' + e.message);
+      log('助理啟動失敗：' + e.message, 'err');
+      asstStop();
+    }
+  }
+
+  async function asstStart() {
+    if (!navigator.mediaDevices || !window.isSecureContext)
+      throw new Error('需要安全來源（localhost 或 HTTPS）才能取得麥克風');
+
+    asstState('連線中…', 'thinking');
+    await asstConnect();
+
+    asst.stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+    });
+    // 直接指定 16kHz 讓瀏覽器自己重取樣，省掉手寫 resample
+    asst.ctx = new AudioContext({ sampleRate: ASST_RATE });
+    const src = asst.ctx.createMediaStreamSource(asst.stream);
+    // ScriptProcessor 雖已標記淘汰，但相容性最好、程式碼最短。
+    // 這是本地工具且只在對話時啟用，用 AudioWorklet 的複雜度不划算。
+    asst.node = asst.ctx.createScriptProcessor(2048, 1, 0);
+    asst.node.onaudioprocess = e => {
+      const f32 = e.inputBuffer.getChannelData(0);
+      let peak = 0;
+      const i16 = new Int16Array(f32.length);
+      for (let i = 0; i < f32.length; i++) {
+        const v = Math.max(-1, Math.min(1, f32[i]));
+        i16[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+        if (Math.abs(v) > peak) peak = Math.abs(v);
+      }
+      asstLevel(peak);
+      asstSend({ type: 'input_audio_buffer.append', audio: b64FromBytes(new Uint8Array(i16.buffer)) });
+    };
+    src.connect(asst.node);
+    asst.node.connect(asst.ctx.destination);   // Chrome 不接上就不會觸發 onaudioprocess
+
+    asst.live = true;
+    setMicUI(true);
+    asstState('聆聽中', 'listening');
+  }
+
+  function asstStop() {
+    asst.live = false;
+    if (asst.node) { asst.node.onaudioprocess = null; asst.node.disconnect(); asst.node = null; }
+    if (asst.stream) { asst.stream.getTracks().forEach(t => t.stop()); asst.stream = null; }
+    if (asst.ctx) { asst.ctx.close().catch(() => {}); asst.ctx = null; }
+    if (asst.ws) { try { asst.ws.close(); } catch (e) {} asst.ws = null; }
+    setMicUI(false);
+    asstLevel(0);
+    asstState('已停止', null);
+  }
+
+  function setMicUI(on) {
+    $('asst-mic').classList.toggle('on', on);
+    $('asst-mic-label').textContent = on ? '停止聆聽' : '開始聆聽';
+  }
+  function asstLevel(peak) {
+    const bar = $('asst-level')?.firstElementChild;
+    if (bar) bar.style.width = Math.min(100, peak * 160).toFixed(0) + '%';
+  }
+  function asstSend(obj) {
+    if (asst.ws && asst.ws.readyState === WebSocket.OPEN) asst.ws.send(JSON.stringify(obj));
+  }
+  // 音訊逐塊送出，量不小；用 chunk 迴圈避免 String.fromCharCode 參數過多爆掉
+  function b64FromBytes(bytes) {
+    let s = '';
+    for (let i = 0; i < bytes.length; i += 0x8000)
+      s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(s);
+  }
+
+  function asstConnect() {
+    return new Promise((res, rej) => {
+      const ws = new WebSocket(ASST_URL);
+      ws.binaryType = 'arraybuffer';
+      const fail = () => rej(new Error(`連不上語音服務 ${ASST_URL}，請確認 speech-to-speech 已啟動`));
+      ws.onopen = () => {
+        asst.ws = ws;
+        asstSend({ type: 'session.update', session: { type: 'realtime', instructions: ASST_PROMPT } });
+        res();
+      };
+      ws.onerror = fail;
+      ws.onclose = () => { if (asst.live) { asstSay('act', '連線中斷'); asstStop(); } };
+      ws.onmessage = ev => { try { onAsstEvent(JSON.parse(ev.data)); } catch (e) {} };
+    });
   }
 
   /* ---------------- 雜項 UI ---------------- */
@@ -1442,6 +1609,7 @@
     };
     $('assistant-btn').onclick = () => setAssistant(!asst.open);
     $('asst-close').onclick = () => setAssistant(false);
+    $('asst-mic').onclick = asstToggleMic;
     setAssistant(false);   // 初始收合，並讓 inert 生效
     document.addEventListener('keydown', onGlobalKey);
     // 沒有這兩行的話，把圖片拖到上傳區以外會讓瀏覽器直接開啟該檔案、離開整個面板
