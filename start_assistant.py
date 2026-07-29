@@ -36,6 +36,23 @@ VAD_MIN_SILENCE = "500"
 # min_speech_ms：短於這個長度的聲音不算說話，用來擋掉咳嗽、鍵盤聲。
 VAD_MIN_SPEECH = "384"
 
+# ---- 音色 ----
+# 套件預設用 CustomVoice 模型配內建 speaker「Aiden」（英語男聲）。要用自己的聲音
+# 就得換成 Base 模型——只有 Base 支援 ref_audio 音色克隆，CustomVoice 給的是預設音色。
+TTS_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+# 參考音訊：24kHz 單聲道 wav。官方建議 5~10 秒、純淨人聲無背景音。
+# voices/ 已 gitignore——這是本人聲音，不進公開版控。
+REF_AUDIO = "voices/my_voice_10s.wav"
+# 克隆模式二選一（見 faster_qwen3_tts/cli.py 的 _validate_clone_refs）：
+#   xvec_only=True  只取聲紋嵌入，不需要逐字稿。套件自己標註 "recommended for
+#                   cleaner starts and language switching"。
+#   xvec_only=False ICL 模式，連語調風格一起學、擬真度較高，但**必須**提供
+#                   ref_text（ref_audio 的正確逐字稿），填錯音色會走樣。
+# 這裡用 xvec_only：參考音訊的 Whisper 逐字稿實測不可靠（同一段音訊切 3 秒與
+# 10 秒轉出的內容對不起來），寧可不餵也不要餵錯的。
+TTS_XVEC_ONLY = True
+REF_TEXT = ""   # 僅 TTS_XVEC_ONLY = False 時才需要填
+
 
 def groq_key():
     """從 config.js 取金鑰。那份檔案已 gitignore，是專案放密鑰的既定位置。"""
@@ -92,12 +109,28 @@ def main():
         # torch 後端用已經裝好的 CUDA PyTorch，不用額外依賴。
         "--qwen3_tts_backend", "torch",
         "--qwen3_tts_device", "cuda",
+        # 音色克隆：Base 模型 + 參考音訊，說明見檔案上方
+        "--qwen3_tts_model_name", TTS_MODEL,
+        "--qwen3_tts_ref_audio", str(BASE / REF_AUDIO),
+        # TTS 也要講中文，否則會用英語音素念中文
+        "--qwen3_tts_language", "zh",
         "--ws_port", port,
     ]
     # --tts qwen3 與 --ws_port 8765 本來就是預設值，這裡明寫是為了自我說明
 
+    # 兩種克隆模式擇一，不能混用：xvec_only 不吃 ref_text，ICL 模式則非給不可
+    if TTS_XVEC_ONLY:
+        cmd.append("--qwen3_tts_xvec_only")
+    else:
+        if not REF_TEXT:
+            sys.exit("ICL 模式（TTS_XVEC_ONLY = False）必須填 REF_TEXT，"
+                     "內容要與 REF_AUDIO 的語音完全一致。")
+        cmd += ["--qwen3_tts_ref_text", REF_TEXT]
+
     print(f"▶ 語音服務啟動中… ws://127.0.0.1:{port}/v1/realtime")
-    print(f"  STT=whisper-large-v3-turbo  LLM={GROQ_MODEL}@Groq  TTS=Qwen3-TTS")
+    print(f"  STT=whisper-large-v3-turbo  LLM={GROQ_MODEL}@Groq  TTS=Qwen3-TTS(Base)")
+    print(f"  音色：克隆自 {REF_AUDIO}"
+          f"（{'x-vector 聲紋模式，不需逐字稿' if TTS_XVEC_ONLY else 'ICL 模式'}）")
     print(f"  斷句：thresh={VAD_THRESH}（越低越靈敏）"
           f"  靜音={VAD_MIN_SILENCE}ms（越大越不會把句子切斷）"
           f"  最短語音={VAD_MIN_SPEECH}ms")
