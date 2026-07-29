@@ -58,7 +58,10 @@ def main():
         str(S2S_EXE),
         # STT 預設是 Parakeet（英語導向），中文一定要換 Whisper
         "--stt", "whisper",
-        # 不指定的話 VAD 與 Whisper 都會當英語處理
+        # 而 whisper 的預設模型是 distil-whisper/distil-large-v3——那是純英語的
+        # 蒸餾模型，完全不會中文，不換的話中文會被硬聽成英文（實測聽成 "Go-"、"Yeah,"）。
+        "--stt_model_name", "openai/whisper-large-v3-turbo",
+        # 語言不指定的話 VAD 與 Whisper 都會當英語處理
         "--language", "zh",
         # LLM 走 Groq。旗標名稱雖叫 responses_api_*，chat-completions 後端也是用這組
         "--llm_backend", "chat-completions",

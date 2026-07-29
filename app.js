@@ -1378,7 +1378,7 @@
   const ASST_URL = (window.YZ_CONFIG && window.YZ_CONFIG.ASSISTANT_WS) || 'ws://127.0.0.1:8765/v1/realtime';
   const ASST_RATE = 16000;   // 服務端要求 16kHz int16 mono PCM
 
-  const asst = { open: false, ws: null, ctx: null, stream: null, node: null, mute: null, live: false };
+  const asst = { open: false, ws: null, ctx: null, stream: null, node: null, mute: null, live: false, bubble: null };
 
   function setAssistant(open) {
     const el = $('assistant'), btn = $('assistant-btn');
@@ -1430,20 +1430,29 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
   function onAsstEvent(ev) {
     const t = ev.type || '';
     // 使用者開口 → 打斷正在播的回覆，像跟真人講話一樣
-    if (t === 'input_audio_buffer.speech_started') { stopAsstAudio(); asstState('聆聽中', 'listening'); return; }
+    if (t === 'input_audio_buffer.speech_started') { stopAsstAudio(); asst.bubble = null; asstState('聆聽中', 'listening'); return; }
     if (t === 'input_audio_buffer.speech_stopped') { asstState('辨識中…', 'thinking'); return; }
 
     // 使用者說的話（Whisper 轉出來的）
     if (t.includes('input_audio_transcription') && (ev.transcript || ev.text)) {
       asstSay('me', ev.transcript || ev.text); asstState('思考中…', 'thinking'); return;
     }
-    // 助理的文字回覆
+    // 助理的文字回覆。伺服器是逐字串流過來的，先開一顆泡泡再往裡面接，
+    // 只等 .done 的話中途完全看不到東西。
+    if (t === 'response.audio_transcript.delta' && ev.delta) {
+      if (!asst.bubble) asst.bubble = asstSay('bot', '');
+      asst.bubble.textContent += ev.delta;
+      $('asst-log').scrollTop = $('asst-log').scrollHeight;
+      return;
+    }
     if (t === 'response.audio_transcript.done' || t === 'response.output_text.done') {
-      if (ev.transcript || ev.text) asstSay('bot', ev.transcript || ev.text);
+      const txt = ev.transcript || ev.text || '';
+      if (asst.bubble) { if (txt) asst.bubble.textContent = txt; asst.bubble = null; }
+      else if (txt) asstSay('bot', txt);
       return;
     }
     if (t === 'response.audio.delta' && ev.delta) { playAsstAudio(ev.delta); asstState('回覆中', 'speaking'); return; }
-    if (t === 'response.done') { asstState(asst.live ? '聆聽中' : '已停止', asst.live ? 'listening' : null); return; }
+    if (t === 'response.done') { asst.bubble = null; asstState(asst.live ? '聆聽中' : '已停止', asst.live ? 'listening' : null); return; }
     if (t === 'error') { asstSay('act', '服務錯誤：' + (ev.error?.message || JSON.stringify(ev))); return; }
 
     // 連線握手與其他純狀態通知，收到是正常的，不必記
@@ -1463,7 +1472,7 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
     'response.content_part.added', 'response.content_part.done',
     'conversation.item.created', 'conversation.item.added',
     'input_audio_buffer.committed', 'input_audio_buffer.cleared',
-    'response.audio.done', 'response.audio_transcript.delta', 'output_audio_buffer.started',
+    'response.audio.done', 'output_audio_buffer.started',
   ]);
 
   /* ---------- 串流播放 ---------- */
