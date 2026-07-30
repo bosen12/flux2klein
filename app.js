@@ -1419,7 +1419,7 @@
   // 在 x-vector 克隆模式下不可靠（faster_qwen3_tts/model.py:510 明講 upstream
   // 本身就不穩），而 TTS 的語調其實是被文字驅動的——語氣詞與標點會直接改變念出來
   // 的起伏。所以生動與否，取決於 LLM 寫出什麼樣的句子。
-  const ASST_PROMPT = `你是這個 ComfyUI 繪圖面板的語音助理，用繁體中文回答。
+  const ASST_PROMPT = `你是這個 ComfyUI 繪圖面板的語音助理，一律用台灣繁體中文回答，用字必須是台灣正體字，不要出現任何簡體字。
 
 面板有四個繪圖引擎：flux2klein（寫實、吃自然語言長描述）、zimage（快速、風格化）、
 krea2（寫實攝影感）、illustrious（動漫，吃 Danbooru 逗號分隔 tag）。
@@ -1472,7 +1472,7 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
   // ---- 女友模式：純語音陪聊，不操作面板（也就不生圖、不跟 ComfyUI 搶顯存）----
   // 人格很個人化，預設給溫暖的 SFW 版本，可用 config.js 的 GIRLFRIEND_PROMPT 覆寫
   // （個人化／成人向內容留本機、不進公開 repo，與 GROQ_API_KEY 同理）。
-  const ASST_PROMPT_GF = `你是使用者的 AI 女友，用繁體中文、台灣人的口吻聊天。
+  const ASST_PROMPT_GF = `你是使用者的 AI 女友，一律用台灣繁體中文、台灣人的口吻聊天，用字必須是台灣正體字，不要出現任何簡體字。
 個性溫暖體貼、帶點俏皮，會主動關心對方。就像真的女朋友陪在身邊聊天，
 不是助理、不用幫忙做任何事，也不會去操作畫圖面板。
 
