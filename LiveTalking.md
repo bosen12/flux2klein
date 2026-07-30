@@ -128,6 +128,32 @@ LiveTalking 更新後重跑腳本即可還原。若上游改了被替換的那�
 
 ---
 
+## 4b. 用自己的圖建 avatar（已驗證，bat 預設就用這個）
+
+bat 預設的 `my_avatar` 是從面板那張人像建出來的。**不需要 mmcv**——wav2lip 自帶
+`face_detection`，s3fd 權重第一次跑會自動下載。
+
+```bash
+# 1) 靜態圖轉成 25fps 短片（身體不動、只有嘴會被驅動，正是想要的效果）
+#    尺寸要偶數；576x768 夠清晰也處理得快
+ffmpeg -y -loop 1 -i <你的圖.png> -t 6 -r 25 \
+  -vf "scale=576:-2,crop=576:768:0:0" -pix_fmt yuv420p -c:v libx264 avatar_src.mp4
+
+# 2) 建 avatar（在 LiveTalking 目錄下跑）
+cd C:\projects\LiveTalking
+E:\lt\Scripts\python.exe -m avatars.wav2lip.genavatar ^
+  --video_path <上一步的 avatar_src.mp4> --avatar_id my_avatar --img_size 256
+```
+
+產出在 `data/avatars/my_avatar/`：`coords.pkl` + `face_imgs/` + `full_imgs/`（各 150 張），
+結構與官方 avatar 一致。**檢查 `face_imgs/00000000.png`**：要能看到完整五官**且含下巴**，
+wav2lip 靠下巴對嘴，裁太緊會糊。
+
+**avatar 不進版控**（在 LiveTalking 的 `data/avatars` 下、且是幾百張圖）。換機器要重跑這節。
+bat 有存在性檢查：缺 `my_avatar` 會印警告並退回官方 avatar，不會直接炸。
+
+---
+
 ## 5. 啟動（bat 已寫好，純 ASCII）
 
 | bat | 用途 |
@@ -139,9 +165,11 @@ LiveTalking 更新後重跑腳本即可還原。若上游改了被替換的那�
 兩支都會：
 - **自動偵測並啟動 `groq_proxy.py`（8756）**，多 key 輪替避開每日上限
 - 設好 `LLM_BASE_URL` / `LLM_MODEL` 與 `QWEN3_TTS_*` 環境變數
-- 缺 venv / 缺 `wav2lip.pth` / 缺參考音訊時，印清楚的錯誤而不是直接炸
+- 缺 venv / 缺 `wav2lip.pth` / 缺參考音訊 / 8010 被占用時，印清楚的錯誤而不是直接炸
+- 缺 `my_avatar` 時印警告並自動退回官方 avatar
 
-可帶參數覆寫：`start_livetalking_qwen.bat musetalk <avatar_id>`（預設 `wav2lip` + `wav2lip256_avatar1`）。
+可帶參數覆寫：`start_livetalking_qwen.bat <model> <avatar_id>`。**預設是 `wav2lip` + `my_avatar`**
+（用面板那張人像建的，見 4b）。要用官方附的：`start_livetalking_qwen.bat wav2lip wav2lip256_avatar1`。
 
 `start_livetalking_qwen.bat` 裡可調的音色設定：
 - `QWEN3_TTS_REF_AUDIO` — 參考音訊路徑
@@ -168,10 +196,12 @@ LiveTalking 更新後重跑腳本即可還原。若上游改了被替換的那�
 - [x] `llm.py` 指 Groq：走 proxy 拿到女友人設的繁中回覆
 - [x] 本地 Qwen3-TTS 模組：輸出 320 樣本/幀、16kHz、start/end 事件正確、即時率 0.36x
 - [x] bat 一鍵啟動（含自動起 proxy）
-- [ ] **點「開始連接」看到對嘴畫面**（要人眼確認）
+- [x] 用自己的圖建 avatar（`my_avatar`，bat 已設為預設）
+- [x] **嵌進面板抽屜**：助理講話時 TTS 語音轉送 `/humanaudio` 驅動嘴型，影像走 WebRTC 顯示在頭像位置（見進度.md `53a3de4`）
+- [x] 對嘴畫面（使用者確認過）
 - [ ] EdgeTTS 路線實跑
 - [ ] 換 MuseTalk（權重要手動從夸克網盤下載）
-- [ ] 嵌進面板抽屜
+- [ ] 跟助理實際對話的端到端體感與延遲
 
 ---
 
