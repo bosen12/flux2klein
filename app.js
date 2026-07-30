@@ -597,9 +597,12 @@
   }
 
   /* ---------------- 尺寸預設 ---------------- */
+  // 比例 → 預設長寬（以 1024 為主）。助理只選比例，長寬用這裡的預設，不自己決定像素。
+  const ASPECT_PRESETS = [['1:1', 1024, 1024], ['3:4', 896, 1152], ['4:3', 1152, 896], ['9:16', 768, 1344], ['16:9', 1344, 768]];
+
   function buildAspectPresets() {
     const box = $('aspect-presets');
-    const presets = [['1:1', 1024, 1024], ['3:4', 896, 1152], ['4:3', 1152, 896], ['9:16', 768, 1344], ['16:9', 1344, 768]];
+    const presets = ASPECT_PRESETS;
     box.innerHTML = '';
     const curW = +$('width').value, curH = +$('height').value;
     for (const [name, w, h] of presets) {
@@ -1420,10 +1423,14 @@
 
 面板有四個繪圖引擎：flux2klein（寫實、吃自然語言長描述）、zimage（快速、風格化）、
 krea2（寫實攝影感）、illustrious（動漫，吃 Danbooru 逗號分隔 tag）。
-你可以用工具切換引擎、填寫提示詞、設定尺寸與步數、開關增強分支、送出生成。
+你可以用工具切換引擎、填寫提示詞、選擇畫面比例、送出生成。
 
 使用者說要畫什麼時，先判斷該用哪個引擎，再依該引擎的風格寫提示詞：
 illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描述。
+
+尺寸與步數不用煩惱：只有使用者明確說要直式、橫式或正方形時，才用 set_aspect 選比例
+（人像直式用 9:16 或 3:4、風景橫式用 16:9 或 4:3、沒特別說就不用選、預設正方形）；
+步數一律用面板預設，不要設也不要問。使用者只說要畫什麼時，就切引擎、填提示詞、直接送出生成。
 
 你的個性：像坐在旁邊一起弄圖的朋友，輕鬆、有活力、講話帶點溫度。
 不要像系統通知那樣回報狀態，要像真的在跟人講話。
@@ -1445,22 +1452,19 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
 
   // 助理能操作面板的工具（Responses-API flat 格式；經 session.tools 送出，
   // 服務端 base_openai_compatible_language_model 會轉成 Groq 的 tool 格式）。
-  // 典型流程：switch_engine → set_prompt → set_size → generate。
+  // 典型流程：switch_engine → set_prompt →（需要時 set_aspect）→ generate。
   const ASST_TOOLS = [
     { type: 'function', name: 'switch_engine', description: '切換繪圖引擎',
       parameters: { type: 'object', additionalProperties: false,
         properties: { engine: { type: 'string', enum: ['flux2klein', 'zimage', 'krea2', 'illustrious'] } },
         required: ['engine'] } },
     { type: 'function', name: 'set_prompt',
-      description: '填入提示詞（覆蓋現有內容）。依當前引擎風格：illustrious 用逗號分隔的英文 danbooru tag，其餘用自然語言英文描述。',
+      description: '填入提示詞。給主體概念即可（可用中文或簡短英文描述想畫什麼），系統會自動用 AI 依當前引擎的風格（illustrious 走 danbooru tag、其餘走自然語言）優化擴寫成完整提示詞，你不必自己寫細節。',
       parameters: { type: 'object', additionalProperties: false,
         properties: { prompt: { type: 'string' } }, required: ['prompt'] } },
-    { type: 'function', name: 'set_size', description: '設定文生圖的寬與高（像素，8 的倍數）',
+    { type: 'function', name: 'set_aspect', description: '選擇畫面比例（長寬用預設）。只在使用者明確要直式／橫式／正方形時才呼叫。',
       parameters: { type: 'object', additionalProperties: false,
-        properties: { width: { type: 'integer' }, height: { type: 'integer' } }, required: ['width', 'height'] } },
-    { type: 'function', name: 'set_steps', description: '設定取樣步數',
-      parameters: { type: 'object', additionalProperties: false,
-        properties: { steps: { type: 'integer' } }, required: ['steps'] } },
+        properties: { aspect: { type: 'string', enum: ['1:1', '3:4', '4:3', '9:16', '16:9'] } }, required: ['aspect'] } },
     { type: 'function', name: 'generate', description: '送出生成，開始畫圖',
       parameters: { type: 'object', additionalProperties: false, properties: {}, required: [] } },
   ];
@@ -1475,16 +1479,22 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
         return '已切換到 ' + ENGINES[a.engine].title;
       case 'set_prompt':
         $('prompt').value = a.prompt || '';
+        // 自動套用面板的 AI 優化（各引擎專門的 system prompt，比助理通用 prompt 專業）。
+        // aiOptimizePrompt 內部自帶 try/catch、失敗會保留原文，不會 throw。
+        if (a.prompt && GROQ_KEY) { await aiOptimizePrompt(); return '提示詞已填入並用 AI 優化'; }
         return '提示詞已填入';
-      case 'set_size':
+      case 'set_aspect': {
         if (!$('size-field') || $('size-field').style.display === 'none') return '目前模式沒有尺寸欄位';
-        if ($('width')) $('width').value = a.width;
-        if ($('height')) $('height').value = a.height;
-        document.querySelectorAll('#aspect-presets .aspect.active').forEach(x => x.classList.remove('active'));
-        return `尺寸設為 ${a.width}x${a.height}`;
-      case 'set_steps':
-        if ($('steps')) $('steps').value = a.steps;
-        return '步數設為 ' + a.steps;
+        const preset = ASPECT_PRESETS.find(x => x[0] === a.aspect);
+        if (!preset) return '沒有這個比例：' + a.aspect;
+        const [, w, h] = preset;
+        if ($('width')) $('width').value = w;
+        if ($('height')) $('height').value = h;
+        // 同步點亮對應的比例 chip，讓面板與助理狀態一致
+        document.querySelectorAll('#aspect-presets .aspect').forEach(x =>
+          x.classList.toggle('active', x.textContent.trim() === a.aspect));
+        return `比例設為 ${a.aspect}（${w}x${h}）`;
+      }
       case 'generate':
         if (state.running) return '目前正在生成中，請稍候';
         generate();
@@ -1499,24 +1509,47 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
     switch (name) {
       case 'switch_engine': return '🔀 切換引擎 → ' + (ENGINES[a.engine] ? ENGINES[a.engine].title : a.engine);
       case 'set_prompt':    return '📝 填入提示詞';
-      case 'set_size':      return `📐 尺寸 ${a.width}×${a.height}`;
-      case 'set_steps':     return '⚙️ 步數 ' + a.steps;
+      case 'set_aspect':    return '📐 比例 ' + a.aspect;
       case 'generate':      return '▶️ 送出生成';
       default:              return '⚙️ ' + name;
     }
   }
-  // 收到 function call → 執行 → 回報結果 → 讓助理接著口頭確認
-  async function asstHandleToolCall(ev) {
-    let args = {};
-    try { args = ev.arguments ? JSON.parse(ev.arguments) : {}; } catch (e) {}
-    let result;
-    try { result = await asstRunTool(ev.name, args); }
-    catch (e) { result = '執行失敗：' + e.message; }
-    asstSay('act', asstToolLabel(ev.name, args));
-    // 服務端要求：先把工具結果塞回脈絡，再送 response.create 觸發後續回應
-    asstSend({ type: 'conversation.item.create',
-               item: { type: 'function_call_output', call_id: ev.call_id, output: String(result) } });
-    asstSend({ type: 'response.create' });
+  // 一次回應常夾帶多個 function call。若對每個都送 response.create，第二個會撞上
+  // 「another response is in progress」。所以：工具「序列化」執行（set_prompt 的
+  // AI 優化是 async，必須等它做完 generate 才不會用到未優化的提示詞），全部做完 +
+  // 產生這些 call 的 response 結束後，只送「一次」response.create 讓助理口頭總結。
+  let toolQueue = [], toolBusy = false, pendingResp = false, respDone = false;
+  function asstHandleToolCall(ev) {
+    // function call 一定在它所屬 response 的 response.done 之前，所以這裡把
+    // respDone 歸零，可清掉上一輪純對話殘留的 true，不會誤觸發過早的 response.create
+    respDone = false;
+    toolQueue.push(ev);
+    drainTools();
+  }
+  async function drainTools() {
+    if (toolBusy) return;
+    toolBusy = true;
+    while (toolQueue.length) {
+      const ev = toolQueue.shift();
+      let args = {};
+      try { args = ev.arguments ? JSON.parse(ev.arguments) : {}; } catch (e) {}
+      let result;
+      try { result = await asstRunTool(ev.name, args); }
+      catch (e) { result = '執行失敗：' + e.message; }
+      asstSay('act', asstToolLabel(ev.name, args));
+      asstSend({ type: 'conversation.item.create',
+                 item: { type: 'function_call_output', call_id: ev.call_id, output: String(result) } });
+      pendingResp = true;
+    }
+    toolBusy = false;
+    maybeContinueAfterTools();
+  }
+  // 工具全做完 && 產生它們的 response 已結束 → 才送唯一一次 response.create
+  function maybeContinueAfterTools() {
+    if (pendingResp && !toolBusy && toolQueue.length === 0 && respDone) {
+      pendingResp = false; respDone = false;
+      asstSend({ type: 'response.create' });
+    }
   }
 
   /* ---------- 伺服器事件 ---------- */
@@ -1551,6 +1584,8 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
     // 麥克風開著就回到聆聽；純打字模式沒有「聆聽」可回，顯示待命而不是「已停止」
     if (t === 'response.done') {
       asst.bubble = null;
+      respDone = true;
+      maybeContinueAfterTools();   // 若這輪有工具且都做完了，這裡才送續接的 response.create
       asstState(asst.live ? '聆聽中' : '待命中（可繼續打字）', asst.live ? 'listening' : null);
       return;
     }
