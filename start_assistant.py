@@ -71,7 +71,7 @@ REF_TEXT = REF_SCRIPT   # 僅 TTS_XVEC_ONLY = False 時才會用到
 # TTS 每塊的 codec 步數。faster-qwen3-tts 預設 8（約 640ms/塊）。塊越大、塊邊界越少，
 # 語調銜接越順、頓挫越少，代價是開口延遲（TTFA）變長。覺得接不順就往上加，
 # 覺得開口太慢就往下降。
-TTS_CHUNK_SIZE = "12"
+TTS_CHUNK_SIZE = "14"
 
 
 def groq_key():
