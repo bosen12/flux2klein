@@ -2,7 +2,7 @@
 
 給接手的人（或 AI）：這份是把 **LiveTalking**（即時對嘴數字人）接上「本地 Qwen3-TTS 克隆音色 + Groq LLM」的完整步驟。目標是**女友模式的陪聊有嘴型對嘴**。
 
-> **這份文件是探路後寫的計畫，不是已完成的紀錄。** 下面的程式碼與步驟基於實際看過的 LiveTalking 原始碼（已 clone 在 `C:\projects\LiveTalking`），但 **GPU 推論、mmcv 編譯、WebRTC 串流都還沒實測過**——寫這份的 session 無法連到 GPU/瀏覽器。標「⚠️ 未驗證」的地方要自己跑過確認。
+> **狀態：wav2lip 路線已在本機實測跑通**（2026-07-30）。venv、依賴、模型下載、Groq LLM、本地 Qwen3-TTS 模組、啟動 bat 都已驗證。**還沒做的**：實際點「開始連接」看對嘴畫面（要人眼確認）、MuseTalk 路線（權重只在夸克網盤）、嵌進面板抽屜。標「⚠️ 未驗證」的才是還沒跑過的。
 
 ---
 
@@ -12,188 +12,188 @@ LiveTalking 是一套**完整且獨立**的語音數字人系統（自帶對話 
 
 | 你要幹嘛 | 開哪個 | 有對嘴嗎 |
 |---|---|---|
-| **女友陪聊** | LiveTalking（本文件） | ✅ 有 MuseTalk 對嘴 |
+| **女友陪聊** | LiveTalking（本文件） | ✅ 有對嘴 |
 | **叫助理操作面板生圖** | 現有的 `start_assistant.py` | ❌ 只有音量驅動頭像 |
 
 **LiveTalking 不能操作面板**（沒有本專案的 tool calling）。所以它只取代「陪聊」那半，兩者依用途二選一開、不同時跑。
 
 ### 費用：不用阿里、全免費
-選的是「C 方案」——每一塊都繞開阿里雲 DashScope：
-- **TTS**：本地 Qwen3-TTS 克隆音色（`C:\projects\s2s` 那套，免費、本地）
-- **LLM**：Groq（改 `llm.py`，用 `config.js` 的 key，免費 tier）
-- **對嘴**：MuseTalk 本地（免費）
-- LiveTalking 內建的 `--tts qwen` 是 **DashScope 雲端**、要阿里 key——**我們不用它**，改用本地模組（步驟 5）。
+- **TTS**：本地 Qwen3-TTS 克隆音色（免費、本地）
+- **LLM**：Groq（走本專案的 `groq_proxy.py` 多 key 輪替，免費 tier）
+- **對嘴**：wav2lip / MuseTalk 本地（免費）
+- LiveTalking 內建的 `--tts qwentts` 是 **DashScope 雲端**、要阿里 key——**我們不用它**，改用自製的 `--tts qwen3local`。
 
 ---
 
-## 1. 前置需求
+## 1. 前置需求（本機實測值）
 
-- NVIDIA 顯卡（本機是 RTX 5070 Ti，16GB，sm_120 Blackwell）
-- 已裝 CUDA 驅動（`nvidia-smi` 確認，本機是 CUDA 13.0）
-- LiveTalking 已 clone 在 `C:\projects\LiveTalking`
-- 本地 Qwen3-TTS 已可用（`C:\projects\s2s` venv，`faster-qwen3-tts` + `voices/my_voice_10s.wav`）
+- NVIDIA RTX 5070 Ti，16GB，**sm_120（Blackwell）**
+- CUDA 驅動 13.0
+- LiveTalking clone 在 `C:\projects\LiveTalking`（upstream: github.com/lipku/LiveTalking，實測 commit `a5a77f4`）
+- 參考音訊 `voices/my_voice_10s.wav`
 
-**⚠️ Blackwell 相容性**：LiveTalking README 測試環境是 Python 3.12 + torch 2.9.1 / cu128，torch 2.6+ 才有 sm_120 核心。本機 torch 走 cu130（更新，OK）。**mmcv 只在 `avatars/musetalk/utils/preprocessing.py`（建 avatar 的預處理）出現，即時推論看來不碰**——如果只用官方預建的 avatar、不自己從影片建，也許能完全避開 mmcv 編譯。若真的要 mmcv 而報錯，得裝 CUDA Toolkit（nvcc）+ VS Build Tools 後 `MMCV_WITH_OPS=1 FORCE_CUDA=1 pip install mmcv==2.1.0 --no-build-isolation`（別人在 RTX 5090 上這樣建成功）。
+**✅ Blackwell 相容性已驗證**：`torch 2.13.0+cu130` 的 `get_arch_list()` 含 `sm_120`，`cuda.is_available()` 為 True。（別照 LiveTalking README 裝 torch 2.0.x/cu118——那個沒有 sm_120 核心，在這張卡上跑不動。）
+
+**✅ mmcv 完全沒用到**：走 wav2lip + 官方預建 avatar 的路線，從安裝到執行都沒碰 mmcv，不需要 nvcc 或 VS Build Tools。只有「自己從影片建 avatar」才會觸發 `avatars/musetalk/utils/preprocessing.py` 的 mmcv 相依。
+
+**✅ aiortc 沒有編譯問題**：`aiortc 1.15.0` 在 Windows + Python 3.10 直接裝好，沒有 README FAQ 提到的那些問題。
 
 ---
 
-## 2. 建虛擬環境 + 裝依賴
+## 2. 建虛擬環境 + 裝依賴（已驗證）
 
-LiveTalking 跟 `s2s` 的 torch 版本可能不同，**用獨立環境**，別混進 `C:\projects\s2s`。
+**venv 放 `E:\lt`**，不是 C 槽——C 槽只剩 ~57GB（95% 滿），而 E 槽有 1.4TB。LiveTalking 本身與模型仍在 C。
 
 ```bash
-# 用 venv（README 用 conda，但本專案慣例是 venv；擇一即可）
-python -m venv C:\projects\lt
+# Python 3.10（README 用 3.12，但 3.10 的套件相容性更好，實測沒問題）
+C:\Users\<you>\AppData\Local\Programs\Python\Python310\python.exe -m venv E:\lt
 
-# torch：對齊本機 CUDA 13.0（跟 s2s 一樣）。README 給的是 cu128，本機用 cu130。
-C:\projects\lt\Scripts\python.exe -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+# torch 對齊本機 CUDA 13.0。**一定要 cu130 以上**，才有 sm_120 核心
+E:\lt\Scripts\python.exe -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
 
 # LiveTalking 依賴
-cd C:\projects\LiveTalking
-C:\projects\lt\Scripts\python.exe -m pip install -r requirements.txt
+E:\lt\Scripts\python.exe -m pip install -r C:\projects\LiveTalking\requirements.txt
+
+# 本地克隆音色要用的（會把 transformers 降到 4.57.3，正常）
+E:\lt\Scripts\python.exe -m pip install faster-qwen3-tts
 ```
 
-裝完驗證 CUDA：
+驗證：
 ```bash
-C:\projects\lt\Scripts\python.exe -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+E:\lt\Scripts\python.exe -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_arch_list())"
 ```
-要看到 `True`。⚠️ 未驗證：requirements 裡若有 `aiortc`（WebRTC）在 Windows 編不過，看 [LiveTalking FAQ](https://doc.livetalking.ai/docs/faq/)。
+要看到 `True` 且 arch list 含 `sm_120`。
+
+**選配**：本地語音輸入（麥克風講話）需要 `pip install funasr modelscope`。沒裝的話啟動時會印 `[ASR] funasr not installed — local ASR endpoint disabled`，**打字對話照樣可用**。
 
 ---
 
-## 3. 下載模型 + avatar
+## 3. 下載模型 + avatar（wav2lip 已自動下載完成）
 
-模型在官方網盤（[夸克](https://pan.quark.cn/s/83a750323ef0) / [Google Drive](https://drive.google.com/drive/folders/1FOC_MD6wdogyyX_7V1d4NDIO7P9NlSAJ)）。
+**wav2lip 路線的兩個檔可以用 gdown 自動抓**（Google Drive 那個夾裡就只有這兩個）：
 
-**先用 wav2lip 驗證整條管線通不通（最省事，~1GB、無 mmcv），再換 MuseTalk 求品質：**
-1. `wav2lip256.pth` → 放 `models/`、改名 `wav2lip.pth`
-2. `wav2lip256_avatar1.tar.gz` → 解壓整個資料夾放 `data/avatars/`
+```bash
+E:\lt\Scripts\python.exe -m pip install gdown
+# wav2lip256.pth -> models/wav2lip.pth（215MB）
+E:\lt\Scripts\python.exe -m gdown 1wu6XujFL9rF-0P2l44G6kpeapeY0cME7 -O C:\projects\LiveTalking\models\wav2lip.pth
+# avatar（353MB），解壓後可刪壓縮檔
+E:\lt\Scripts\python.exe -m gdown 1aU-9SMEAZWN00hbvAGlRHG2iB17r9dEW -O C:\projects\LiveTalking\data\avatars\wav2lip256_avatar1.tar.gz
+cd C:\projects\LiveTalking\data\avatars && tar -xzf wav2lip256_avatar1.tar.gz && del wav2lip256_avatar1.tar.gz
+```
+解開後是 `wav2lip256_avatar1/`（`coords.pkl` + `face_imgs` + `full_imgs`，550 幀）。
 
-**MuseTalk（要對嘴品質）**：同網盤找 MuseTalk 的權重與 avatar，依 README/docs 放對位置（⚠️ 未驗證確切檔名，以網盤實際為準）。要自訂頭像用 `http://localhost:8010/avatar.html` 上傳影片自動生成（這步可能觸發 mmcv 預處理）。
+**⚠️ MuseTalk 的權重與 avatar 不在 Google Drive**，只在[夸克網盤](https://pan.quark.cn/s/83a750323ef0)（要登入客戶端，無法自動下載）。要對嘴品質才需要，得手動抓。
 
 ---
 
-## 4. 改 llm.py 指向 Groq
+## 4. 我們對 LiveTalking 的改動（用腳本管理，別手改）
 
-`C:\projects\LiveTalking\llm.py` 現在寫死 DashScope。改三個地方（key 別硬編，從環境變數讀）：
+**改動在第三方 clone 裡、不受本專案版控**，LiveTalking 一 `git pull` 就可能被蓋掉。所以集中在一支冪等腳本：
 
-```python
-        client = OpenAI(
-            api_key=os.getenv("GROQ_API_KEY"),              # 改：原本 DASHSCOPE_API_KEY
-            base_url="https://api.groq.com/openai/v1",       # 改：原本 dashscope 那串
-        )
-        ...
-        completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",                 # 改：原本 qwen-plus
-            messages=[{'role': 'system', 'content': '（放女友人設，見下）'},
-                    {'role': 'user', 'content': message}],
-            stream=True,
-            stream_options={"include_usage": True}
-        )
+```bash
+python livetalking_patch.py          # 套用
+python livetalking_patch.py --check  # 只檢查狀態
 ```
 
-**女友人設**（system content）照本專案 `app.js` 的 `ASST_PROMPT_GF` 精神寫，並保留那幾條 TTS 硬限制（禁 markdown/emoji/括號動作、數字用中文、繁體台灣用語），否則對嘴會念出「星號」跟簡體。
+它做四件事（來源檔在本專案 `livetalking/`）：
 
-**多 key 輪替**：要接本專案的 `groq_proxy.py`（8756）——把 `base_url` 改成 `http://127.0.0.1:8756/openai/v1`，並先跑 `python C:\projects\flux2klein\groq_proxy.py`，就能兩把 key 接力、避開每日上限。
+| 檔案 | 改什麼 |
+|---|---|
+| `tts/qwen3local.py` | **新增**：本地 Qwen3-TTS 克隆音色模組 |
+| `avatars/base_avatar.py` | 在 `_tts_modules` 註冊 `qwen3local` |
+| `config.py` | `--tts` 的 help 補上 `qwen3local` |
+| `llm.py` | DashScope → Groq（走 `groq_proxy` 輪替）＋女友人設 |
+
+LiveTalking 更新後重跑腳本即可還原。若上游改了被替換的那段，腳本會明確報「找不到要替換的內容」而不是靜默失敗。
+
+### TTS 外掛的正確寫法（實作時踩過的坑）
+
+- 註冊機制是 **`registry.py` 的 `@register("tts", "名稱")` 裝飾器** ＋ `avatars/base_avatar.py` 的 `_tts_modules` 字典做 lazy import。**不是**改 `app.py`。
+- 介面：繼承 `BaseTTS`、覆寫 `txt_to_audio(msg)`，`msg` 是 `(text, textevent)`。把 float32 單聲道音訊切成 `self.chunk`（**320 樣本 = 20ms @ 16kHz**）用 `self.parent.put_audio_frame(frame, eventpoint)` 送出。`sample_rate` 是 **16000**（正好對上本專案的 `PIPELINE_SR`，見進度.md 的 `8485463`）。
+- `eventpoint` 要在第一幀標 `{'status':'start','text':text}`、最後一幀標 `'end'`，最簡範本看 `tts/edge.py`。
+- **`faster_qwen3_tts` 的 API 跟先前計畫寫的不一樣**：類別是 **`FasterQwen3TTS`**、用 **`from_pretrained(model_name, device, backend)`**；`ref_audio` / `xvec_only` / `language` 是傳給 **`generate_voice_clone_streaming()`**，不是建構子。
+- **`language` 不吃 `"zh"`**！要傳模型 config `codec_language_id` 的 key，中文是 **`"chinese"`**。傳 `zh` 會 `NotImplementedError: Language zh not implemented`。模組內有 alias 表自動轉換。
+- **模型必須模組層級共用**：`build_avatar_session()` 是**每個 WebRTC session 呼叫一次**，若在 `__init__` 各自載入，每開一個 session 就多一份 ~3.5GB 模型（`max_session` 預設 5，直接爆顯存），重連也要再等十幾秒。已用 `_get_model()` + lock 只載一次。
+- **要預熱**：第一次合成要捕獲 CUDA graph，實測 6.6 秒（即時率 3.8x）；預熱後每次只要 **0.35~0.37x**（比即時快約 3 倍）。預熱放模型載入時，別讓那 6 秒落在使用者第一句話上。
+
+### 實測效能（RTX 5070 Ti）
+
+| 項目 | 數字 |
+|---|---|
+| 模型載入 + 預熱 | 16.1 秒（一次性） |
+| 合成即時率（穩定狀態） | **0.35~0.37x**（1 秒音訊約 0.36 秒算完） |
+| 第二個 session 建立 | 0.000 秒（共用模型） |
+| 顯存：wav2lip | ~3.1 GB |
+| 顯存：Qwen3-TTS 1.7B | ~3.5 GB |
 
 ---
 
-## 5. 本地 Qwen3-TTS 模組（C 方案的核心）
+## 5. 啟動（bat 已寫好，純 ASCII）
 
-LiveTalking 的 `--tts qwen` 是雲端 DashScope，不是你的克隆音色。要用本地音色，**新增一個 TTS 模組**。
+| bat | 用途 |
+|---|---|
+| `start_livetalking_edge.bat` | EdgeTTS 雲端語音（`zh-TW-HsiaoChenNeural`）。**先用這個驗證管線**，不載本地 TTS、啟動快、省顯存 |
+| `start_livetalking_qwen.bat` | 本地 Qwen3-TTS **你的克隆音色** |
+| `start_livetalking.bat` | 兩者共用的底層，不直接跑 |
 
-LiveTalking 的 TTS 介面（`tts/base_tts.py`）：繼承 `BaseTTS`、覆寫 `txt_to_audio(msg)`，把音訊切成 `self.chunk`（16kHz、20ms/塊）塞回串流佇列。**`sample_rate` 是 16000**——正好對上本專案發現的 `PIPELINE_SR=16000`（見 `進度.md` 的 8485463）。
+兩支都會：
+- **自動偵測並啟動 `groq_proxy.py`（8756）**，多 key 輪替避開每日上限
+- 設好 `LLM_BASE_URL` / `LLM_MODEL` 與 `QWEN3_TTS_*` 環境變數
+- 缺 venv / 缺 `wav2lip.pth` / 缺參考音訊時，印清楚的錯誤而不是直接炸
 
-新增 `C:\projects\LiveTalking\tts\qwen3local.py`：
+可帶參數覆寫：`start_livetalking_qwen.bat musetalk <avatar_id>`（預設 `wav2lip` + `wav2lip256_avatar1`）。
 
-```python
-# 本地 Qwen3-TTS（克隆音色），輸出 16kHz 塞回 LiveTalking 串流。
-# ⚠️ 未驗證：txt_to_audio 把音訊塞回 parent 的確切呼叫，要「對照 tts/edge.py」補完
-#    （edge.py 是最簡單的範本，看它 txt_to_audio 怎麼把 chunk 交給 parent）。
-import numpy as np, resampy
-from .base_tts import BaseTTS
-from faster_qwen3_tts import Qwen3TTS   # 與 s2s 同一套；lt venv 也要 pip install faster-qwen3-tts
-
-class Qwen3LocalTTS(BaseTTS):
-    def __init__(self, opt, parent):
-        super().__init__(opt, parent)
-        self.model = Qwen3TTS(               # 參數對照 s2s 的 start_assistant.py
-            model_name="Qwen/Qwen3-TTS-12Hz-1.7B-Base",
-            device="cuda", backend="torch",
-            ref_audio=r"C:\projects\flux2klein\voices\my_voice_10s.wav",
-            xvec_only=True, language="zh",
-        )
-
-    def txt_to_audio(self, msg):
-        text, datainfo = msg
-        pcm24k = self.model.synthesize(text)          # ⚠️ 確切 API 名對照 faster_qwen3_tts
-        pcm16k = resampy.resample(pcm24k.astype(np.float32), 24000, 16000)
-        # ⚠️ 以下切塊 + 塞回 parent 的方式「照抄 tts/edge.py 的 txt_to_audio 尾段」
-        # 大致是：for chunk in 分塊(pcm16k, self.chunk): self.parent.put_audio_frame(chunk, datainfo)
-```
-
-註冊：在 `app.py` 選 TTS 的地方（搜 `edgetts` / `--tts`）加一個分支 `elif opt.tts == "qwen3local": tts = Qwen3LocalTTS(opt, avatar)`，或看它的 registry 機制。⚠️ 未驗證確切註冊點——搜 `edgetts` 字串找到 TTS 分派處照樣加。
+`start_livetalking_qwen.bat` 裡可調的音色設定：
+- `QWEN3_TTS_REF_AUDIO` — 參考音訊路徑
+- `QWEN3_TTS_XVEC_ONLY=1` — 只取聲紋（不需逐字稿）。設 `0` 走 ICL 模式，**連腔調與語氣一起學**，但 `QWEN3_TTS_REF_TEXT` 必須是參考音訊的正確逐字稿（填錯音色會走樣）
+- `QWEN3_TTS_CHUNK_SIZE=8` — 每塊 codec 步數，調小 = 第一個音更快出來
 
 ---
 
-## 6. 兩個啟動 bat（純 ASCII，中文會讓 bat 閃退，見 3a994ac）
-
-`start_livetalking_edge.bat`（雲端 EdgeTTS，免費、省顯存，先用這個驗證）：
-```bat
-@echo off
-cd /d C:\projects\LiveTalking
-set "GROQ_API_KEY=<貼第一把 key，或先跑 groq_proxy 走輪替>"
-C:\projects\lt\Scripts\python.exe app.py --transport webrtc --model musetalk --avatar_id <你的avatar> --tts edgetts --REF_FILE zh-CN-XiaoxiaoNeural
-pause
-```
-
-`start_livetalking_qwen.bat`（本地克隆音色）：
-```bat
-@echo off
-cd /d C:\projects\LiveTalking
-set "GROQ_API_KEY=<同上>"
-C:\projects\lt\Scripts\python.exe app.py --transport webrtc --model musetalk --avatar_id <你的avatar> --tts qwen3local
-pause
-```
-
-先用 `--model wav2lip --avatar_id wav2lip256_avatar1` 跑通，再換 `musetalk`。
-
----
-
-## 7. 啟動、看畫面、嵌進面板
+## 6. 開起來之後
 
 1. 跑其中一個 bat。⚠️ 服務端要開 **TCP:8010、UDP 1-65536**（防火牆）。
-2. 瀏覽器開 `http://localhost:8010/index.html`，按「開始連接」→ 數字人出現，文字框打字或講話 → 對嘴回應。
-3. **嵌進本專案面板**：把這個 WebRTC 頁面用 `<iframe>` 放進助理抽屜的頭像舞台位置（`index.html` 的 `#asst-avatar`）。因為是跨埠（7801→8010），iframe 直接嵌最省事；或用 LiveTalking 的 API（`docs/api.md`）自己接 WebRTC。⚠️ 未驗證：混合內容（HTTPS 面板嵌 http:8010）可能被擋，屆時 8010 也要 TLS，或走 serve.py 代理（參考本專案 `/assistant` WS 代理 3c1121d 的做法，加一條 `/livetalking` 路由）。
+2. 瀏覽器開 `http://127.0.0.1:8010/index.html`，按 **開始連接** → 數字人出現 → 在 `txtMessage` 打字按**發送** → 對嘴回應。
+   - 本地 TTS 模式下，**模型是在你按「開始連接」時才載入**（16 秒），不是啟動時。第一次連會等一下。
+3. **⚠️ 嵌進面板抽屜（還沒做）**：把 8010 這頁用 `<iframe>` 放進助理抽屜的頭像位置（`index.html` 的 `#asst-avatar`）。跨埠（7801→8010）用 iframe 最省事。混合內容問題（HTTPS 面板嵌 http:8010）屆時要讓 8010 也走 TLS，或加一條 `serve.py` 代理路由（參考 `/assistant` WS 代理 `3c1121d` 的做法）。
 
 ---
 
-## 8. 驗證 checklist（照順序，一關一關來）
+## 7. 驗證 checklist
 
-- [ ] `torch.cuda.is_available()` → True
-- [ ] wav2lip + 官方 avatar：`app.py --model wav2lip` 能起、8010/index.html 出現數字人（先不管品質，驗證管線）
-- [ ] llm.py 指 Groq：打字對話有回應（看 console 的 `llm Time to first chunk`）
-- [ ] EdgeTTS：講中文、對嘴會動
-- [ ] 換 MuseTalk：品質提升（⚠️ 動漫頭像嘴部可能糊，見下）
-- [ ] 本地 Qwen3-TTS 模組：`--tts qwen3local` 出你的克隆音色
+- [x] `torch.cuda.is_available()` → True，arch list 含 `sm_120`
+- [x] `aiortc` 在 Windows 裝好
+- [x] wav2lip 權重 + 官方 avatar 下載解壓
+- [x] `app.py --model wav2lip` 能起、8010 回 200、web UI 元件正常
+- [x] `llm.py` 指 Groq：走 proxy 拿到女友人設的繁中回覆
+- [x] 本地 Qwen3-TTS 模組：輸出 320 樣本/幀、16kHz、start/end 事件正確、即時率 0.36x
+- [x] bat 一鍵啟動（含自動起 proxy）
+- [ ] **點「開始連接」看到對嘴畫面**（要人眼確認）
+- [ ] EdgeTTS 路線實跑
+- [ ] 換 MuseTalk（權重要手動從夸克網盤下載）
 - [ ] 嵌進面板抽屜
 
 ---
 
-## 9. 已知障礙 / 風險（誠實記錄）
+## 8. 已知問題 / 風險
 
-1. **動漫頭像嘴部會糊**：MuseTalk 對動漫臉效果差（實作者原話）。若頭像是 illustrious 畫的動漫風，考慮改用 [Ditto](https://github.com/antgroup/ditto-talkinghead)（2026 diffusion 對嘴，品質可能更好，但生態新、Blackwell 未驗證），或接受糊。
-2. **顯存**：MuseTalk 常駐 + 本地 Qwen3-TTS，女友模式不生圖所以不跟 ComfyUI 搶（這就是女友模式的意義）。但兩者仍要塞進 16GB，⚠️ 未實測峰值。
-3. **mmcv**：只在建 avatar 的預處理需要。用官方預建 avatar 可能完全避開；自建頭像才會撞到，那時要 nvcc+VS 編 mmcv 2.1.0。
-4. **WebRTC on Windows**：`aiortc` 在 Windows 偶有編譯/執行問題，看官方 FAQ。
-5. **這份全部未在本機實測**：寫的 session 連不到 GPU/瀏覽器。第一次跑一定有東西要修，把報錯貼給下一個 session。
+1. **llama 偶爾漏簡體字**：prompt 已按本專案 `df98467` 明講「用字必須是台灣正體字」，實測仍會出現如「一會**儿**」。因為 儿/兒 同音，**TTS 念出來沒差**，只影響畫面文字。要徹底解決得加簡→繁後處理（如 opencc），目前判斷不值得為此加依賴。
+2. **動漫頭像嘴部會糊**：MuseTalk 對動漫臉效果差。若要用 illustrious 畫的動漫頭像，考慮 [Ditto](https://github.com/antgroup/ditto-talkinghead) 或接受糊。
+3. **顯存**：wav2lip(3.1G) + Qwen3-TTS(3.5G) + 桌面(~7.5G) ≈ 14G / 16G，**女友模式不生圖所以不跟 ComfyUI 搶**（這就是女友模式的意義）。但要同時開 ComfyUI 生圖會爆——別同時開。
+4. **TTS 在第一個 session 建立時才載入**（不是啟動時），所以第一次「開始連接」要等 16 秒。
+5. **mmcv**：只有「自建 avatar」才需要。用官方預建 avatar 完全不碰。
+6. **funasr 未裝**：麥克風語音輸入停用，打字可用。要語音輸入補 `pip install funasr modelscope`。
 
 ---
 
-## 10. 相關檔案對照（本專案這邊）
+## 9. 相關檔案對照（本專案這邊）
 
-- `start_assistant.py` — 現有 speech-to-speech，本地 Qwen3-TTS 的參數範本（ref_audio、xvec_only、language）都在這
-- `groq_proxy.py` — 多 key 輪替代理，LiveTalking 的 llm.py 可指向它（8756）
-- `voices/my_voice_10s.wav` — 你的克隆音色參考音訊
-- `進度.md` 的 `8485463` — 為什麼取樣率是 16000（Qwen3-TTS 原生 24000 但管線降 16000）
-- `app.js` 的 `ASST_PROMPT_GF` — 女友人設 + TTS 硬限制，llm.py 的 system prompt 照抄
+- `livetalking_patch.py` — 把我們的改動套到 LiveTalking clone（冪等，可重複跑）
+- `livetalking/qwen3local.py` — 本地 Qwen3-TTS 模組原始檔
+- `livetalking/llm.py` — 改指 Groq 的 llm.py 原始檔（含女友人設）
+- `start_livetalking*.bat` — 啟動器
+- `groq_proxy.py` — 多 key 輪替代理（8756），bat 會自動起
+- `start_assistant.py` — 另一套（能操作面板的助理），本地 Qwen3-TTS 參數範本也在這
+- `voices/my_voice_10s.wav` — 克隆音色參考音訊（已 gitignore）
+- `進度.md` 的 `8485463` — 為什麼取樣率是 16000
+- `app.js` 的 `ASST_PROMPT_GF` — 女友人設來源

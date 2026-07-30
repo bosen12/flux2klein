@@ -1,0 +1,84 @@
+@echo off
+setlocal
+rem ============================================================
+rem  LiveTalking - lip-synced digital human (girlfriend chat mode)
+rem
+rem  This is the shared launcher. Use one of the wrappers instead:
+rem    start_livetalking_edge.bat  -> EdgeTTS cloud voice (validate pipeline first)
+rem    start_livetalking_qwen.bat  -> local Qwen3-TTS cloned voice
+rem
+rem  Optional args: %1=model (wav2lip/musetalk)  %2=avatar_id
+rem  LLM goes through groq_proxy.py (multi-key rotation, reads flux2klein/config.js).
+rem  Open http://127.0.0.1:8010/index.html after it starts, then click connect.
+rem  Server needs TCP:8010 and UDP:1-65536 allowed through the firewall.
+rem ============================================================
+
+set "LT_DIR=C:\projects\LiveTalking"
+set "LT_PY=E:\lt\Scripts\python.exe"
+set "PANEL_DIR=%~dp0"
+set "PROXY_PORT=8756"
+
+rem --- TTS mode comes from the wrapper; default to EdgeTTS ---
+if "%LT_TTS%"=="" set "LT_TTS=edgetts"
+
+rem --- model / avatar: wav2lip is the verified-working default ---
+set "LT_MODEL=%~1"
+if "%LT_MODEL%"=="" set "LT_MODEL=wav2lip"
+set "LT_AVATAR=%~2"
+if "%LT_AVATAR%"=="" set "LT_AVATAR=wav2lip256_avatar1"
+
+rem --- sanity checks -----------------------------------------
+if not exist "%LT_PY%" (
+  echo [ERROR] Python venv not found: %LT_PY%
+  echo         Create it and install deps, see LiveTalking.md section 2.
+  pause
+  exit /b 1
+)
+if not exist "%LT_DIR%\app.py" (
+  echo [ERROR] LiveTalking not found: %LT_DIR%
+  pause
+  exit /b 1
+)
+if not exist "%LT_DIR%\models\wav2lip.pth" (
+  if /i "%LT_MODEL%"=="wav2lip" (
+    echo [ERROR] Missing %LT_DIR%\models\wav2lip.pth
+    echo         See LiveTalking.md section 3 for the download.
+    pause
+    exit /b 1
+  )
+)
+
+rem --- start the Groq key-rotation proxy if it is not up yet ---
+netstat -ano | findstr /r /c:"LISTENING" | findstr /c:":%PROXY_PORT% " >nul 2>nul
+if errorlevel 1 (
+  echo Starting Groq proxy on port %PROXY_PORT% ...
+  start "Groq proxy" /min cmd /c "cd /d "%PANEL_DIR%" & python groq_proxy.py %PROXY_PORT%"
+  rem give it a moment to bind before the app makes its first call
+  timeout /t 3 /nobreak >nul
+) else (
+  echo Groq proxy already running on port %PROXY_PORT%.
+)
+
+rem --- LLM config read by LiveTalking\llm.py ------------------
+set "LLM_BASE_URL=http://127.0.0.1:%PROXY_PORT%/openai/v1"
+set "LLM_MODEL=llama-3.3-70b-versatile"
+set "GROQ_API_KEY=local"
+
+echo ============================================================
+echo   LiveTalking - digital human
+echo   model  : %LT_MODEL%    avatar: %LT_AVATAR%
+echo   tts    : %LT_TTS%
+echo   llm    : %LLM_MODEL% via proxy %PROXY_PORT%
+echo ------------------------------------------------------------
+echo   Open http://127.0.0.1:8010/index.html and click connect.
+echo   First run downloads model weights, please be patient.
+echo   Close this window to stop.
+echo ============================================================
+echo.
+
+cd /d "%LT_DIR%"
+"%LT_PY%" app.py --transport webrtc --model %LT_MODEL% --avatar_id %LT_AVATAR% --tts %LT_TTS% %LT_EXTRA%
+
+echo.
+echo LiveTalking stopped.
+pause
