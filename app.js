@@ -1443,6 +1443,82 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
 四、不要複述問題，直接回應。
 五、數字用中文寫（說「三十步」不說「30 步」），否則語音合成會念錯。`;
 
+  // 助理能操作面板的工具（Responses-API flat 格式；經 session.tools 送出，
+  // 服務端 base_openai_compatible_language_model 會轉成 Groq 的 tool 格式）。
+  // 典型流程：switch_engine → set_prompt → set_size → generate。
+  const ASST_TOOLS = [
+    { type: 'function', name: 'switch_engine', description: '切換繪圖引擎',
+      parameters: { type: 'object', additionalProperties: false,
+        properties: { engine: { type: 'string', enum: ['flux2klein', 'zimage', 'krea2', 'illustrious'] } },
+        required: ['engine'] } },
+    { type: 'function', name: 'set_prompt',
+      description: '填入提示詞（覆蓋現有內容）。依當前引擎風格：illustrious 用逗號分隔的英文 danbooru tag，其餘用自然語言英文描述。',
+      parameters: { type: 'object', additionalProperties: false,
+        properties: { prompt: { type: 'string' } }, required: ['prompt'] } },
+    { type: 'function', name: 'set_size', description: '設定文生圖的寬與高（像素，8 的倍數）',
+      parameters: { type: 'object', additionalProperties: false,
+        properties: { width: { type: 'integer' }, height: { type: 'integer' } }, required: ['width', 'height'] } },
+    { type: 'function', name: 'set_steps', description: '設定取樣步數',
+      parameters: { type: 'object', additionalProperties: false,
+        properties: { steps: { type: 'integer' } }, required: ['steps'] } },
+    { type: 'function', name: 'generate', description: '送出生成，開始畫圖',
+      parameters: { type: 'object', additionalProperties: false, properties: {}, required: [] } },
+  ];
+
+  // 執行工具：對應到面板實際操作，回傳給 LLM 的簡短結果字串。
+  async function asstRunTool(name, a) {
+    a = a || {};
+    switch (name) {
+      case 'switch_engine':
+        if (!ENGINES[a.engine]) return '沒有這個引擎：' + a.engine;
+        selectEngine(a.engine);
+        return '已切換到 ' + ENGINES[a.engine].title;
+      case 'set_prompt':
+        $('prompt').value = a.prompt || '';
+        return '提示詞已填入';
+      case 'set_size':
+        if (!$('size-field') || $('size-field').style.display === 'none') return '目前模式沒有尺寸欄位';
+        if ($('width')) $('width').value = a.width;
+        if ($('height')) $('height').value = a.height;
+        document.querySelectorAll('#aspect-presets .aspect.active').forEach(x => x.classList.remove('active'));
+        return `尺寸設為 ${a.width}x${a.height}`;
+      case 'set_steps':
+        if ($('steps')) $('steps').value = a.steps;
+        return '步數設為 ' + a.steps;
+      case 'generate':
+        if (state.running) return '目前正在生成中，請稍候';
+        generate();
+        return '已送出生成';
+      default:
+        return '未知工具：' + name;
+    }
+  }
+  // 工具執行在對話列的可讀說明（act 樣式）
+  function asstToolLabel(name, a) {
+    a = a || {};
+    switch (name) {
+      case 'switch_engine': return '🔀 切換引擎 → ' + (ENGINES[a.engine] ? ENGINES[a.engine].title : a.engine);
+      case 'set_prompt':    return '📝 填入提示詞';
+      case 'set_size':      return `📐 尺寸 ${a.width}×${a.height}`;
+      case 'set_steps':     return '⚙️ 步數 ' + a.steps;
+      case 'generate':      return '▶️ 送出生成';
+      default:              return '⚙️ ' + name;
+    }
+  }
+  // 收到 function call → 執行 → 回報結果 → 讓助理接著口頭確認
+  async function asstHandleToolCall(ev) {
+    let args = {};
+    try { args = ev.arguments ? JSON.parse(ev.arguments) : {}; } catch (e) {}
+    let result;
+    try { result = await asstRunTool(ev.name, args); }
+    catch (e) { result = '執行失敗：' + e.message; }
+    asstSay('act', asstToolLabel(ev.name, args));
+    // 服務端要求：先把工具結果塞回脈絡，再送 response.create 觸發後續回應
+    asstSend({ type: 'conversation.item.create',
+               item: { type: 'function_call_output', call_id: ev.call_id, output: String(result) } });
+    asstSend({ type: 'response.create' });
+  }
+
   /* ---------- 伺服器事件 ---------- */
   function onAsstEvent(ev) {
     // OpenAI Realtime GA 把 response.audio.* 改名為 response.output_audio.*，
@@ -1478,6 +1554,9 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
       asstState(asst.live ? '聆聽中' : '待命中（可繼續打字）', asst.live ? 'listening' : null);
       return;
     }
+    // 工具呼叫：LLM 要操作面板。名稱與參數到齊後執行並回報。
+    if (t === 'response.function_call_arguments.done') { asstHandleToolCall(ev); return; }
+
     if (t === 'error') { asstSay('act', '服務錯誤：' + (ev.error?.message || JSON.stringify(ev))); return; }
 
     // 連線握手與其他純狀態通知，收到是正常的，不必記
@@ -1703,7 +1782,8 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
       const fail = () => rej(new Error(`連不上語音服務 ${ASST_URL}，請確認 speech-to-speech 已啟動`));
       ws.onopen = () => {
         asst.ws = ws;
-        asstSend({ type: 'session.update', session: { type: 'realtime', instructions: ASST_PROMPT } });
+        asstSend({ type: 'session.update', session: { type: 'realtime', instructions: ASST_PROMPT,
+                   tools: ASST_TOOLS, tool_choice: 'auto' } });
         res();
       };
       ws.onerror = fail;
