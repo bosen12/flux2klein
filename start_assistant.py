@@ -68,6 +68,11 @@ TTS_XVEC_ONLY = True
 REF_SCRIPT = "欸，這張圖真的拍得不錯耶！我昨天去河邊走走，天氣超好的，就順手拍了幾張。等一下傳給你看看，你應該會喜歡。"
 REF_TEXT = REF_SCRIPT   # 僅 TTS_XVEC_ONLY = False 時才會用到
 
+# TTS 每塊的 codec 步數。faster-qwen3-tts 預設 8（約 640ms/塊）。塊越大、塊邊界越少，
+# 語調銜接越順、頓挫越少，代價是開口延遲（TTFA）變長。覺得接不順就往上加，
+# 覺得開口太慢就往下降。
+TTS_CHUNK_SIZE = "12"
+
 
 def groq_key():
     """從 config.js 取金鑰。那份檔案已 gitignore，是專案放密鑰的既定位置。"""
@@ -129,6 +134,7 @@ def main():
         "--qwen3_tts_ref_audio", str(BASE / REF_AUDIO),
         # TTS 也要講中文，否則會用英語音素念中文
         "--qwen3_tts_language", "zh",
+        "--qwen3_tts_streaming_chunk_size", TTS_CHUNK_SIZE,
         "--ws_port", port,
     ]
     # --tts qwen3 與 --ws_port 8765 本來就是預設值，這裡明寫是為了自我說明
