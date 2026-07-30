@@ -1389,7 +1389,8 @@
     // Tab 會跑進看不見的面板裡。
     el.inert = !open;
     btn.setAttribute('aria-expanded', String(open));
-    if (open) $('asst-input').focus();   // 打字是比開麥更輕量的入口，焦點給它
+    if (open) { $('asst-input').focus(); startAvatarViz(); }   // 打字是比開麥更輕量的入口，焦點給它
+    else stopAvatarViz();
   }
 
   function asstSay(kind, text) {
@@ -1502,14 +1503,55 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
   /* ---------- 串流播放 ---------- */
   // 伺服器送來的是 base64 PCM。用 AudioContext 排隊播放：每塊接在前一塊尾巴，
   // 避免用 <audio> 逐段載入造成的爆音與間隙。
-  const play = { ctx: null, at: 0, srcs: [] };
+  const play = { ctx: null, at: 0, srcs: [], analyser: null };
+
+  /* ---------- 頭像音量驅動 ---------- */
+  // 讀播放鏈的即時 RMS，寫進 #asst-avatar 的 --asst-vol（0~1），CSS 用它驅動
+  // 光暈、環形音波與脈動。只在抽屜開啟時跑，關閉即停、歸零。
+  let avatarRAF = null, avatarBuf = null, avatarVol = 0;
+  function startAvatarViz() {
+    if (avatarRAF) return;
+    const el = $('asst-avatar'); if (!el) return;
+    const tick = () => {
+      let v = 0;
+      if (play.analyser) {
+        if (!avatarBuf) avatarBuf = new Uint8Array(play.analyser.fftSize);
+        play.analyser.getByteTimeDomainData(avatarBuf);
+        let sum = 0;
+        for (let i = 0; i < avatarBuf.length; i++) { const x = (avatarBuf[i] - 128) / 128; sum += x * x; }
+        v = Math.min(1, Math.sqrt(sum / avatarBuf.length) * 3.2);   // 語音 RMS 偏低，放大到視覺範圍
+      }
+      avatarVol += (v - avatarVol) * 0.35;    // 低通平滑，避免逐幀抖動
+      // 乘法在這裡算好，CSS 只做文字替換（見 styles.css 說明：calc 內用未註冊
+      // 變數會失效，這樣繞開）
+      el.style.setProperty('--asst-scale',  (1 + avatarVol * 0.03).toFixed(3));
+      el.style.setProperty('--asst-glow',   (avatarVol * 0.9).toFixed(3));
+      el.style.setProperty('--asst-ring',   (1 + avatarVol * 0.5).toFixed(3));
+      el.style.setProperty('--asst-ringop', (avatarVol * 0.5).toFixed(3));
+      avatarRAF = requestAnimationFrame(tick);
+    };
+    avatarRAF = requestAnimationFrame(tick);
+  }
+  function stopAvatarViz() {
+    if (avatarRAF) cancelAnimationFrame(avatarRAF);
+    avatarRAF = null; avatarVol = 0;
+    const el = $('asst-avatar');
+    if (el) { el.style.setProperty('--asst-glow', '0'); el.style.setProperty('--asst-ringop', '0');
+              el.style.setProperty('--asst-scale', '1'); el.style.setProperty('--asst-ring', '1'); }
+  }
   function playAsstAudio(b64) {
     // 播放取樣率必須等於服務端送出的取樣率。這裡原本寫 24000（Qwen3-TTS 的原生
     // 取樣率），但服務端會先把音訊重取樣成 PIPELINE_SR=16000 才送出——用 24000
     // 播 16k 的資料等於 1.5 倍速，聽起來又快又尖。輸入端的 ASST_RATE 一直都是
     // 16000，是同一條管線的兩端寫了不同數字。
     const rate = (window.YZ_CONFIG && window.YZ_CONFIG.ASSISTANT_TTS_RATE) || ASST_RATE;
-    if (!play.ctx) play.ctx = new AudioContext();
+    if (!play.ctx) {
+      play.ctx = new AudioContext();
+      // 頭像用的音量分析：接在播放鏈與喇叭之間，只讀不改音訊
+      play.analyser = play.ctx.createAnalyser();
+      play.analyser.fftSize = 512;
+      play.analyser.connect(play.ctx.destination);
+    }
     const bin = atob(b64);
     const i16 = new Int16Array(bin.length / 2);
     for (let i = 0; i < i16.length; i++) i16[i] = (bin.charCodeAt(i * 2 + 1) << 8) | bin.charCodeAt(i * 2);
@@ -1517,7 +1559,7 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
     const ch = buf.getChannelData(0);
     for (let i = 0; i < i16.length; i++) ch[i] = (i16[i] >= 0x8000 ? i16[i] - 0x10000 : i16[i]) / 0x8000;
     const src = play.ctx.createBufferSource();
-    src.buffer = buf; src.connect(play.ctx.destination);
+    src.buffer = buf; src.connect(play.analyser || play.ctx.destination);
     play.at = Math.max(play.at, play.ctx.currentTime);
     src.start(play.at);
     play.at += buf.duration;
@@ -1714,6 +1756,10 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
     $('assistant-btn').onclick = () => setAssistant(!asst.open);
     $('asst-close').onclick = () => setAssistant(false);
     $('asst-mic').onclick = asstToggleMic;
+    // 頭像圖不進公開版控（見 .gitignore）：clone 下來沒有圖時，隱藏整個頭像舞台
+    // 而不是留一個破圖 icon。
+    const avImg = $('asst-avatar-img');
+    if (avImg) avImg.onerror = () => { const a = $('asst-avatar'); if (a) a.style.display = 'none'; };
     $('asst-send').onclick = asstSubmitText;
     $('asst-input').onkeydown = e => {
       // 只認 Enter；輸入法組字中的 Enter（isComposing）是在選字，不能當送出

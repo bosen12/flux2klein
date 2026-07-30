@@ -57,6 +57,7 @@ STATIC_FILES = {
     "/favicon.svg": "favicon.svg",
     "/favicon.ico": "favicon.ico",
     "/favicon.png": "favicon.png",
+    "/assets/avatar.png": "assets/avatar.png",   # 助理頭像
 }
 
 

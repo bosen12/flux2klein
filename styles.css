@@ -976,6 +976,57 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 }
 .asst-close:hover { color: var(--text); border-color: var(--border-strong); }
 
+/* ── 頭像舞台 ────────────────────────────────────────────
+   音量驅動的具體數值由 app.js 每幀算好寫進這幾個變數（--asst-scale/-glow/
+   -ring/-ringop）。乘法刻意放在 JS 不放 CSS：calc() 內對「未用 @property
+   註冊」的自訂變數做運算會整條失效回退成 0（實測就是這個坑），但 opacity:
+   var(--x) 這種「變數直接當完整屬性值」的文字替換不受影響，穩。 */
+.asst-avatar {
+  /* 在父層宣告初始值，子元素才能用「無 fallback」的 var()：實測未註冊自訂屬性
+     搭配 var(--x, fallback) 時，瀏覽器會誤用 fallback 而非繼承來的實際值——
+     父層給定初值後就不需要 fallback，繼承一定有值。 */
+  --asst-glow: 0; --asst-ring: 1; --asst-ringop: 0; --asst-scale: 1;
+  position: relative; width: 100%; aspect-ratio: 1 / 1;
+  display: grid; place-items: center; overflow: hidden;
+  flex: none; border-bottom: 1px solid var(--border);
+  background: radial-gradient(circle at 50% 42%,
+              color-mix(in srgb, var(--accent) 10%, transparent), transparent 70%);
+}
+.asst-avatar img {
+  width: 100%; height: 100%; object-fit: cover; object-position: 50% 22%;
+  /* 徑向遮罩：中心偏上（臉的位置），邊緣淡出成透明，融進抽屜背景 */
+  -webkit-mask-image: radial-gradient(ellipse 62% 68% at 50% 42%, #000 46%, transparent 78%);
+          mask-image: radial-gradient(ellipse 62% 68% at 50% 42%, #000 46%, transparent 78%);
+  transform: scale(var(--asst-scale));   /* idle 呼吸靠下方 animation；音量疊加縮放 */
+  /* 不對這些「值來自 CSS 變數」的屬性加 transition：Chrome 不會為變數變動重啟
+     過渡，值會卡在舊的（CLAUDE.md 記過的坑）。rAF 每幀更新 + JS 低通已夠平滑。 */
+  animation: asst-breathe 5.5s var(--ease-toggle, ease-in-out) infinite;
+}
+/* 講話時的光暈：跟著音量亮起來 */
+.asst-avatar-glow {
+  position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  background: radial-gradient(circle at 50% 44%,
+              color-mix(in srgb, var(--accent) 55%, transparent), transparent 62%);
+  opacity: var(--asst-glow);
+  mix-blend-mode: screen;
+}
+/* 環形音波：音量把它推大並淡出 */
+.asst-avatar-ring {
+  position: absolute; left: 50%; top: 44%; width: 56%; aspect-ratio: 1;
+  transform: translate(-50%, -50%) scale(var(--asst-ring));
+  border-radius: 50%; pointer-events: none; z-index: 2;
+  border: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  opacity: var(--asst-ringop);
+}
+@keyframes asst-breathe {
+  0%, 100% { filter: brightness(1); }
+  50%      { filter: brightness(1.04); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .asst-avatar img { animation: none; transition: none; }
+  .asst-avatar-glow, .asst-avatar-ring { transition: none; }
+}
+
 .asst-log {
   flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px;
   scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent;
