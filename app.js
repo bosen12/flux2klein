@@ -1378,7 +1378,11 @@
   // 也不動 data-engine（那會改主題色、重建分頁）。
   // 語音管線跑在本地的 huggingface/speech-to-speech（VAD + Whisper + Qwen3-TTS），
   // 只有 LLM 那段由它轉呼叫 Groq。面板這側只是個 OpenAI Realtime 客戶端。
-  const ASST_URL = (window.YZ_CONFIG && window.YZ_CONFIG.ASSISTANT_WS) || 'ws://127.0.0.1:8765/v1/realtime';
+  // 同源走 serve.py 代理（/assistant → 語音服務 8765）。寫死 127.0.0.1 的話手機連不到，
+  // 且 HTTPS 頁面連 ws:// 會被擋成混合內容；同源 + 依 protocol 選 wss 兩者都解。
+  // config.js 的 ASSISTANT_WS 可覆寫成直連（桌面不想走代理時）。
+  const ASST_URL = (window.YZ_CONFIG && window.YZ_CONFIG.ASSISTANT_WS)
+    || `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/assistant`;
   const ASST_RATE = 16000;   // 服務端要求 16kHz int16 mono PCM
 
   const asst = { open: false, mode: 'assistant', ws: null, ctx: null, stream: null, node: null, mute: null, live: false, bubble: null };

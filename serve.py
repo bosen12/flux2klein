@@ -82,6 +82,9 @@ if USE_HTTPS:
     sys.argv = [a for a in sys.argv if a != "--https"]
 
 COMFY_HOST, COMFY_PORT, LISTEN_PORT = parse_args()
+# 語音服務（start_assistant.py）跑在本機這個埠。助理的 WebSocket 由本代理
+# 同源轉發過去——手機走 HTTPS 面板時才能用（同源 wss、無混合內容，麥克風也可用）。
+ASST_HOST, ASST_PORT = "127.0.0.1", 8765
 LISTEN_HOST = "0.0.0.0"   # 綁所有介面，同網路的手機/其他電腦可用區網 IP 連
 
 
@@ -303,6 +306,43 @@ def force_connection_close(initial):
     return b"\r\n".join(out) + sep + body
 
 
+def rewrite_request_path(initial, new_path):
+    """把請求行的路徑換成 new_path（助理 WS：/assistant → /v1/realtime）。"""
+    idx = initial.find(b"\r\n")
+    if idx == -1:
+        return initial
+    parts = initial[:idx].decode("latin1").split(" ")
+    if len(parts) >= 2:
+        parts[1] = new_path
+    return (" ".join(parts)).encode("latin1") + initial[idx:]
+
+
+def proxy_upstream(client, initial, host, port, is_ws=False, label="上游"):
+    """轉發整段請求到 host:port，雙向透明轉送（涵蓋 WebSocket）。"""
+    if not is_ws:
+        initial = force_connection_close(initial)
+    try:
+        upstream = socket.create_connection((host, port), timeout=10)
+    except OSError as e:
+        msg = (f"無法連線到 {label}（{host}:{port}）：{e}").encode("utf-8")
+        client.sendall(
+            b"HTTP/1.1 502 Bad Gateway\r\n"
+            b"Content-Type: text/plain; charset=utf-8\r\n"
+            b"Content-Length: " + str(len(msg)).encode() + b"\r\n\r\n" + msg
+        )
+        client.close()
+        return
+    upstream.settimeout(None)
+    try:
+        upstream.sendall(initial)
+    except OSError:
+        client.close()
+        upstream.close()
+        return
+    threading.Thread(target=pipe, args=(client, upstream), daemon=True).start()
+    pipe(upstream, client)
+
+
 def proxy_to_comfy(client, initial, is_ws=False):
     """把整段請求（含已讀 body）轉發給 ComfyUI，並雙向透明轉送（涵蓋 WebSocket）。"""
     if not is_ws:
@@ -444,6 +484,11 @@ def handle(client, ssl_ctx=None):
         if path in STATIC_FILES and not is_ws:
             send_file(client, STATIC_FILES[path])
             client.close()
+        elif is_ws and path.startswith("/assistant"):
+            # 助理語音 WS：同源代理到本機語音服務，路徑改寫成它期望的 /v1/realtime。
+            # 手機走 HTTPS 面板時，這條走同源 wss，本代理做 TLS 終止再轉明文到 8765。
+            initial = rewrite_request_path(initial, "/v1/realtime")
+            proxy_upstream(client, initial, ASST_HOST, ASST_PORT, True, "語音服務（請先啟動 start_assistant.py）")
         else:
             proxy_to_comfy(client, initial, is_ws)
     except Exception:
