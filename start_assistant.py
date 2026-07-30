@@ -19,11 +19,15 @@ import subprocess
 import sys
 import pathlib
 
+import groq_proxy   # 同目錄，純標準庫的 Groq 多 key 代理
+
 BASE = pathlib.Path(__file__).resolve().parent
 VENV = pathlib.Path(r"C:\projects\s2s")
 S2S_EXE = VENV / "Scripts" / "speech-to-speech.exe"
 
-GROQ_BASE = "https://api.groq.com/openai/v1"
+# LLM 不直接打 Groq，而是走本地代理（groq_proxy）：某把 key 撞每日上限（429）
+# 就自動換下一把，兩個帳號額度接力。key 都在 config.js。
+PROXY_PORT = 8756
 GROQ_MODEL = "llama-3.3-70b-versatile"
 
 # ---- 斷句靈敏度（收音環境不同差很多，這三個最值得自己調）----
@@ -74,15 +78,12 @@ REF_TEXT = REF_SCRIPT   # 僅 TTS_XVEC_ONLY = False 時才會用到
 TTS_CHUNK_SIZE = "14"
 
 
-def groq_key():
-    """從 config.js 取金鑰。那份檔案已 gitignore，是專案放密鑰的既定位置。"""
-    cfg = BASE / "config.js"
-    if not cfg.is_file():
-        sys.exit("找不到 config.js。請先建立並填入 GROQ_API_KEY。")
-    m = re.search(r"GROQ_API_KEY\s*:\s*['\"]([^'\"]+)", cfg.read_text(encoding="utf-8"))
-    if not m:
-        sys.exit("config.js 裡找不到 GROQ_API_KEY。")
-    return m.group(1)
+def load_keys():
+    """從 config.js 讀所有 Groq key（config.js 已 gitignore，是放密鑰的既定位置）。"""
+    keys = groq_proxy.load_keys()
+    if not keys:
+        sys.exit("config.js 裡找不到 GROQ_API_KEYS 或 GROQ_API_KEY。")
+    return keys
 
 
 def main():
@@ -95,6 +96,10 @@ def main():
             f"--index-url https://download.pytorch.org/whl/cu130\n"
             f"  C:\\projects\\s2s\\Scripts\\python.exe -m pip install speech-to-speech"
         )
+
+    # 先起本地 Groq 代理（背景執行緒），LLM 全部走它、自動輪替 key
+    keys = load_keys()
+    groq_proxy.start(keys, PROXY_PORT)
 
     port = "8765"
     argv = sys.argv[1:]
@@ -113,8 +118,8 @@ def main():
         # LLM 走 Groq。旗標名稱雖叫 responses_api_*，chat-completions 後端也是用這組
         "--llm_backend", "chat-completions",
         "--model_name", GROQ_MODEL,
-        "--responses_api_base_url", GROQ_BASE,
-        "--responses_api_api_key", groq_key(),
+        "--responses_api_base_url", f"http://127.0.0.1:{PROXY_PORT}/openai/v1",
+        "--responses_api_api_key", keys[0],   # 佔位，實際由代理覆蓋成當前輪替的 key
         # 預設會送 chat_template_kwargs.enable_thinking=false（給 Together 的 Qwen3.5 用），
         # Groq 不支援這個屬性，會直接回 400 property 'chat_template_kwargs' is unsupported
         "--no_responses_api_disable_thinking",
