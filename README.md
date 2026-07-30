@@ -133,6 +133,28 @@ python start_assistant.py
 
 ---
 
+## 對嘴數字人（LiveTalking，女友陪聊）
+
+上面的助理只有音量驅動的頭像。想要**嘴型真的對上聲音**的數字人陪聊，用 LiveTalking——它是**獨立的一套**，跟助理二選一開、不同時跑（會搶顯存）。
+
+| 你要幹嘛 | 開哪個 | 有對嘴嗎 |
+|---|---|---|
+| 陪聊 | LiveTalking | ✅ |
+| 叫助理操作面板生圖 | `start_assistant.py` | ❌ 只有音量驅動頭像 |
+
+Windows 雙擊即可（會自動啟動 Groq 多 key 代理）：
+
+| bat | 說明 |
+|---|---|
+| `start_livetalking_edge.bat` | EdgeTTS 雲端語音。**先用這個驗證**，啟動快、省顯存 |
+| `start_livetalking_qwen.bat` | 本地 Qwen3-TTS **你的克隆音色**，全在本機跑 |
+
+啟動後開 `http://127.0.0.1:8010/index.html`，按「開始連接」，在文字框打字送出即可。本地音色模式**第一次連線要等約 16 秒**載入並預熱模型（之後合成比即時快約 3 倍）。
+
+環境與模型的完整搭建步驟、實測數字與已知問題見 [LiveTalking.md](LiveTalking.md)。LiveTalking 是第三方 repo，我們的改動用 `python livetalking_patch.py` 套用（冪等，上游更新後重跑即可還原）。
+
+---
+
 ## 手機語音輸入（HTTPS）
 
 語音輸入需要麥克風權限，而瀏覽器只在「安全來源」給麥克風——桌面用 `localhost` 沒問題，但**手機透過 `http://192.168.x.x` 或 `http://100.x.x.x`（Tailscale）連都不算安全來源**，語音按鈕不會出現。要讓手機能用語音，改用 HTTPS 啟動：
