@@ -306,9 +306,11 @@
   <!-- 頭像舞台：徑向遮罩讓周圍背景淡化融進抽屜；講話時由音量驅動光暈與脈動。
        之後接 MuseTalk 時，把 <img> 換成影像串流即可，容器與接線不動。 -->
   <div class="asst-avatar" id="asst-avatar" aria-hidden="true">
-    <span class="asst-avatar-ring" id="asst-avatar-ring"></span>
-    <span class="asst-avatar-glow" id="asst-avatar-glow"></span>
-    <img id="asst-avatar-img" src="/assets/avatar.png?v=1" alt="">
+    <div class="asst-avatar-inner">
+      <span class="asst-avatar-ring" id="asst-avatar-ring"></span>
+      <img id="asst-avatar-img" src="/assets/avatar.png?v=1" alt="">
+      <span class="asst-avatar-glow" id="asst-avatar-glow"></span>
+    </div>
   </div>
 
   <div class="asst-log" id="asst-log" role="log" aria-live="polite">

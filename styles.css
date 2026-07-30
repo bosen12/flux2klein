@@ -986,17 +986,22 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
      搭配 var(--x, fallback) 時，瀏覽器會誤用 fallback 而非繼承來的實際值——
      父層給定初值後就不需要 fallback，繼承一定有值。 */
   --asst-glow: 0; --asst-ring: 1; --asst-ringop: 0; --asst-scale: 1;
-  position: relative; width: 100%; aspect-ratio: 1 / 1;
-  display: grid; place-items: center; overflow: hidden;
-  flex: none; border-bottom: 1px solid var(--border);
-  background: radial-gradient(circle at 50% 42%,
-              color-mix(in srgb, var(--accent) 10%, transparent), transparent 70%);
+  position: relative;
+  display: grid; place-items: center;
+  flex: none; padding: 22px 0 20px; border-bottom: 1px solid var(--border);
+  background: radial-gradient(circle at 50% 50%,
+              color-mix(in srgb, var(--accent) 8%, transparent), transparent 68%);
+}
+/* 固定尺寸的圓形舞台：置中、四周留白，glow/ring 都對齊這個圓 */
+.asst-avatar-inner {
+  position: relative; width: 168px; height: 168px;
+  display: grid; place-items: center;
 }
 .asst-avatar img {
-  width: 100%; height: 100%; object-fit: cover; object-position: 50% 22%;
-  /* 徑向遮罩：中心偏上（臉的位置），邊緣淡出成透明，融進抽屜背景 */
-  -webkit-mask-image: radial-gradient(ellipse 62% 68% at 50% 42%, #000 46%, transparent 78%);
-          mask-image: radial-gradient(ellipse 62% 68% at 50% 42%, #000 46%, transparent 78%);
+  width: 100%; height: 100%; object-fit: cover; object-position: 50% 16%;
+  /* 正圓遮罩：邊緣柔和淡出成透明，融進抽屜背景（不是硬切的圓） */
+  -webkit-mask-image: radial-gradient(circle, #000 60%, transparent 74%);
+          mask-image: radial-gradient(circle, #000 60%, transparent 74%);
   transform: scale(var(--asst-scale));   /* idle 呼吸靠下方 animation；音量疊加縮放 */
   /* 不對這些「值來自 CSS 變數」的屬性加 transition：Chrome 不會為變數變動重啟
      過渡，值會卡在舊的（CLAUDE.md 記過的坑）。rAF 每幀更新 + JS 低通已夠平滑。 */
@@ -1004,17 +1009,16 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 }
 /* 講話時的光暈：跟著音量亮起來 */
 .asst-avatar-glow {
-  position: absolute; inset: 0; pointer-events: none; z-index: 1;
-  background: radial-gradient(circle at 50% 44%,
-              color-mix(in srgb, var(--accent) 55%, transparent), transparent 62%);
+  position: absolute; inset: -12%; pointer-events: none; z-index: 1;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 55%, transparent), transparent 58%);
   opacity: var(--asst-glow);
   mix-blend-mode: screen;
 }
 /* 環形音波：音量把它推大並淡出 */
 .asst-avatar-ring {
-  position: absolute; left: 50%; top: 44%; width: 56%; aspect-ratio: 1;
-  transform: translate(-50%, -50%) scale(var(--asst-ring));
-  border-radius: 50%; pointer-events: none; z-index: 2;
+  position: absolute; inset: 0; pointer-events: none; z-index: 2;
+  transform: scale(var(--asst-ring));
+  border-radius: 50%;
   border: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
   opacity: var(--asst-ringop);
 }
