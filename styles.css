@@ -1024,6 +1024,18 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
      過渡，值會卡在舊的（CLAUDE.md 記過的坑）。rAF 每幀更新 + JS 低通已夠平滑。 */
   animation: asst-breathe 5.5s var(--ease-toggle, ease-in-out) infinite;
 }
+/* 對嘴影像（LiveTalking）。平常不顯示；連上後加 .lt-on 蓋掉靜態頭像。
+   遮罩與 object-position 跟 img 一致，換過去時位置不會跳。 */
+.asst-avatar video {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; object-position: 50% 16%;
+  border-radius: 50%; display: none; z-index: 1;
+  -webkit-mask-image: radial-gradient(circle, #000 60%, transparent 74%);
+          mask-image: radial-gradient(circle, #000 60%, transparent 74%);
+}
+.asst-avatar.lt-on video { display: block; }
+.asst-avatar.lt-on img { visibility: hidden; }   /* 保留佔位，避免容器塌掉 */
+
 /* 講話時的光暈：跟著音量亮起來 */
 .asst-avatar-glow {
   position: absolute; inset: -12%; pointer-events: none; z-index: 1;

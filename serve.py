@@ -85,6 +85,12 @@ COMFY_HOST, COMFY_PORT, LISTEN_PORT = parse_args()
 # 語音服務（start_assistant.py）跑在本機這個埠。助理的 WebSocket 由本代理
 # 同源轉發過去——手機走 HTTPS 面板時才能用（同源 wss、無混合內容，麥克風也可用）。
 ASST_HOST, ASST_PORT = "127.0.0.1", 8765
+# LiveTalking（對嘴數字人）跑在這個埠。助理講話時把 TTS 音訊送去 /humanaudio
+# 渲染嘴型，影像走 WebRTC 回來顯示在助理抽屜。同樣走同源代理：跨埠會有 CORS，
+# 而面板走 HTTPS 時直接打 http://127.0.0.1:8010 會被當混合內容擋掉。
+LT_HOST, LT_PORT = "127.0.0.1", 8010
+# 需要同源轉發給 LiveTalking 的路徑（見它的 docs/api.md）
+LT_PATHS = ("/offer", "/human", "/humanaudio", "/interrupt_talk", "/is_speaking", "/set_audiotype")
 LISTEN_HOST = "0.0.0.0"   # 綁所有介面，同網路的手機/其他電腦可用區網 IP 連
 
 
@@ -489,6 +495,10 @@ def handle(client, ssl_ctx=None):
             # 手機走 HTTPS 面板時，這條走同源 wss，本代理做 TLS 終止再轉明文到 8765。
             initial = rewrite_request_path(initial, "/v1/realtime")
             proxy_upstream(client, initial, ASST_HOST, ASST_PORT, True, "語音服務（請先啟動 start_assistant.py）")
+        elif path in LT_PATHS and not is_ws:
+            # 對嘴數字人：同源轉發到 LiveTalking。路徑原樣送過去，不改寫。
+            proxy_upstream(client, initial, LT_HOST, LT_PORT, False,
+                           "對嘴服務（請先啟動 start_livetalking_qwen.bat）")
         else:
             proxy_to_comfy(client, initial, is_ws)
     except Exception:

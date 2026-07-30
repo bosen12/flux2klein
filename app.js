@@ -1396,8 +1396,10 @@
     // Tab 會跑進看不見的面板裡。
     el.inert = !open;
     btn.setAttribute('aria-expanded', String(open));
-    if (open) { $('asst-input').focus(); startAvatarViz(); }   // 打字是比開麥更輕量的入口，焦點給它
-    else stopAvatarViz();
+    // 打字是比開麥更輕量的入口，焦點給它。開抽屜時順便試連對嘴服務——
+    // 沒開 LiveTalking 就安靜退回靜態頭像，不影響原本的用法。
+    if (open) { $('asst-input').focus(); startAvatarViz(); ltConnect(); }
+    else { stopAvatarViz(); ltDisconnect(); }
   }
 
   function asstSay(kind, text) {
@@ -1627,6 +1629,7 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
     if (t === 'response.done') {
       asst.bubble = null;
       respDone = true;
+      ltFlush();                   // 整輪語音收齊了，打包送去渲染嘴型
       maybeContinueAfterTools();   // 若這輪有工具且都做完了，這裡才送續接的 response.create
       asstState(asst.live ? '聆聽中' : '待命中（可繼續打字）', asst.live ? 'listening' : null);
       return;
@@ -1695,6 +1698,121 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
     if (el) { el.style.setProperty('--asst-glow', '0'); el.style.setProperty('--asst-ringop', '0');
               el.style.setProperty('--asst-scale', '1'); el.style.setProperty('--asst-ring', '1'); }
   }
+  /* ---------- 對嘴數字人（LiveTalking）----------
+     助理照常負責對話與操作面板；這裡只把它產生的 TTS 語音轉送給 LiveTalking
+     渲染嘴型，影像走 WebRTC 回來蓋在頭像位置。LiveTalking 沒開就完全不影響
+     原本的靜態頭像 + 音量光暈。全部走 serve.py 同源代理（跨埠會有 CORS，
+     面板走 HTTPS 時直接打 http:8010 也會被當混合內容擋掉）。 */
+  const lt = { pc: null, sid: null, active: false, buf: [], bytes: 0, connecting: false };
+
+  // 探測 LiveTalking 在不在。用 /is_speaking 當探針：它便宜、且沒開時
+  // serve.py 會回 502，不會誤判成「有開」。
+  async function ltProbe() {
+    try {
+      const r = await fetch('/is_speaking', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionid: 'probe' }),
+      });
+      return r.status === 200;
+    } catch (e) { return false; }
+  }
+
+  async function ltConnect() {
+    if (lt.active || lt.connecting) return;
+    lt.connecting = true;
+    try {
+      if (!await ltProbe()) return;            // 沒開就安靜退回靜態頭像
+      const pc = new RTCPeerConnection();
+      pc.addTransceiver('video', { direction: 'recvonly' });
+      pc.addTransceiver('audio', { direction: 'recvonly' });
+      const stream = new MediaStream();
+      pc.addEventListener('track', e => {
+        stream.addTrack(e.track);
+        const v = $('asst-avatar-video');
+        if (v && v.srcObject !== stream) v.srcObject = stream;
+      });
+      await pc.setLocalDescription(await pc.createOffer());
+      // 等 ICE 收集完再送 offer（這個實作不吃 trickle ICE）；設上限免得卡住
+      await new Promise(res => {
+        if (pc.iceGatheringState === 'complete') return res();
+        const chk = () => { if (pc.iceGatheringState === 'complete') { pc.removeEventListener('icegatheringstatechange', chk); res(); } };
+        pc.addEventListener('icegatheringstatechange', chk);
+        setTimeout(res, 5000);
+      });
+      const r = await fetch('/offer', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type }),
+      });
+      if (!r.ok) throw new Error('offer ' + r.status);
+      const answer = await r.json();
+      // 服務端拒絕時回的是 {code:-1, msg:...}（沒有 sdp）。最常見的是
+      // 「Maximum session limit reached」——舊分頁沒關、session 沒被釋放。
+      if (!answer.sdp) {
+        throw new Error(answer.msg || '對嘴服務未回傳 SDP'
+          + (String(answer.msg).includes('session limit') ? '（請重啟 LiveTalking 釋放 session）' : ''));
+      }
+      // 回應除了 sdp/type 還夾帶 sessionid，整包丟進去會 Failed to parse
+      // SessionDescription——只取這兩個欄位。
+      await pc.setRemoteDescription({ type: answer.type, sdp: answer.sdp });
+      lt.pc = pc; lt.sid = answer.sessionid; lt.active = true;
+      const stage = $('asst-avatar');
+      if (stage) { stage.classList.add('lt-on'); stage.dataset.ltSession = answer.sessionid; }
+      log('對嘴數字人已連線（助理講話時嘴型會跟著動）', 'ok');
+    } catch (e) {
+      log('對嘴服務連線失敗，改用靜態頭像：' + e.message, 'warn');
+      ltDisconnect();
+    } finally { lt.connecting = false; }
+  }
+
+  // 關分頁／重整時一定要把 pc 關掉釋放 session。LiveTalking 的 max_session 預設
+  // 只有 5，開發時反覆重整很快就會 "Maximum session limit reached (5/5)"，之後
+  // 連不上還以為是程式壞了。
+  addEventListener('pagehide', () => { if (lt.pc) { try { lt.pc.close(); } catch (e) {} } });
+
+  function ltDisconnect() {
+    if (lt.pc) { try { lt.pc.close(); } catch (e) {} }
+    lt.pc = null; lt.sid = null; lt.active = false; lt.buf = []; lt.bytes = 0;
+    const v = $('asst-avatar-video');
+    if (v) v.srcObject = null;
+    const stage = $('asst-avatar');
+    if (stage) { stage.classList.remove('lt-on'); delete stage.dataset.ltSession; }
+  }
+
+  // 助理的 TTS 是逐塊 PCM 串流過來的，但 /humanaudio 收的是完整檔案，
+  // 所以整句先收在 lt.buf，等這輪回覆結束再打包送出。
+  function ltCollect(bytes) { lt.buf.push(bytes); lt.bytes += bytes.length; }
+
+  function ltWav(rate) {
+    const n = lt.bytes;
+    const out = new Uint8Array(44 + n);
+    const dv = new DataView(out.buffer);
+    const ws = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+    ws(0, 'RIFF'); dv.setUint32(4, 36 + n, true); ws(8, 'WAVEfmt ');
+    dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+    dv.setUint32(24, rate, true); dv.setUint32(28, rate * 2, true);
+    dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+    ws(36, 'data'); dv.setUint32(40, n, true);
+    let off = 44;
+    for (const b of lt.buf) { out.set(b, off); off += b.length; }
+    return out;
+  }
+
+  async function ltFlush() {
+    if (!lt.active || !lt.bytes) { lt.buf = []; lt.bytes = 0; return; }
+    const rate = (window.YZ_CONFIG && window.YZ_CONFIG.ASSISTANT_TTS_RATE) || ASST_RATE;
+    const wav = ltWav(rate);
+    lt.buf = []; lt.bytes = 0;
+    try {
+      const fd = new FormData();
+      fd.append('sessionid', lt.sid);
+      fd.append('file', new Blob([wav], { type: 'audio/wav' }), 'a.wav');
+      const r = await fetch('/humanaudio', { method: 'POST', body: fd });
+      if (!r.ok) throw new Error('humanaudio ' + r.status);
+    } catch (e) {
+      log('送給對嘴服務失敗：' + e.message, 'warn');
+    }
+  }
+
   function playAsstAudio(b64) {
     // 播放取樣率必須等於服務端送出的取樣率。這裡原本寫 24000（Qwen3-TTS 的原生
     // 取樣率），但服務端會先把音訊重取樣成 PIPELINE_SR=16000 才送出——用 24000
@@ -1709,6 +1827,14 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
       play.analyser.connect(play.ctx.destination);
     }
     const bin = atob(b64);
+    // 對嘴模式：音訊改由 LiveTalking 播（它要拿去驅動嘴型，聲音會隨 WebRTC 一起
+    // 回來）。這裡就不能再本地播一次，否則會聽到兩份、而且跟嘴型對不上。
+    if (lt.active) {
+      const raw = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) raw[i] = bin.charCodeAt(i);
+      ltCollect(raw);
+      return;
+    }
     const i16 = new Int16Array(bin.length / 2);
     for (let i = 0; i < i16.length; i++) i16[i] = (bin.charCodeAt(i * 2 + 1) << 8) | bin.charCodeAt(i * 2);
     const buf = play.ctx.createBuffer(1, i16.length, rate);
@@ -1726,6 +1852,15 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
     play.srcs.forEach(s => { try { s.stop(); } catch (e) {} });
     play.srcs = [];
     if (play.ctx) play.at = play.ctx.currentTime;
+    // 對嘴模式：丟掉還沒送出的語音，並叫 LiveTalking 停止播報。少了這段，
+    // 使用者插話打斷後，數字人還會把上一輪的話講完。
+    if (lt.active) {
+      lt.buf = []; lt.bytes = 0;
+      fetch('/interrupt_talk', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionid: lt.sid }),
+      }).catch(() => {});
+    }
   }
 
   /* ---------- 打字輸入 ---------- */
