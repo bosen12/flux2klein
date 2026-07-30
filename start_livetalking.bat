@@ -48,6 +48,19 @@ if not exist "%LT_DIR%\models\wav2lip.pth" (
   )
 )
 
+rem --- port 8010 must be free, otherwise app.py dies with a raw traceback ---
+netstat -ano | findstr /r /c:"LISTENING" | findstr /c:":8010 " >nul 2>nul
+if not errorlevel 1 (
+  echo [ERROR] Port 8010 is already in use - LiveTalking is probably already running.
+  echo.
+  echo         Close the other LiveTalking window, or free the port:
+  echo           netstat -ano ^| findstr :8010
+  echo           taskkill /PID ^<pid^> /F
+  echo.
+  pause
+  exit /b 1
+)
+
 rem --- start the Groq key-rotation proxy if it is not up yet ---
 netstat -ano | findstr /r /c:"LISTENING" | findstr /c:":%PROXY_PORT% " >nul 2>nul
 if errorlevel 1 (
@@ -71,7 +84,7 @@ echo   tts    : %LT_TTS%
 echo   llm    : %LLM_MODEL% via proxy %PROXY_PORT%
 echo ------------------------------------------------------------
 echo   Open http://127.0.0.1:8010/index.html and click connect.
-echo   First run downloads model weights, please be patient.
+echo   First connect with local TTS takes ~16s to load and warm up.
 echo   Close this window to stop.
 echo ============================================================
 echo.
