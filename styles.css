@@ -961,6 +961,23 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 }
 .asst-head strong { display: block; font-size: var(--fs-md); letter-spacing: -.01em; }
 .asst-head small { display: block; font-size: var(--fs-xs); color: var(--text-faint); }
+
+/* 模式切換：兩態 segment。用 --accent 衍生，跟隨當前引擎主題色 */
+.asst-modes {
+  display: flex; gap: 2px; margin: 10px 16px 0; padding: 3px;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px;
+}
+.asst-modes button {
+  flex: 1; border: none; background: transparent; color: var(--text-dim);
+  font-family: inherit; font-size: var(--fs-sm); font-weight: 600;
+  padding: 6px 0; border-radius: 999px; cursor: pointer;
+  transition: color var(--dur-1), background var(--dur-1);
+}
+.asst-modes button:hover { color: var(--text); }
+.asst-modes button.active {
+  background: linear-gradient(135deg, var(--accent), var(--accent-3)); color: #fff;
+  box-shadow: 0 3px 10px -3px color-mix(in srgb, var(--accent) 52%, transparent);
+}
 .asst-dot {
   width: 9px; height: 9px; border-radius: 50%; flex: none;
   background: var(--text-faint); transition: background-color var(--dur-2);

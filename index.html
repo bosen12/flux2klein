@@ -297,11 +297,18 @@
   <header class="asst-head">
     <span class="asst-dot" id="asst-dot" aria-hidden="true"></span>
     <div>
-      <strong>AI 助理</strong>
+      <strong id="asst-title">AI 助理</strong>
       <small id="asst-state">尚未啟動</small>
     </div>
     <button type="button" class="asst-close" id="asst-close" title="關閉助理">✕</button>
   </header>
+
+  <!-- 模式切換。助理＝能操作面板生圖；女友＝純陪聊、不送工具，也就不會動面板、
+       不生圖，語音／對嘴可以獨佔顯存。切換時重送 session.update 換人格與工具。 -->
+  <div class="asst-modes" id="asst-modes" role="group" aria-label="助理模式">
+    <button type="button" data-mode="assistant" class="active">AI 助理</button>
+    <button type="button" data-mode="girlfriend">女友</button>
+  </div>
 
   <!-- 頭像舞台：徑向遮罩讓周圍背景淡化融進抽屜；講話時由音量驅動光暈與脈動。
        之後接 MuseTalk 時，把 <img> 換成影像串流即可，容器與接線不動。 -->

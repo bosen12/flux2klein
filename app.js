@@ -1381,7 +1381,7 @@
   const ASST_URL = (window.YZ_CONFIG && window.YZ_CONFIG.ASSISTANT_WS) || 'ws://127.0.0.1:8765/v1/realtime';
   const ASST_RATE = 16000;   // 服務端要求 16kHz int16 mono PCM
 
-  const asst = { open: false, ws: null, ctx: null, stream: null, node: null, mute: null, live: false, bubble: null };
+  const asst = { open: false, mode: 'assistant', ws: null, ctx: null, stream: null, node: null, mute: null, live: false, bubble: null };
 
   function setAssistant(open) {
     const el = $('assistant'), btn = $('assistant-btn');
@@ -1468,6 +1468,44 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
     { type: 'function', name: 'generate', description: '送出生成，開始畫圖',
       parameters: { type: 'object', additionalProperties: false, properties: {}, required: [] } },
   ];
+
+  // ---- 女友模式：純語音陪聊，不操作面板（也就不生圖、不跟 ComfyUI 搶顯存）----
+  // 人格很個人化，預設給溫暖的 SFW 版本，可用 config.js 的 GIRLFRIEND_PROMPT 覆寫
+  // （個人化／成人向內容留本機、不進公開 repo，與 GROQ_API_KEY 同理）。
+  const ASST_PROMPT_GF = `你是使用者的 AI 女友，用繁體中文、台灣人的口吻聊天。
+個性溫暖體貼、帶點俏皮，會主動關心對方。就像真的女朋友陪在身邊聊天，
+不是助理、不用幫忙做任何事，也不會去操作畫圖面板。
+
+說話規則（會影響語音合成，務必遵守）：
+一、回覆自然口語，通常兩三句話，別長篇大論。
+二、不要書面語，禁止 markdown、列表、編號。
+三、禁止 emoji、顏文字、括號內的動作描寫。
+四、數字用中文寫（說「三點」不說「3 點」），否則語音合成會念錯。
+五、用台灣日常說法，不用中國用語。`;
+
+  // 依模式組 session.update：助理模式帶工具（能操作面板）、女友模式不帶（純陪聊）。
+  function buildSessionUpdate() {
+    if (asst.mode === 'girlfriend') {
+      const gp = (window.YZ_CONFIG && window.YZ_CONFIG.GIRLFRIEND_PROMPT) || ASST_PROMPT_GF;
+      return { type: 'session.update', session: { type: 'realtime', instructions: gp, tools: [] } };
+    }
+    return { type: 'session.update', session: { type: 'realtime', instructions: ASST_PROMPT,
+             tools: ASST_TOOLS, tool_choice: 'auto' } };
+  }
+
+  // 切換模式：更新 UI，連線中就重送 session（換人格＋有無工具），對話脈絡保留不清。
+  function setAsstMode(mode) {
+    asst.mode = mode;
+    document.querySelectorAll('#asst-modes button').forEach(b =>
+      b.classList.toggle('active', b.dataset.mode === mode));
+    const title = $('asst-title');
+    if (title) title.textContent = mode === 'girlfriend' ? '女友' : 'AI 助理';
+    if (asst.ws && asst.ws.readyState === WebSocket.OPEN) {
+      asstSend(buildSessionUpdate());
+      asstSay('act', mode === 'girlfriend' ? '切到女友模式（純陪聊，不會動面板）'
+                                           : '切到助理模式（可操作面板生圖）');
+    }
+  }
 
   // 執行工具：對應到面板實際操作，回傳給 LLM 的簡短結果字串。
   async function asstRunTool(name, a) {
@@ -1817,8 +1855,7 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
       const fail = () => rej(new Error(`連不上語音服務 ${ASST_URL}，請確認 speech-to-speech 已啟動`));
       ws.onopen = () => {
         asst.ws = ws;
-        asstSend({ type: 'session.update', session: { type: 'realtime', instructions: ASST_PROMPT,
-                   tools: ASST_TOOLS, tool_choice: 'auto' } });
+        asstSend(buildSessionUpdate());
         res();
       };
       ws.onerror = fail;
@@ -1871,6 +1908,8 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
     $('assistant-btn').onclick = () => setAssistant(!asst.open);
     $('asst-close').onclick = () => setAssistant(false);
     $('asst-mic').onclick = asstToggleMic;
+    document.querySelectorAll('#asst-modes button').forEach(b =>
+      b.onclick = () => setAsstMode(b.dataset.mode));
     // 頭像圖不進公開版控（見 .gitignore）：clone 下來沒有圖時，隱藏整個頭像舞台
     // 而不是留一個破圖 icon。
     const avImg = $('asst-avatar-img');
