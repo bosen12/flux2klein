@@ -2,7 +2,7 @@
 
 給接手的人（或 AI）：這份是把 **LiveTalking**（即時對嘴數字人）接上「本地 Qwen3-TTS 克隆音色 + Groq LLM」的完整步驟。目標是**女友模式的陪聊有嘴型對嘴**。
 
-> **狀態：wav2lip 路線已在本機實測跑通**（2026-07-30）。venv、依賴、模型下載、Groq LLM、本地 Qwen3-TTS 模組、啟動 bat 都已驗證。**還沒做的**：實際點「開始連接」看對嘴畫面（要人眼確認）、MuseTalk 路線（權重只在夸克網盤）、嵌進面板抽屜。標「⚠️ 未驗證」的才是還沒跑過的。
+> **狀態：wav2lip 路線已跑通並整合進面板**（2026-07-30）。venv、依賴、模型、Groq LLM、本地 Qwen3-TTS 模組、自建 avatar、啟動 bat、以及**助理抽屜的對嘴整合**都已驗證。**還沒做的**：MuseTalk 路線（權重只在夸克網盤）、EdgeTTS 路線實跑、跟助理對話的端到端體感。標「⚠️ 未驗證」的才是還沒跑過的。
 
 ---
 
@@ -183,7 +183,11 @@ bat 有存在性檢查：缺 `my_avatar` 會印警告並退回官方 avatar，�
 1. 跑其中一個 bat。⚠️ 服務端要開 **TCP:8010、UDP 1-65536**（防火牆）。
 2. 瀏覽器開 `http://127.0.0.1:8010/index.html`，按 **開始連接** → 數字人出現 → 在 `txtMessage` 打字按**發送** → 對嘴回應。
    - 本地 TTS 模式下，**模型是在你按「開始連接」時才載入**（16 秒），不是啟動時。第一次連會等一下。
-3. **⚠️ 嵌進面板抽屜（還沒做）**：把 8010 這頁用 `<iframe>` 放進助理抽屜的頭像位置（`index.html` 的 `#asst-avatar`）。跨埠（7801→8010）用 iframe 最省事。混合內容問題（HTTPS 面板嵌 http:8010）屆時要讓 8010 也走 TLS，或加一條 `serve.py` 代理路由（參考 `/assistant` WS 代理 `3c1121d` 的做法）。
+3. **✅ 已整合進面板抽屜**（見進度.md `53a3de4`）。**不是**用 iframe 嵌 8010 那頁——那樣會失去助理的 tool calling（LiveTalking 不會操作面板）。實際做法是把它當**純對嘴渲染服務**：
+   - `serve.py` 同源代理 `/offer` `/human` `/humanaudio` `/interrupt_talk` `/is_speaking` `/set_audiotype`（跨埠有 CORS，面板走 HTTPS 時打 http:8010 也會被當混合內容擋掉）
+   - 助理照常對話與操作面板，TTS 語音收進緩衝、於 `response.done` 打包成 wav 送 `/humanaudio` 驅動嘴型
+   - 影像走 WebRTC 回來蓋在 `#asst-avatar`；LiveTalking 沒開就安靜退回靜態頭像
+   - **開抽屜到出現影像約 15~25 秒**（建 session 時要載入 TTS 模型，`/offer` 就要 6.5 秒）
 
 ---
 
