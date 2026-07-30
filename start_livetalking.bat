@@ -21,11 +21,21 @@ set "PROXY_PORT=8756"
 rem --- TTS mode comes from the wrapper; default to EdgeTTS ---
 if "%LT_TTS%"=="" set "LT_TTS=edgetts"
 
-rem --- model / avatar: wav2lip is the verified-working default ---
+rem --- model / avatar ----------------------------------------
+rem  my_avatar was built from the panel's own portrait with
+rem  avatars.wav2lip.genavatar (see LiveTalking.md section 4b).
+rem  Falls back to the bundled official avatar if it is missing.
 set "LT_MODEL=%~1"
 if "%LT_MODEL%"=="" set "LT_MODEL=wav2lip"
 set "LT_AVATAR=%~2"
-if "%LT_AVATAR%"=="" set "LT_AVATAR=wav2lip256_avatar1"
+if "%LT_AVATAR%"=="" set "LT_AVATAR=my_avatar"
+if not exist "%LT_DIR%\data\avatars\%LT_AVATAR%\coords.pkl" (
+  if /i "%LT_AVATAR%"=="my_avatar" (
+    echo [WARN] Avatar "my_avatar" not found, falling back to wav2lip256_avatar1.
+    echo        To build it from your own image, see LiveTalking.md section 4b.
+    set "LT_AVATAR=wav2lip256_avatar1"
+  )
+)
 
 rem --- sanity checks -----------------------------------------
 if not exist "%LT_PY%" (
