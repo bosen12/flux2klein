@@ -1942,7 +1942,25 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
   }
 
   /* ---------------- AI 提示詞優化（Groq） ---------------- */
-  const GROQ_KEY = window.YZ_CONFIG?.GROQ_API_KEY || '';
+  const GROQ_KEYS = window.YZ_CONFIG?.GROQ_API_KEYS || [];
+  const GROQ_KEY = window.YZ_CONFIG?.GROQ_API_KEY || GROQ_KEYS[0] || '';
+  // 提示詞優化直接從瀏覽器打 Groq（語音服務那條走 groq_proxy，前端這條沒代理）。
+  // 某把 key 撞每日上限（429）就換下一把重試。
+  async function groqChatFetch(bodyObj) {
+    const keys = GROQ_KEYS.length ? GROQ_KEYS : (GROQ_KEY ? [GROQ_KEY] : []);
+    let lastErr;
+    for (const k of keys) {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + k },
+        body: JSON.stringify(bodyObj),
+      });
+      if (res.status === 429) { lastErr = new Error('Groq 每日上限（429）'); continue; }
+      if (!res.ok) throw new Error(`Groq API ${res.status}`);
+      return res;
+    }
+    throw lastErr || new Error('沒有可用的 Groq key');
+  }
   const AI_SYSTEM = {
     flux2klein: `You are a prompt engineer for Flux 2 Klein 4B. The user gives a rough idea; you return ONLY the optimized English prompt (no explanation, no quotes).
 CRITICAL RULES for Flux 2 Klein:
@@ -2017,25 +2035,20 @@ EXPLICIT CONTENT:
     const ta = $('prompt');
     const text = ta.value.trim();
     if (!text) { log('請先輸入提示詞再使用 AI 優化', 'warn'); return; }
-    if (!GROQ_KEY) { log('未設定 Groq API Key，請建立 config.js', 'err'); return; }
+    if (!GROQ_KEY && !GROQ_KEYS.length) { log('未設定 Groq API Key，請建立 config.js', 'err'); return; }
     const btn = $('ai-btn');
     btn.classList.add('loading');
     ta.value = '';
     try {
       const sys = (AI_SYSTEM[state.engine] || AI_SYSTEM.flux2klein) + CONTENT_RULE + NSFW_RULE;
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          messages: [
-            { role: 'system', content: sys },
-            { role: 'user', content: text },
-          ],
-          temperature: 1, max_completion_tokens: 2048, top_p: 1, stream: true,
-        }),
+      const res = await groqChatFetch({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: sys },
+          { role: 'user', content: text },
+        ],
+        temperature: 1, max_completion_tokens: 2048, top_p: 1, stream: true,
       });
-      if (!res.ok) throw new Error(`Groq API ${res.status}`);
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = '';
