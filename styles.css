@@ -1011,7 +1011,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 }
 /* 固定尺寸的圓形舞台：置中、四周留白，glow/ring 都對齊這個圓 */
 .asst-avatar-inner {
-  position: relative; width: 168px; height: 168px;
+  position: relative; width: 220px; height: 220px;
   display: grid; place-items: center;
 }
 .asst-avatar img {

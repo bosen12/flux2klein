@@ -22,16 +22,17 @@ rem --- TTS mode comes from the wrapper; default to EdgeTTS ---
 if "%LT_TTS%"=="" set "LT_TTS=edgetts"
 
 rem --- model / avatar ----------------------------------------
-rem  my_avatar was built from the panel's own portrait with
-rem  avatars.wav2lip.genavatar (see LiveTalking.md section 4b).
+rem  my_avatar2 was built from one of the panel's own generated
+rem  portraits with avatars.wav2lip.genavatar (LiveTalking.md 4b),
+rem  at 768x1024 so the face stays sharp in the drawer.
 rem  Falls back to the bundled official avatar if it is missing.
 set "LT_MODEL=%~1"
 if "%LT_MODEL%"=="" set "LT_MODEL=wav2lip"
 set "LT_AVATAR=%~2"
-if "%LT_AVATAR%"=="" set "LT_AVATAR=my_avatar"
+if "%LT_AVATAR%"=="" set "LT_AVATAR=my_avatar2"
 if not exist "%LT_DIR%\data\avatars\%LT_AVATAR%\coords.pkl" (
-  if /i "%LT_AVATAR%"=="my_avatar" (
-    echo [WARN] Avatar "my_avatar" not found, falling back to wav2lip256_avatar1.
+  if /i "%LT_AVATAR%"=="my_avatar2" (
+    echo [WARN] Avatar "my_avatar2" not found, falling back to wav2lip256_avatar1.
     echo        To build it from your own image, see LiveTalking.md section 4b.
     set "LT_AVATAR=wav2lip256_avatar1"
   )
