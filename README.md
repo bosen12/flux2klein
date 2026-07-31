@@ -235,7 +235,8 @@ Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188
 | `illustrious.json` | Illustrious workflow（API 格式） |
 | `three.min.js` | Three.js r134（Vanta 依賴，vendored） |
 | `vanta.fog.min.js` | Vanta.js FOG WebGL 背景（vendored） |
-| `preview_ui.py` | 詞庫暗房：獨立的詞庫預覽圖產生／管理工具（見上節） |
+| `preview_ui.py` | 詞庫暗房：獨立工具的後端（供 `darkroom/` 靜態檔＋ `/api/*`，見上節） |
+| `darkroom/` | 暗房前端：`index.html` / `darkroom.css` / `darkroom.js`（跟主面板一樣分檔） |
 | `generate_special_previews.py` | 暗房的 ComfyUI 生成邏輯（`preview_ui.py` 依賴） |
 | `preview_ui.bat` | 啟動詞庫暗房 |
 | `preview_config.example.json` | 暗房設定範本（複製成 `preview_config.json`，後者已 gitignore） |
