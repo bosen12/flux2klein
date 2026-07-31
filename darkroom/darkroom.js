@@ -107,9 +107,24 @@ function render() {
   const grid = $('grid');
   grid.innerHTML = '';
   if (_io) { _io.disconnect(); _io = null; }
+  if (_revealIO) { _revealIO.disconnect(); _revealIO = null; }
   if (!total) {
     grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="big">這裡沒有符合的詞庫</div>換個資料夾或篩選條件</div>`;
     return;
+  }
+  // 卡片進場觀察器：卡片捲進視野就淡入。同一批一起進來的（首屏）依回呼順序
+  // 小 stagger 串成瀑布；捲動時分批進來的各自淡入。animate once（進場即取消觀察）。
+  if (!REDUCE_MOTION) {
+    _revealIO = new IntersectionObserver((entries) => {
+      let i = 0;
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        e.target.style.transitionDelay = (Math.min(i, 12) * 30) + 'ms';
+        e.target.classList.add('in');
+        _revealIO.unobserve(e.target);
+        i++;
+      }
+    }, { root: $('main'), rootMargin: '0px 0px -6% 0px', threshold: 0.02 });
   }
   _rendered = 0;
   appendPage();          // 先渲染第一頁
@@ -126,24 +141,29 @@ function render() {
 }
 
 const PAGE = 120;
-let _rendered = 0, _io = null;
+let _rendered = 0, _io = null, _revealIO = null;
 
 function appendPage() {
   const grid = $('grid');
   const slice = VISIBLE.slice(_rendered, _rendered + PAGE);
   if (!slice.length) return;
   const frag = document.createDocumentFragment();
-  slice.forEach((it, p) => {
+  const fresh = [];
+  slice.forEach((it) => {
     const card = cardOf(it);
-    // 入場動畫:每頁前 14 張做小 stagger,其餘直接顯示(避免長尾)
-    if (!REDUCE_MOTION && p < 14) {
-      card.classList.add('anim');
-      card.style.animationDelay = (p * 34) + 'ms';
-    }
+    // 入場動畫改走 reveal-on-scroll：每張捲進視野時才淡入上升（見 _revealIO），
+    // 這樣所有卡片都會依序animate，不再只有前 14 張。
+    if (!REDUCE_MOTION) { card.classList.add('reveal'); fresh.push(card); }
     frag.appendChild(card);
   });
   const sentinel = $('scroll-sentinel');
   if (sentinel) grid.insertBefore(frag, sentinel); else grid.appendChild(frag);
+  if (_revealIO) {
+    fresh.forEach(c => _revealIO.observe(c));
+    // 保險：IO 若因分頁在背景（不合成畫面）等原因沒觸發，逾時仍把還沒進場的
+    // 顯示出來，避免卡片永遠停在 opacity:0（CLAUDE.md 隱藏分頁的教訓）。
+    setTimeout(() => fresh.forEach(c => c.classList.add('in')), 2500);
+  }
   _rendered += slice.length;
   if (_rendered >= VISIBLE.length && _io) {
     _io.disconnect(); _io = null;
