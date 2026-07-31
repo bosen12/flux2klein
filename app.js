@@ -21,8 +21,8 @@
     // 選 LoRA 時帶入其 trainedWords，之後可自由編輯、不動 metadata 原始檔。
     // strength 字面值須與 illustrious.js 的 lora.defaultStrength 一致
     //（這裡在 const I 宣告前，不能引用 I）。
-    lora: { list: null, loading: false, enabled: false, selected: null,
-            strength: 0.8, text: '', inject: true },
+    lora: { list: null, counts: {}, folders: [], cat: 'all', loading: false,
+            enabled: false, selected: null, strength: 0.8, text: '', inject: true },
   };
 
   // 兩個引擎的品牌與主題資訊
@@ -508,7 +508,8 @@
 
   /* ---------------- LoRA 風格（Illustrious 專用，單選） ---------------- */
   const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const loraPreviewUrl = (f) => '/panel/lora-preview?file=' + encodeURIComponent(f);
+  const LORA_RENDER_CAP = 80;   // 一次最多渲染幾列（Character 有數百個，全渲染會卡）
+  const loraPreviewUrl = (l) => '/panel/lora-preview?folder=' + encodeURIComponent(l.folder || '') + '&file=' + encodeURIComponent(l.preview || '');
 
   function setupLora(E) {
     const on = $('lora-on');
@@ -530,12 +531,15 @@
       const res = await fetch('/panel/loras');
       const data = await res.json();
       state.lora.list = data.items || [];
+      state.lora.counts = data.counts || {};
+      state.lora.folders = data.folders || [];
       if (data.error) log('LoRA 清單讀取異常：' + data.error, 'err');
     } catch (e) {
       state.lora.list = [];
       log('LoRA 清單載入失敗：' + e.message, 'err');
     }
     state.lora.loading = false;
+    renderLoraCats(E);
     const menu = $('lora-menu');
     if (menu && menu.style.display !== 'none') renderLoraMenu(E, $('lora-search').value);
   }
@@ -543,8 +547,9 @@
   function buildLoraPanel(E) {
     const p = $('lora-panel');
     p.innerHTML =
-      `<div class="lora-pick">
-         <input type="text" id="lora-search" class="lora-search" placeholder="搜尋 LoRA…" autocomplete="off">
+      `<div class="lora-cats" id="lora-cats"></div>
+       <div class="lora-pick">
+         <input type="text" id="lora-search" class="lora-search" placeholder="搜尋 LoRA（名稱／觸發詞）…" autocomplete="off">
          <div class="lora-menu" id="lora-menu" style="display:none"></div>
        </div>
        <div class="lora-current" id="lora-current"></div>
@@ -582,29 +587,56 @@
     });
     $('lora-inject').addEventListener('change', (e) => { state.lora.inject = e.target.checked; });
     $('lora-words').addEventListener('input', (e) => { state.lora.text = e.target.value; });
+    renderLoraCats(E);
     renderLoraCurrent();
     renderLoraWords();
+  }
+
+  function renderLoraCats(E) {
+    const box = $('lora-cats'); if (!box) return;
+    const counts = state.lora.counts || {};
+    const total = (state.lora.list || []).length;
+    const cats = [['all', '全部', total], ...state.lora.folders.map(f => [f, f, counts[f] || 0])];
+    box.innerHTML = '';
+    for (const [key, label, n] of cats) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'lora-cat' + (state.lora.cat === key ? ' on' : '');
+      b.innerHTML = `${esc(label)}<span class="lora-cat-n">${n}</span>`;
+      b.addEventListener('click', () => {
+        state.lora.cat = key;
+        renderLoraCats(E);
+        renderLoraMenu(E, $('lora-search').value);
+        $('lora-menu').style.display = '';
+      });
+      box.appendChild(b);
+    }
   }
 
   function renderLoraMenu(E, filter) {
     const menu = $('lora-menu'); if (!menu) return;
     const list = state.lora.list;
     if (list === null) { menu.innerHTML = '<div class="lora-empty">載入中…</div>'; return; }
-    if (!list.length) { menu.innerHTML = '<div class="lora-empty">找不到 LoRA（style 資料夾為空或讀不到）</div>'; return; }
+    if (!list.length) { menu.innerHTML = '<div class="lora-empty">找不到 LoRA（資料夾為空或讀不到）</div>'; return; }
     const q = (filter || '').toLowerCase().trim();
-    const rows = list.filter(l => !q
-      || l.title.toLowerCase().includes(q) || l.name.toLowerCase().includes(q)
+    const cat = state.lora.cat;
+    let rows = list.filter(l => cat === 'all' || l.folder === cat);
+    if (q) rows = rows.filter(l =>
+      l.title.toLowerCase().includes(q) || l.name.toLowerCase().includes(q)
       || l.trainedWords.join(' ').toLowerCase().includes(q));
-    if (!rows.length) { menu.innerHTML = `<div class="lora-empty">沒有符合「${esc(filter)}」的 LoRA</div>`; return; }
+    const total = rows.length;
+    if (!total) { menu.innerHTML = '<div class="lora-empty">沒有符合的 LoRA</div>'; return; }
+    const shown = rows.slice(0, LORA_RENDER_CAP);
     menu.innerHTML = '';
-    for (const l of rows) {
-      const sel = state.lora.selected && state.lora.selected.file === l.file;
+    for (const l of shown) {
+      const sel = state.lora.selected && state.lora.selected.folder === l.folder && state.lora.selected.file === l.file;
       const row = document.createElement('div');
       row.className = 'lora-opt' + (sel ? ' sel' : '');
       const thumb = l.preview
-        ? `<img class="lora-thumb" src="${loraPreviewUrl(l.preview)}" alt="" loading="lazy">`
+        ? `<img class="lora-thumb" src="${loraPreviewUrl(l)}" alt="" loading="lazy">`
         : '<span class="lora-thumb ph"></span>';
-      row.innerHTML = `${thumb}<span class="lora-opt-body"><span class="lora-opt-name">${esc(l.title)}</span>` +
+      const badge = cat === 'all' ? `<span class="lora-opt-folder">${esc(l.folder)}</span>` : '';
+      row.innerHTML = `${thumb}<span class="lora-opt-body"><span class="lora-opt-name">${badge}${esc(l.title)}</span>` +
         `<span class="lora-opt-sub">${l.trainedWords.length ? esc(l.trainedWords.join(', ')) : '無觸發詞'}</span></span>`;
       row.addEventListener('click', () => selectLora(l));
       if (l.preview) {
@@ -612,6 +644,12 @@
         row.addEventListener('mouseleave', hideLoraHover);
       }
       menu.appendChild(row);
+    }
+    if (total > shown.length) {
+      const more = document.createElement('div');
+      more.className = 'lora-more';
+      more.textContent = `顯示前 ${shown.length} / 共 ${total} 個 — 輸入關鍵字或選分類縮小`;
+      menu.appendChild(more);
     }
   }
 
@@ -629,7 +667,7 @@
     const box = $('lora-current'); if (!box) return;
     const l = state.lora.selected;
     if (!l) { box.innerHTML = '<span class="lora-none">尚未選擇 LoRA</span>'; box.classList.remove('has'); return; }
-    const thumb = l.preview ? `<img src="${loraPreviewUrl(l.preview)}" alt="">` : '<span class="lora-thumb ph"></span>';
+    const thumb = l.preview ? `<img src="${loraPreviewUrl(l)}" alt="">` : '<span class="lora-thumb ph"></span>';
     box.innerHTML = `${thumb}<span class="lora-cur-name">${esc(l.title)}</span><button type="button" class="lora-clear" title="取消選擇">✕</button>`;
     box.classList.add('has');
     box.querySelector('.lora-clear').addEventListener('click', () => {
@@ -646,7 +684,7 @@
 
   function showLoraHover(l, row) {
     const h = $('lora-hover'); if (!h || !l.preview) return;
-    h.innerHTML = `<img src="${loraPreviewUrl(l.preview)}" alt="">`;
+    h.innerHTML = `<img src="${loraPreviewUrl(l)}" alt="">`;
     const r = row.getBoundingClientRect(), w = 180;
     let left = r.right + 10;
     if (left + w > window.innerWidth) left = r.left - w - 10;   // 右側放不下改放左側
@@ -873,7 +911,7 @@
       const L = E.lora, nid = L.node, sel = state.lora.selected;
       tpl[nid] = {
         inputs: {
-          lora_name: L.subfolder ? `${L.subfolder}\\${sel.file}` : sel.file,
+          lora_name: sel.folder ? `${sel.folder}\\${sel.file}` : sel.file,
           strength_model: state.lora.strength,
           strength_clip: state.lora.strength,
           model: [L.ckpt, 0],

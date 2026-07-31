@@ -35,8 +35,7 @@ window.YZ_I = {
   lora: {
     ckpt: '4',
     node: '200',                 // 原 workflow 沒用到 200，拿來當注入的 LoraLoader
-    subfolder: 'style',          // lora_name 前綴：ComfyUI 的 loras/style
-    defaultStrength: 0.8,
+    defaultStrength: 0.8,        // lora_name 前綴用各 lora 自己的 folder（見 serve.py LORA_FOLDERS）
     modelConsumers: ['77:75', '79:62', '78:58', '82:14'],
     clipConsumers: ['5', '6', '82:25'],
   },

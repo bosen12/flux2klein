@@ -1170,6 +1170,31 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   transition: border-color var(--dur-1), box-shadow var(--dur-1), background var(--dur-1);
 }
 .lora-search:focus { outline: none; border-color: var(--accent); background: var(--panel); box-shadow: var(--focus-ring); }
+
+/* 分類 chip 列（全部 / style / Character / …），常駐可見 */
+.lora-cats { display: flex; flex-wrap: wrap; gap: 6px; }
+.lora-cat {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--border); background: var(--panel-2); color: var(--text-dim);
+  padding: 4px 9px; border-radius: 999px; cursor: pointer;
+  font-size: var(--fs-xs); font-family: inherit;
+  transition: border-color var(--dur-1), background var(--dur-1), color var(--dur-1);
+}
+.lora-cat:hover { border-color: var(--border-strong); color: var(--text); }
+.lora-cat.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 650; }
+.lora-cat-n {
+  font-size: 10px; font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent); border-radius: 999px; padding: 1px 6px; line-height: 1.5;
+}
+.lora-cat.on .lora-cat-n { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+/* 「全部」檢視時每列標出所屬分類 */
+.lora-opt-folder {
+  font-size: 9px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: var(--radius-xs); padding: 1px 5px; margin-right: 6px; vertical-align: 1px;
+}
+.lora-more { padding: 9px 10px; text-align: center; font-size: var(--fs-xs); color: var(--text-faint); border-top: 1px solid var(--border); margin-top: 3px; }
 .lora-menu {
   position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; right: 0;
   max-height: 320px; overflow-y: auto; scrollbar-gutter: stable;
