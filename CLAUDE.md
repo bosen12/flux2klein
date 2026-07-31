@@ -113,4 +113,8 @@ API 格式的範本在啟動時一次 fetch 進 `state.zTemplates`，送出前 d
 
 **捲軸出現會讓欄寬跳動。** 左右欄都是 `overflow-y: auto`，展開會增高的區塊（例如 Illustrious 的 ControlNet 參考圖上傳區，多 153px）時，捲軸突然出現會吃掉 15px，內容區變窄、卡片被壓到文字折行，看起來像欄寬自己變了。已用 `scrollbar-gutter: stable` 永遠預留空間。**除錯這類問題要先量出「展開前後的內容高度差」，推算出會觸發的視窗高度區間再重現**——視窗太矮兩種狀態都有捲軸、太高兩種都沒有，都測不出來。另外 `scrollHeight` 在內容比容器矮時會回傳容器高度，要量內容真實高度得改量內層元素。
 
+**`state` 物件初始化時不能引用後面才 `const` 宣告的模組變數。** `app.js` 開頭 `const state = {…}` 在第 9 行，而 `const I = window.YZ_I` 在第 29 行。曾經在 state 裡寫 `strength: I.lora.defaultStrength`，觸發 TDZ（暫時性死區）——`const` 在宣告前存取會直接拋 `ReferenceError`，整個 IIFE 載入即掛，所有事件都沒綁上（引擎切換按鈕 `onclick` 是 `false`、頁面像壞掉但 console 不一定抓得到）。要用引擎設定的預設值就寫字面值、另在該設定檔用註解標明兩邊要一致。**判斷方法**：頁面互動全失效但版面正常時，先在 console 查某個按鈕的 `.onclick` 是不是 `null`，是的話就是 init 中途拋錯，不是事件邏輯問題。
+
+**驗證動畫或互動時，Browser 窗格沒顯示會讓 `startViewTransition` 的 callback 不結算。** 引擎換色走 View Transitions，窗格隱藏（不合成畫面）時 `document.startViewTransition(cb)` 的 `cb` 不會執行，`applyEngine` 就沒跑、引擎切不動，看起來像切換壞了。這跟既有的「`requestAnimationFrame` 不觸發」是同一個根源。要用 `javascript_tool` 自動驗證時，先 `document.startViewTransition = null` 強制走同步 fallback 再點擊，才測得到後續邏輯。
+
 **CLIP 的 77 token 不是截斷點。** 77 token 是 CLIP 編碼器的架構上限沒錯，但 ComfyUI 會把長提示詞切成 75 token 一組分別編碼再串接 embedding，超過的內容不會被丟棄也不會被稀釋。「重要特徵放前面」這個建議仍然正確，但理由是靠前的 tag 權重較高、且分塊各自獨立編碼會斷開跨塊語意，不是因為會被截斷。

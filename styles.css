@@ -1121,3 +1121,100 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 
 @media (max-width: 680px) { .assistant { width: 100vw; } }
 @media (prefers-reduced-motion: reduce) { .assistant { transition: none; } }
+
+/* ==================== Illustrious LoRA 風格 ==================== */
+#lora-field { display: flex; flex-direction: column; gap: 0; }
+#lora-panel { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
+
+/* 搜尋框 + 下拉選單 */
+.lora-pick { position: relative; }
+.lora-search {
+  width: 100%; box-sizing: border-box;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--panel-2); color: var(--text);
+  padding: 9px 11px; font-size: var(--fs-sm); font-family: inherit;
+  transition: border-color var(--dur-1), box-shadow var(--dur-1), background var(--dur-1);
+}
+.lora-search:focus { outline: none; border-color: var(--accent); background: var(--panel); box-shadow: var(--focus-ring); }
+.lora-menu {
+  position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; right: 0;
+  max-height: 320px; overflow-y: auto; scrollbar-gutter: stable;
+  background: var(--panel); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); padding: 5px;
+  animation: loraMenuIn var(--dur-3) var(--ease-entrance);
+}
+@keyframes loraMenuIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.lora-opt {
+  display: flex; align-items: center; gap: 10px; padding: 6px; cursor: pointer;
+  border-radius: var(--radius-xs); transition: background var(--dur-1);
+}
+.lora-opt:hover { background: var(--accent-soft); }
+.lora-opt.sel { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.lora-thumb {
+  flex: none; width: 40px; height: 40px; border-radius: var(--radius-xs); object-fit: cover;
+  background: var(--panel-2); border: 1px solid var(--border);
+}
+.lora-thumb.ph { display: inline-block; }
+.lora-opt-body { display: flex; flex-direction: column; min-width: 0; }
+.lora-opt-name { font-size: var(--fs-sm); font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lora-opt-sub { font-size: var(--fs-xs); color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lora-empty { padding: 14px 10px; text-align: center; font-size: var(--fs-sm); color: var(--text-faint); }
+
+/* 已選的 LoRA */
+.lora-current { display: none; }
+.lora-current.has {
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid var(--accent); background: var(--accent-soft);
+  border-radius: var(--radius-sm); padding: 8px 10px;
+}
+.lora-current img { width: 36px; height: 36px; border-radius: var(--radius-xs); object-fit: cover; flex: none; }
+.lora-cur-name { flex: 1; min-width: 0; font-size: var(--fs-sm); font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lora-clear {
+  flex: none; border: none; background: transparent; cursor: pointer;
+  color: var(--text-dim); font-size: 15px; line-height: 1; padding: 4px; border-radius: var(--radius-xs);
+  transition: color var(--dur-1), background var(--dur-1);
+}
+.lora-clear:hover { color: var(--text); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.lora-strength-row { margin: 0; }
+
+/* 觸發詞編輯 */
+.lora-words-box { display: flex; flex-direction: column; gap: 8px; }
+.lora-words-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.lora-words-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
+.lora-inject { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-dim); cursor: pointer; user-select: none; }
+.lora-inject input { accent-color: var(--accent); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+  padding: 4px 6px 4px 10px; border-radius: 999px; font-size: var(--fs-xs);
+  animation: loraMenuIn var(--dur-2) var(--ease-entrance);
+}
+.chip button {
+  border: none; background: transparent; cursor: pointer; color: var(--text-faint);
+  font-size: 12px; line-height: 1; padding: 2px; border-radius: 50%;
+  transition: color var(--dur-1), background var(--dur-1);
+}
+.chip button:hover { color: #fff; background: color-mix(in srgb, var(--accent) 60%, transparent); }
+.chip-add {
+  width: 100%; box-sizing: border-box;
+  border: 1px dashed var(--border-strong); border-radius: var(--radius-sm);
+  background: transparent; color: var(--text); padding: 7px 10px; font-size: var(--fs-xs); font-family: inherit;
+  transition: border-color var(--dur-1), background var(--dur-1);
+}
+.chip-add:focus { outline: none; border-style: solid; border-color: var(--accent); background: var(--panel-2); }
+.lora-none { font-size: var(--fs-xs); color: var(--text-faint); }
+
+/* hover 浮出的預覽小圖（不用太大） */
+.lora-hover {
+  display: none; position: fixed; z-index: 60; width: 180px;
+  border-radius: var(--radius-sm); overflow: hidden;
+  border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg);
+  background: var(--panel); pointer-events: none;
+  animation: loraMenuIn var(--dur-2) var(--ease-entrance);
+}
+.lora-hover img { display: block; width: 100%; height: auto; }
+
+@media (prefers-reduced-motion: reduce) {
+  .lora-menu, .chip, .lora-hover { animation: none; }
+}

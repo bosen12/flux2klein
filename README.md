@@ -60,6 +60,14 @@
 - Krea2：SeedVR2 放大 / 二次採樣
 - 放大可不經過二次採樣，直接從 base 輸出放大
 
+### LoRA 風格（Illustrious 專用）
+- 開關開啟後可從 ComfyUI 的 `loras/style` 資料夾**單選**一個畫風 LoRA
+- 可搜尋的縮圖清單，**滑鼠移到某個 LoRA 會浮出預覽圖**（讀該檔的 `.preview.png`）
+- 一支 **0~1 強度滑桿**（預設 0.8），同時套用在 model 與 clip
+- 自動帶出該 LoRA 的**觸發詞**（讀 `.metadata.json` 的 `trainedWords`）成可編輯標籤：
+  可自由刪除、新增（**只改面板這份、不動原始檔**），並用開關決定要不要把觸發詞加進提示詞
+- 送出時面板會即時插入一個 `LoraLoader` 節點、把 model/clip 從 checkpoint 改接到它（VAE 不受影響）
+
 ### 動態背景
 - 整頁 WebGL 流動彩霧背景（Vanta.js FOG），配色自動跟隨當前引擎主題色
 - 函式庫（`three.min.js` + `vanta.fog.min.js`）**已 vendored 在專案內、離線可用**，不需另外安裝
@@ -182,6 +190,8 @@ Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188
 - **UI → API 轉換** — Flux2 Klein 的 `workflow.json` 是 ComfyUI UI 格式，`converter.js` 在瀏覽器內即時轉為 API 格式（重建 `graphToPrompt`）。其他引擎（Z-Image / Krea2 / Illustrious）的 JSON 本身就是 API 格式，直接注入欄位送出。
 
 - **增強分支裁剪** — Krea2 和 Illustrious 的增強功能（放大、二次採樣等）透過開關控制：關閉時從 prompt 物件刪除該分支的所有節點，ComfyUI 就不會執行。
+
+- **LoRA 清單端點** — `serve.py` 另外提供兩個面板專屬端點（不轉發給 ComfyUI）：`/panel/loras` 掃 `loras/style` 資料夾、回每個 LoRA 的觸發詞與預覽圖檔名；`/panel/lora-preview?file=…` 送出預覽圖（限該資料夾內、擋目錄穿越）。資料夾路徑可用環境變數 `LORA_STYLE_DIR` 覆寫。
 
 ---
 

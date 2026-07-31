@@ -91,6 +91,14 @@ ASST_HOST, ASST_PORT = "127.0.0.1", 8765
 LT_HOST, LT_PORT = "127.0.0.1", 8010
 # 需要同源轉發給 LiveTalking 的路徑（見它的 docs/api.md）
 LT_PATHS = ("/offer", "/human", "/humanaudio", "/interrupt_talk", "/is_speaking", "/set_audiotype")
+# Illustrious 的 LoRA 選單來源：ComfyUI 的 loras/style 資料夾。面板要讀每個
+# .safetensors 旁的 .metadata.json（trainedWords）與 .preview.png，這些檔在
+# ComfyUI 那端的磁碟上、不透過 ComfyUI API 取得，所以直接讀資料夾。換機器或
+# 改路徑時設環境變數 LORA_STYLE_DIR 覆寫即可。
+LORA_STYLE_DIR = os.environ.get(
+    "LORA_STYLE_DIR",
+    r"C:\ComfyUI\ComfyUI_windows_portable_nvidia\ComfyUI_windows_portable\ComfyUI\models\loras\style",
+)
 LISTEN_HOST = "0.0.0.0"   # 綁所有介面，同網路的手機/其他電腦可用區網 IP 連
 
 
@@ -271,6 +279,72 @@ def send_file(client, filename):
         f"Content-Type: {ctype}; charset=utf-8\r\n"
         f"Content-Length: {len(body)}\r\n"
         "Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\n"
+        "Connection: close\r\n\r\n"
+    ).encode("utf-8")
+    client.sendall(header + body)
+
+
+def serve_lora_list(client):
+    """列出 loras/style 資料夾內每個 LoRA 的觸發詞與預覽圖，給 Illustrious 面板選單用。"""
+    import json as _json
+    items = []
+    err = None
+    try:
+        names = sorted(os.listdir(LORA_STYLE_DIR))
+    except OSError as e:
+        names, err = [], str(e)
+    for fn in names:
+        if not fn.lower().endswith(".safetensors"):
+            continue
+        stem = fn[: -len(".safetensors")]
+        words, title = [], stem
+        meta_path = os.path.join(LORA_STYLE_DIR, stem + ".metadata.json")
+        if os.path.isfile(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    md = _json.load(f)
+                words = (md.get("civitai") or {}).get("trainedWords") or []
+                title = md.get("model_name") or stem
+            except Exception:
+                pass
+        preview = None
+        for ext in (".preview.png", ".preview.jpeg", ".preview.jpg", ".png", ".jpg"):
+            if os.path.isfile(os.path.join(LORA_STYLE_DIR, stem + ext)):
+                preview = stem + ext
+                break
+        items.append({
+            "file": fn,                 # 送 ComfyUI 時前面補 style\ 前綴
+            "name": stem,
+            "title": title,
+            "trainedWords": words,
+            "preview": preview,
+        })
+    payload = {"items": items}
+    if err:
+        payload["error"] = err
+    send_body(client, _json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+              "application/json")
+
+
+def serve_lora_preview(client, raw_path):
+    """送出單一 LoRA 的預覽圖。只允許 LORA_STYLE_DIR 內的純檔名，擋目錄穿越。"""
+    from urllib.parse import urlparse, parse_qs, unquote
+    fn = unquote((parse_qs(urlparse(raw_path).query).get("file") or [""])[0])
+    if not fn or "/" in fn or "\\" in fn or ".." in fn:
+        client.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        return
+    path = os.path.join(LORA_STYLE_DIR, fn)
+    if not os.path.isfile(path):
+        client.sendall(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        return
+    ctype = mimetypes.guess_type(path)[0] or "image/png"
+    with open(path, "rb") as f:
+        body = f.read()
+    header = (
+        "HTTP/1.1 200 OK\r\n"
+        f"Content-Type: {ctype}\r\n"
+        f"Content-Length: {len(body)}\r\n"
+        "Cache-Control: max-age=86400\r\n"
         "Connection: close\r\n\r\n"
     ).encode("utf-8")
     client.sendall(header + body)
@@ -489,6 +563,13 @@ def handle(client, ssl_ctx=None):
 
         if path in STATIC_FILES and not is_ws:
             send_file(client, STATIC_FILES[path])
+            client.close()
+        elif method == "GET" and path == "/panel/loras" and not is_ws:
+            # 面板專屬端點（不轉發給 ComfyUI）：列出 loras/style 的觸發詞與預覽圖
+            serve_lora_list(client)
+            client.close()
+        elif method == "GET" and path == "/panel/lora-preview" and not is_ws:
+            serve_lora_preview(client, raw_path)
             client.close()
         elif is_ws and path.startswith("/assistant"):
             # 助理語音 WS：同源代理到本機語音服務，路徑改寫成它期望的 /v1/realtime。

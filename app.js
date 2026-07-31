@@ -17,6 +17,11 @@
     running: false,
     // 進度計時
     run: null,
+    // Illustrious 的 LoRA 風格（單選）。list 啟動時抓一次；words 是「表面」複本，
+    // 可增刪、不動 metadata 原始 trainedWords。strength 字面值須與 illustrious.js
+    // 的 lora.defaultStrength 一致（這裡在 const I 宣告前，不能引用 I）。
+    lora: { list: null, loading: false, enabled: false, selected: null,
+            strength: 0.8, words: [], inject: true },
   };
 
   // 兩個引擎的品牌與主題資訊
@@ -257,6 +262,9 @@
     if (eng && eng.enhance) buildEnhance(eng, m);
     show('enhance-field', !!(eng && eng.enhance));      // Krea2 / Illustrious 的增強卡片
     show('model-field', !(eng && eng.enhance));         // 有增強的引擎皆為單一固定模型，隱藏下拉
+    const hasLora = !!(eng && eng.lora);
+    show('lora-field', hasLora);                        // 目前只有 Illustrious 有
+    if (hasLora) setupLora(eng);
     suppressReveal = false;
     $('images-hint').textContent = `需 ${m.images.filter(i => !i.mask).length} 張`;
 
@@ -497,6 +505,170 @@
     }
   }
 
+  /* ---------------- LoRA 風格（Illustrious 專用，單選） ---------------- */
+  const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const loraPreviewUrl = (f) => '/panel/lora-preview?file=' + encodeURIComponent(f);
+
+  function setupLora(E) {
+    const on = $('lora-on');
+    on.checked = state.lora.enabled;
+    $('lora-toggle').classList.toggle('on', state.lora.enabled);
+    on.onchange = () => {
+      state.lora.enabled = on.checked;
+      $('lora-toggle').classList.toggle('on', on.checked);
+      show('lora-panel', on.checked);
+    };
+    show('lora-panel', state.lora.enabled);
+    if (!$('lora-panel').dataset.built) buildLoraPanel(E);
+    if (state.lora.list === null && !state.lora.loading) fetchLoras(E);
+  }
+
+  async function fetchLoras(E) {
+    state.lora.loading = true;
+    try {
+      const res = await fetch('/panel/loras');
+      const data = await res.json();
+      state.lora.list = data.items || [];
+      if (data.error) log('LoRA 清單讀取異常：' + data.error, 'err');
+    } catch (e) {
+      state.lora.list = [];
+      log('LoRA 清單載入失敗：' + e.message, 'err');
+    }
+    state.lora.loading = false;
+    const menu = $('lora-menu');
+    if (menu && menu.style.display !== 'none') renderLoraMenu(E, $('lora-search').value);
+  }
+
+  function buildLoraPanel(E) {
+    const p = $('lora-panel');
+    p.innerHTML =
+      `<div class="lora-pick">
+         <input type="text" id="lora-search" class="lora-search" placeholder="搜尋 LoRA…" autocomplete="off">
+         <div class="lora-menu" id="lora-menu" style="display:none"></div>
+       </div>
+       <div class="lora-current" id="lora-current"></div>
+       <div class="field tune lora-strength-row">
+         <label>LoRA 強度 <span class="hint">低＝畫風淡，高＝畫風重</span></label>
+         <div class="tune-row">
+           <input type="range" id="lora-strength" min="0" max="1" step="0.05" value="${state.lora.strength}">
+           <output id="lora-strength-out">${(+state.lora.strength).toFixed(2)}</output>
+         </div>
+       </div>
+       <div class="lora-words-box">
+         <div class="lora-words-head">
+           <span class="lora-words-title">觸發詞 <span class="hint">可刪可加，不影響原始檔</span></span>
+           <label class="lora-inject"><input type="checkbox" id="lora-inject"${state.lora.inject ? ' checked' : ''}><span>加入提示詞</span></label>
+         </div>
+         <div class="chips" id="lora-chips"></div>
+         <input type="text" id="lora-chip-add" class="chip-add" placeholder="＋ 新增觸發詞，Enter 確認" autocomplete="off">
+       </div>`;
+    p.dataset.built = '1';
+    if (!document.getElementById('lora-hover')) {
+      const h = document.createElement('div');
+      h.id = 'lora-hover'; h.className = 'lora-hover';
+      document.body.appendChild(h);
+    }
+    const search = $('lora-search'), menu = $('lora-menu');
+    const open = () => { renderLoraMenu(E, search.value); menu.style.display = ''; };
+    search.addEventListener('focus', open);
+    search.addEventListener('input', open);
+    // 點到面板外收起選單
+    document.addEventListener('pointerdown', (e) => {
+      if (!$('lora-panel').contains(e.target)) { menu.style.display = 'none'; hideLoraHover(); }
+    });
+    $('lora-strength').addEventListener('input', (e) => {
+      state.lora.strength = parseFloat(e.target.value);
+      $('lora-strength-out').textContent = state.lora.strength.toFixed(2);
+    });
+    $('lora-inject').addEventListener('change', (e) => { state.lora.inject = e.target.checked; });
+    const add = $('lora-chip-add');
+    add.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const v = add.value.trim();
+      if (v) { state.lora.words.push(v); add.value = ''; renderLoraWords(); }
+    });
+    renderLoraCurrent();
+    renderLoraWords();
+  }
+
+  function renderLoraMenu(E, filter) {
+    const menu = $('lora-menu'); if (!menu) return;
+    const list = state.lora.list;
+    if (list === null) { menu.innerHTML = '<div class="lora-empty">載入中…</div>'; return; }
+    if (!list.length) { menu.innerHTML = '<div class="lora-empty">找不到 LoRA（style 資料夾為空或讀不到）</div>'; return; }
+    const q = (filter || '').toLowerCase().trim();
+    const rows = list.filter(l => !q
+      || l.title.toLowerCase().includes(q) || l.name.toLowerCase().includes(q)
+      || l.trainedWords.join(' ').toLowerCase().includes(q));
+    if (!rows.length) { menu.innerHTML = `<div class="lora-empty">沒有符合「${esc(filter)}」的 LoRA</div>`; return; }
+    menu.innerHTML = '';
+    for (const l of rows) {
+      const sel = state.lora.selected && state.lora.selected.file === l.file;
+      const row = document.createElement('div');
+      row.className = 'lora-opt' + (sel ? ' sel' : '');
+      const thumb = l.preview
+        ? `<img class="lora-thumb" src="${loraPreviewUrl(l.preview)}" alt="" loading="lazy">`
+        : '<span class="lora-thumb ph"></span>';
+      row.innerHTML = `${thumb}<span class="lora-opt-body"><span class="lora-opt-name">${esc(l.title)}</span>` +
+        `<span class="lora-opt-sub">${l.trainedWords.length ? esc(l.trainedWords.join(', ')) : '無觸發詞'}</span></span>`;
+      row.addEventListener('click', () => selectLora(l));
+      if (l.preview) {
+        row.addEventListener('mouseenter', () => showLoraHover(l, row));
+        row.addEventListener('mouseleave', hideLoraHover);
+      }
+      menu.appendChild(row);
+    }
+  }
+
+  function selectLora(l) {
+    state.lora.selected = l;
+    state.lora.words = (l.trainedWords || []).slice();   // 表面複本，之後增刪不動原始 metadata
+    $('lora-menu').style.display = 'none';
+    $('lora-search').value = '';
+    hideLoraHover();
+    renderLoraCurrent();
+    renderLoraWords();
+  }
+
+  function renderLoraCurrent() {
+    const box = $('lora-current'); if (!box) return;
+    const l = state.lora.selected;
+    if (!l) { box.innerHTML = '<span class="lora-none">尚未選擇 LoRA</span>'; box.classList.remove('has'); return; }
+    const thumb = l.preview ? `<img src="${loraPreviewUrl(l.preview)}" alt="">` : '<span class="lora-thumb ph"></span>';
+    box.innerHTML = `${thumb}<span class="lora-cur-name">${esc(l.title)}</span><button type="button" class="lora-clear" title="取消選擇">✕</button>`;
+    box.classList.add('has');
+    box.querySelector('.lora-clear').addEventListener('click', () => {
+      state.lora.selected = null; state.lora.words = [];
+      renderLoraCurrent(); renderLoraWords();
+    });
+  }
+
+  function renderLoraWords() {
+    const box = $('lora-chips'); if (!box) return;
+    box.innerHTML = '';
+    if (!state.lora.words.length) { box.innerHTML = '<span class="lora-none">無觸發詞</span>'; return; }
+    state.lora.words.forEach((w, i) => {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.innerHTML = `<span>${esc(w)}</span><button type="button" title="移除">✕</button>`;
+      chip.querySelector('button').addEventListener('click', () => { state.lora.words.splice(i, 1); renderLoraWords(); });
+      box.appendChild(chip);
+    });
+  }
+
+  function showLoraHover(l, row) {
+    const h = $('lora-hover'); if (!h || !l.preview) return;
+    h.innerHTML = `<img src="${loraPreviewUrl(l.preview)}" alt="">`;
+    const r = row.getBoundingClientRect(), w = 180;
+    let left = r.right + 10;
+    if (left + w > window.innerWidth) left = r.left - w - 10;   // 右側放不下改放左側
+    h.style.left = Math.max(8, left) + 'px';
+    h.style.top = Math.min(r.top, window.innerHeight - 240) + 'px';
+    h.style.display = 'block';
+  }
+  function hideLoraHover() { const h = $('lora-hover'); if (h) h.style.display = 'none'; }
+
   function onPickImage(nodeId, file, dropEl) {
     if (!file) return;
     const url = URL.createObjectURL(file);
@@ -708,6 +880,32 @@
     for (const e of E.enhance) if (!on[e.key]) for (const id of e.branch) { delete tpl[id]; deleted.push(id); }
     for (const id of (E.alwaysDelete || [])) { delete tpl[id]; deleted.push(id); }
     log(`已移除節點：${deleted.join(', ')}`, 'info');
+    // LoRA（單選）：注入 LoraLoader，把 model/clip 從 checkpoint 改接到它（VAE 不動）。
+    // 在刪除分支之後做，被關掉分支的消費節點已不在 tpl，用 if 守住即可。
+    if (E.lora && state.lora.enabled && state.lora.selected) {
+      const L = E.lora, nid = L.node, sel = state.lora.selected;
+      tpl[nid] = {
+        inputs: {
+          lora_name: L.subfolder ? `${L.subfolder}\\${sel.file}` : sel.file,
+          strength_model: state.lora.strength,
+          strength_clip: state.lora.strength,
+          model: [L.ckpt, 0],
+          clip: [L.ckpt, 1],
+        },
+        class_type: 'LoraLoader',
+        _meta: { title: 'LoRA：' + sel.title },
+      };
+      for (const id of L.modelConsumers) if (tpl[id]) tpl[id].inputs.model = [nid, 0];
+      for (const id of L.clipConsumers) if (tpl[id]) tpl[id].inputs.clip = [nid, 1];
+      // 觸發詞注入正向提示詞（表面清單；使用者可增刪、可關閉）
+      if (state.lora.inject && state.lora.words.length && tpl[nd.prompt]) {
+        const trig = state.lora.words.join(', ');
+        const base = (tpl[nd.prompt].inputs.text || '').trim();
+        tpl[nd.prompt].inputs.text = base ? base + ', ' + trig : trig;
+      }
+      log(`LoRA：${sel.title}（強度 ${state.lora.strength.toFixed(2)}` +
+          `${state.lora.inject && state.lora.words.length ? '，觸發詞 ' + state.lora.words.join(', ') : ''}）`, 'info');
+    }
     log(`送出節點：${Object.keys(tpl).join(', ')}`, 'info');
     // 送出
     $('run').textContent = '送出中…';

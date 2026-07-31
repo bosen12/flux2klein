@@ -132,6 +132,18 @@
           </div>
         </div>
 
+        <!-- Illustrious：LoRA 風格開關（單選；選單、預覽、觸發詞由 app.js 建） -->
+        <div class="field" id="lora-field" style="display:none">
+          <label class="enh" id="lora-toggle">
+            <input type="checkbox" id="lora-on">
+            <span class="enh-body">
+              <span class="enh-top"><span class="enh-name">LoRA 風格</span><span class="enh-sw"></span></span>
+              <span class="enh-desc">套用畫風 LoRA，可挑觸發詞加進提示詞</span>
+            </span>
+          </label>
+          <div id="lora-panel" style="display:none"></div>
+        </div>
+
         <div class="field" id="model-field">
           <label>模型 <span class="hint">Diffusion + Text Encoder（成套）</span></label>
           <select id="model-set">

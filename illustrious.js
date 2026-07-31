@@ -28,6 +28,18 @@ window.YZ_I = {
     { key: 'sdupscale', name: 'SD 放大', desc: 'Ultimate SD Upscale 4×',
       branch: ['82:15', '82:25', '82:14', '83'], imageNode: '82:14' },
   ],
+  // LoRA 風格開關（單選）。開啟時注入一個 LoraLoader（node 節點 id），
+  // 把 model/clip 從 checkpoint 改接到它輸出，VAE 不受影響維持接 checkpoint。
+  // modelConsumers / clipConsumers 是原本吃 node 4 model/clip 的節點；
+  // 有些屬於增強分支，關閉分支時會被刪除，重接時要判斷節點是否還在。
+  lora: {
+    ckpt: '4',
+    node: '200',                 // 原 workflow 沒用到 200，拿來當注入的 LoraLoader
+    subfolder: 'style',          // lora_name 前綴：ComfyUI 的 loras/style
+    defaultStrength: 0.8,
+    modelConsumers: ['77:75', '79:62', '78:58', '82:14'],
+    clipConsumers: ['5', '6', '82:25'],
+  },
   // 各輸出的 PreviewImage 節點（收集圖片做對照）
   outputs: { base: '73', hires: '56', controlnet: '64', seedvr2: '81', sdupscale: '83' },
   compareLabels: { hires: '第二階段', controlnet: 'ControlNet', seedvr2: 'SeedVR2', sdupscale: 'SD 放大' },
