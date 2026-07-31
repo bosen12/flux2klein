@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>詞庫暗房 · Special Prompts</title>
+<link rel="stylesheet" href="/darkroom.css">
+</head>
+<body>
+<div class="topbar">
+  <button class="menu-btn ghost" id="menu-btn" aria-label="開關資料夾列">☰</button>
+  <div class="brand">
+    <span class="dot"></span>
+    <h1>詞庫暗房</h1>
+    <span class="sub" id="total-tag">…</span>
+  </div>
+  <div class="search-wrap">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    <input type="text" id="search" placeholder="跨資料夾搜尋名稱…" autocomplete="off">
+  </div>
+  <div class="spacer"></div>
+  <button class="ghost" id="rescan" title="重新掃描">↻ 重掃</button>
+  <div class="conn" id="conn"><span class="led"></span><span id="conn-text">…</span></div>
+</div>
+
+<div class="body">
+  <nav class="rail" id="rail" aria-label="資料夾">
+    <div class="rail-head">資料夾 · Chapters</div>
+    <div class="rail-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input type="text" id="folder-search" placeholder="搜尋資料夾…" autocomplete="off">
+      <button id="folder-search-clear" aria-label="清除" title="清除" style="display:none;">✕</button>
+    </div>
+    <div id="rail-list"></div>
+    <div id="rail-empty" class="rail-empty" style="display:none;">找不到符合的資料夾</div>
+  </nav>
+
+  <main class="main" id="main">
+    <div class="main-head">
+      <div>
+        <div class="main-title"><span class="num" id="mt-num"></span><h2 id="mt-name">載入中…</h2></div>
+        <div class="main-sub" id="mt-sub"></div>
+      </div>
+      <div class="head-actions">
+        <div class="seg" id="view-seg" role="group" aria-label="篩選">
+          <button data-v="all" class="on">全部</button>
+          <button data-v="missing">缺圖</button>
+          <button data-v="have">已有</button>
+        </div>
+        <div class="gen-group">
+          <span class="gen-label">本頁</span>
+          <button class="primary" id="gen-page-missing">補缺少</button>
+          <button class="ghost" id="gen-page-all">全部重生</button>
+        </div>
+        <div class="gen-group">
+          <span class="gen-label">全部</span>
+          <button class="primary" id="gen-all-missing">補缺少</button>
+          <button class="ghost" id="gen-all-regen">全部重生</button>
+        </div>
+        <button class="danger" id="batch-stop" style="display:none;">停止</button>
+        <span class="conn" id="batch-progress" style="font-family:var(--mono);"></span>
+      </div>
+    </div>
+    <div class="coverbar" id="coverbar"><span style="width:0"></span></div>
+    <div id="grid" class="grid"></div>
+  </main>
+</div>
+
+<div id="modal" class="modal">
+  <button class="m-nav prev" id="m-prev" aria-label="上一個">‹</button>
+  <div class="modal-inner" id="modal-inner"></div>
+  <button class="m-nav next" id="m-next" aria-label="下一個">›</button>
+</div>
+
+<script src="/darkroom.js" defer></script>
+</body>
+</html>
