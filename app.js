@@ -21,7 +21,7 @@
     // 選 LoRA 時帶入其 trainedWords，之後可自由編輯、不動 metadata 原始檔。
     // strength 字面值須與 illustrious.js 的 lora.defaultStrength 一致
     //（這裡在 const I 宣告前，不能引用 I）。
-    lora: { list: null, counts: {}, folders: [], cat: 'all', loading: false,
+    lora: { list: null, counts: {}, folders: [], cat: 'all', page: 0, loading: false,
             enabled: false, selected: null, strength: 0.8, text: '', inject: true },
   };
 
@@ -576,7 +576,7 @@
     const search = $('lora-search'), menu = $('lora-menu');
     const open = () => { renderLoraMenu(E, search.value); menu.style.display = ''; };
     search.addEventListener('focus', open);
-    search.addEventListener('input', open);
+    search.addEventListener('input', () => { state.lora.page = 0; open(); });   // 改關鍵字回第 1 頁
     // 點到面板外收起選單
     document.addEventListener('pointerdown', (e) => {
       if (!$('lora-panel').contains(e.target)) { menu.style.display = 'none'; hideLoraHover(); }
@@ -605,6 +605,7 @@
       b.innerHTML = `${esc(label)}<span class="lora-cat-n">${n}</span>`;
       b.addEventListener('click', () => {
         state.lora.cat = key;
+        state.lora.page = 0;                 // 換分類回第 1 頁
         renderLoraCats(E);
         renderLoraMenu(E, $('lora-search').value);
         $('lora-menu').style.display = '';
@@ -626,7 +627,11 @@
       || l.trainedWords.join(' ').toLowerCase().includes(q));
     const total = rows.length;
     if (!total) { menu.innerHTML = '<div class="lora-empty">沒有符合的 LoRA</div>'; return; }
-    const shown = rows.slice(0, LORA_RENDER_CAP);
+    const pages = Math.ceil(total / LORA_RENDER_CAP);
+    if (state.lora.page >= pages) state.lora.page = pages - 1;
+    if (state.lora.page < 0) state.lora.page = 0;
+    const page = state.lora.page;
+    const shown = rows.slice(page * LORA_RENDER_CAP, page * LORA_RENDER_CAP + LORA_RENDER_CAP);
     menu.innerHTML = '';
     for (const l of shown) {
       const sel = state.lora.selected && state.lora.selected.folder === l.folder && state.lora.selected.file === l.file;
@@ -645,11 +650,20 @@
       }
       menu.appendChild(row);
     }
-    if (total > shown.length) {
-      const more = document.createElement('div');
-      more.className = 'lora-more';
-      more.textContent = `顯示前 ${shown.length} / 共 ${total} 個 — 輸入關鍵字或選分類縮小`;
-      menu.appendChild(more);
+    if (pages > 1) {
+      const nav = document.createElement('div');
+      nav.className = 'lora-pager';
+      nav.innerHTML =
+        `<button type="button" class="lora-page-btn" data-dir="-1"${page === 0 ? ' disabled' : ''}>‹ 上一頁</button>` +
+        `<span class="lora-page-info">第 ${page + 1} / ${pages} 頁 · 共 ${total} 個</span>` +
+        `<button type="button" class="lora-page-btn" data-dir="1"${page >= pages - 1 ? ' disabled' : ''}>下一頁 ›</button>`;
+      nav.querySelectorAll('.lora-page-btn').forEach(btn => btn.addEventListener('click', (e) => {
+        e.stopPropagation();                       // 別讓點擊冒泡收起選單
+        state.lora.page = page + (+btn.dataset.dir);
+        renderLoraMenu(E, filter);
+        menu.scrollTop = 0;                        // 翻頁回到頂端
+      }));
+      menu.appendChild(nav);
     }
   }
 

@@ -1194,7 +1194,21 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent);
   border-radius: var(--radius-xs); padding: 1px 5px; margin-right: 6px; vertical-align: 1px;
 }
-.lora-more { padding: 9px 10px; text-align: center; font-size: var(--fs-xs); color: var(--text-faint); border-top: 1px solid var(--border); margin-top: 3px; }
+/* 翻頁列（每頁 80 個） */
+.lora-pager {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 6px 4px; margin-top: 4px; border-top: 1px solid var(--border);
+  position: sticky; bottom: 0; background: var(--panel);
+}
+.lora-page-btn {
+  border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+  padding: 5px 10px; border-radius: var(--radius-xs); cursor: pointer;
+  font-size: var(--fs-xs); font-family: inherit;
+  transition: border-color var(--dur-1), background var(--dur-1), color var(--dur-1);
+}
+.lora-page-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.lora-page-btn:disabled { opacity: .4; cursor: default; }
+.lora-page-info { font-size: var(--fs-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; }
 .lora-menu {
   position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; right: 0;
   max-height: 320px; overflow-y: auto; scrollbar-gutter: stable;
