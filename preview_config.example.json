@@ -1,0 +1,10 @@
+{
+  "_說明": "詞庫暗房（preview_ui.py）的本機設定。複製成 preview_config.json（已 gitignore）再改。所有欄位可省略，省略就用預設。",
+  "special_dir": "C:\\projects\\animebot\\special_prompts",
+  "comfy": "http://127.0.0.1:8188",
+  "workflow": "C:\\Users\\你的帳號\\Downloads\\ANIMESTYLE (1).json",
+  "host": "0.0.0.0",
+  "port": 7860,
+  "steps": 25,
+  "concurrency": 2
+}

@@ -15,6 +15,13 @@ Thumbs.db
 # 本地設定（含 API key）
 config.js
 
+# 詞庫暗房的本機設定（含機器相關路徑）與縮圖快取
+preview_config.json
+.thumb_cache/
+
+# 詞庫（NSFW 內容，資料留在 animebot；萬一在此建立也不進版控）
+special_prompts/
+
 # HTTPS 自簽憑證（含私鑰，每台機器自己產）
 cert.pem
 key.pem

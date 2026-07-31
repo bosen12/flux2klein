@@ -172,6 +172,16 @@ Windows 雙擊即可（會自動啟動 Groq 多 key 代理）：
 
 ---
 
+## 詞庫暗房（預覽圖產生器）
+
+`preview_ui.py` 是一個**獨立工具**，用來幫 `special_prompts` 的每個詞庫透過 ComfyUI 生成 `.webp` 預覽圖（也就是 Illustrious 詞庫選單 hover 顯示的那些圖）。深色「暗房」介面：左側資料夾導覽（含覆蓋率條）、縮圖牆、點圖看大圖與正/負向 prompt、單張或**批次**補齊缺圖／重生、資料夾／缺圖／已有／名稱篩選。
+
+- **啟動**：跑 `preview_ui.bat`（或 `python preview_ui.py`），預設開在 `http://localhost:7860/`。要真的生成圖需先開 ComfyUI。
+- **面板按鈕**：主面板頂部「AI Assistant」旁有「**詞庫暗房**」按鈕，點了用新視窗開這個工具（不嵌入面板）。工具沒啟動的話新視窗會連不上——先跑 `preview_ui.bat`。
+- **設定**：機器相關路徑放 `preview_config.json`（已 gitignore，複製 `preview_config.example.json` 來改）——`special_dir`（詞庫資料夾，預設指向 `animebot`）、`comfy`、`workflow`、`port` 等。**面板的詞庫選單（`serve.py`）也讀同一個 `special_dir`**，所以兩邊看的是同一份詞庫。
+
+---
+
 ## 手機語音輸入（HTTPS）
 
 語音輸入需要麥克風權限，而瀏覽器只在「安全來源」給麥克風——桌面用 `localhost` 沒問題，但**手機透過 `http://192.168.x.x` 或 `http://100.x.x.x`（Tailscale）連都不算安全來源**，語音按鈕不會出現。要讓手機能用語音，改用 HTTPS 啟動：
@@ -225,6 +235,10 @@ Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188
 | `illustrious.json` | Illustrious workflow（API 格式） |
 | `three.min.js` | Three.js r134（Vanta 依賴，vendored） |
 | `vanta.fog.min.js` | Vanta.js FOG WebGL 背景（vendored） |
+| `preview_ui.py` | 詞庫暗房：獨立的詞庫預覽圖產生／管理工具（見上節） |
+| `generate_special_previews.py` | 暗房的 ComfyUI 生成邏輯（`preview_ui.py` 依賴） |
+| `preview_ui.bat` | 啟動詞庫暗房 |
+| `preview_config.example.json` | 暗房設定範本（複製成 `preview_config.json`，後者已 gitignore） |
 | `config.js` | 本地設定（API Key，不進版控） |
 
 ---

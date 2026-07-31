@@ -944,6 +944,9 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   border-color: transparent; color: #fff;
   box-shadow: 0 5px 14px -4px color-mix(in srgb, var(--accent) 52%, transparent);
 }
+/* 詞庫暗房按鈕：琥珀色調，呼應它開啟的暗房工具 */
+.darkroom-btn:hover { border-color: color-mix(in srgb, #e0a044 55%, transparent); color: #b8791f; }
+:root[data-engine] .darkroom-btn svg { color: #d69a3f; }
 
 .assistant {
   position: fixed; top: 0; right: 0; bottom: 0; width: min(380px, 100vw);

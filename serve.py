@@ -103,8 +103,24 @@ LORA_FOLDERS = ["style", "Character", "HENTAI", "illus"]
 # Illustrious 的「詞庫」來源：animebot 的 special_prompts，底下是數十個分類子夾，
 # 每個 .py 是一組情境提示詞（REQUIRED_POSITIVE / POSITIVE / NEGATIVE 三個 list），
 # 旁邊可能有同名 .webp 預覽圖。面板用 ast 安全解析（只取那三個 list，不 import／不執行）。
-# 換機器改路徑設環境變數 PROMPTS_ROOT 覆寫。分類子夾動態掃描（略過 __ 開頭）。
-PROMPTS_ROOT = os.environ.get("PROMPTS_ROOT", r"C:\projects\animebot\special_prompts")
+# 路徑來源優先序：環境變數 PROMPTS_ROOT > preview_config.json 的 special_dir >
+# 內建預設。這樣詞庫選單（這裡）跟詞庫暗房（preview_ui.py）指向同一份資料。
+# 分類子夾動態掃描（略過 __ 開頭）。
+def _prompts_root_default():
+    cfg = os.path.join(BASE, "preview_config.json")
+    if os.path.isfile(cfg):
+        try:
+            import json as _json
+            with open(cfg, "r", encoding="utf-8") as f:
+                sd = (_json.load(f) or {}).get("special_dir")
+            if sd:
+                return sd
+        except Exception:
+            pass
+    return r"C:\projects\animebot\special_prompts"
+
+
+PROMPTS_ROOT = os.environ.get("PROMPTS_ROOT") or _prompts_root_default()
 LISTEN_HOST = "0.0.0.0"   # 綁所有介面，同網路的手機/其他電腦可用區網 IP 連
 
 

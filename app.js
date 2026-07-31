@@ -2489,6 +2489,14 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleLog(); }
     };
     $('assistant-btn').onclick = () => setAssistant(!asst.open);
+    // 詞庫暗房：獨立工具，開新視窗。埠可用 config.js 的 PREVIEW_PORT 覆寫（預設 7860）。
+    // 用 location.hostname 讓手機/區網也能連（工具綁 0.0.0.0）。
+    const drBtn = $('darkroom-btn');
+    if (drBtn) drBtn.onclick = () => {
+      const port = (window.YZ_CONFIG && window.YZ_CONFIG.PREVIEW_PORT) || 7860;
+      const url = (window.YZ_CONFIG && window.YZ_CONFIG.PREVIEW_URL) || `http://${location.hostname}:${port}/`;
+      window.open(url, 'darkroom', 'noopener');
+    };
     $('asst-close').onclick = () => setAssistant(false);
     $('asst-mic').onclick = asstToggleMic;
     document.querySelectorAll('#asst-modes button').forEach(b =>
