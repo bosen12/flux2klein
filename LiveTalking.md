@@ -142,12 +142,21 @@ ffmpeg -y -loop 1 -i <你的圖.png> -t 6 -r 25 \
 # 2) 建 avatar（在 LiveTalking 目錄下跑）
 cd C:\projects\LiveTalking
 E:\lt\Scripts\python.exe -m avatars.wav2lip.genavatar ^
-  --video_path <上一步的 avatar_src.mp4> --avatar_id my_avatar --img_size 256
+  --video_path <上一步的 avatar_src.mp4> --avatar_id my_avatar --img_size 256 ^
+  --pads 0 60 0 0
 ```
 
-產出在 `data/avatars/my_avatar/`：`coords.pkl` + `face_imgs/` + `full_imgs/`（各 150 張），
-結構與官方 avatar 一致。**檢查 `face_imgs/00000000.png`**：要能看到完整五官**且含下巴**，
-wav2lip 靠下巴對嘴，裁太緊會糊。
+**`--pads` 是最容易踩的坑**（順序是 top bottom left right）。預設 `0 10 0 0` 只給下巴
+10px，臉部特寫的圖會**把下巴切掉**，而 wav2lip 靠下巴對嘴、切掉嘴型就糊。
+`0 60 0 0` 實測剛好。改構圖或重裁原圖都救不了這個，**要調的是 pads**。
+
+產出在 `data/avatars/<avatar_id>/`：`coords.pkl` + `face_imgs/` + `full_imgs/`（各 150 張），
+結構與官方 avatar 一致。**一定要檢查 `face_imgs/00000000.png`**：要能看到完整五官**且含下巴**。
+不對就調 `--pads` 的第二個數字重建。
+
+**另外兩點**：① 別用補白（letterbox）把圖湊成 3:4——補的顏色跟原圖背景會有色差，
+在成品上看得出接縫；直接從原圖裁 3:4 就好。② 手或物件壓在下巴附近會影響對嘴，
+wav2lip 會重繪下半臉，那個區域有東西可能出現變形。
 
 **avatar 不進版控**（在 LiveTalking 的 `data/avatars` 下、且是幾百張圖）。換機器要重跑這節。
 bat 有存在性檢查：缺 `my_avatar` 會印警告並退回官方 avatar，不會直接炸。
