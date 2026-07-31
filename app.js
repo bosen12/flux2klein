@@ -599,26 +599,63 @@
     renderLoraWords();
   }
 
-  function renderLoraCats(E) {
-    const box = $('lora-cats'); if (!box) return;
-    const counts = state.lora.counts || {};
-    const total = (state.lora.list || []).length;
-    const cats = [['all', '全部', total], ...state.lora.folders.map(f => [f, f, counts[f] || 0])];
+  // 共用的分類列。分類少（≤8）就平鋪一排 chip；分類多就收合成「分類：目前 ▾」，
+  // 點開用高度動畫攤出完整 grid，選完自動收起——避免數十個分類疊掉整個版面。
+  const CAT_COLLAPSE_OVER = 8;
+  function renderCatBar(box, st, onPick) {
+    const counts = st.counts || {};
+    const total = (st.list || []).length;
+    const cats = [['all', '全部', total], ...st.folders.map(f => [f, f, counts[f] || 0])];
     box.innerHTML = '';
-    for (const [key, label, n] of cats) {
+    const pick = (key) => { onPick(key); renderCatBar(box, st, onPick); };  // 重繪以更新選中/摘要
+    const chip = (key, label, n) => {
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = 'lora-cat' + (state.lora.cat === key ? ' on' : '');
+      b.className = 'lora-cat' + (st.cat === key ? ' on' : '');
       b.innerHTML = `${esc(label)}<span class="lora-cat-n">${n}</span>`;
-      b.addEventListener('click', () => {
-        state.lora.cat = key;
-        state.lora.page = 0;                 // 換分類回第 1 頁
-        renderLoraCats(E);
-        renderLoraMenu(E, $('lora-search').value);
-        $('lora-menu').style.display = '';
-      });
-      box.appendChild(b);
+      return b;
+    };
+    if (cats.length <= CAT_COLLAPSE_OVER) {
+      box.classList.remove('collapsible');
+      for (const [key, label, n] of cats) {
+        const b = chip(key, label, n);
+        b.addEventListener('click', () => pick(key));
+        box.appendChild(b);
+      }
+      return;
     }
+    // 收合式
+    box.classList.add('collapsible');
+    const cur = cats.find(c => c[0] === st.cat) || cats[0];
+    const summary = document.createElement('button');
+    summary.type = 'button'; summary.className = 'cat-summary';
+    summary.innerHTML = `<span class="cat-summary-label">分類：${esc(cur[1])}<span class="lora-cat-n">${cur[2]}</span></span><span class="cat-caret" aria-hidden="true">▾</span>`;
+    const grid = document.createElement('div');
+    grid.className = 'cat-grid';
+    for (const [key, label, n] of cats) {
+      const b = chip(key, label, n);
+      b.addEventListener('click', () => pick(key));   // 選完 → onPick + 重繪（收合、換摘要）
+      grid.appendChild(b);
+    }
+    let open = false;
+    const setOpen = (v) => {
+      open = v;
+      summary.classList.toggle('open', v);
+      grid.style.maxHeight = v ? grid.scrollHeight + 'px' : '0px';
+    };
+    summary.addEventListener('click', () => setOpen(!open));
+    box.appendChild(summary);
+    box.appendChild(grid);
+    grid.style.maxHeight = '0px';
+  }
+
+  function renderLoraCats(E) {
+    const box = $('lora-cats'); if (!box) return;
+    renderCatBar(box, state.lora, (key) => {
+      state.lora.cat = key; state.lora.page = 0;
+      renderLoraMenu(E, $('lora-search').value);
+      $('lora-menu').style.display = '';
+    });
   }
 
   function renderLoraMenu(E, filter) {
@@ -774,23 +811,11 @@
 
   function renderLibCats(E) {
     const box = $('lib-cats'); if (!box) return;
-    const counts = state.lib.counts || {};
-    const total = (state.lib.list || []).length;
-    const cats = [['all', '全部', total], ...state.lib.folders.map(f => [f, f, counts[f] || 0])];
-    box.innerHTML = '';
-    for (const [key, label, n] of cats) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'lora-cat' + (state.lib.cat === key ? ' on' : '');
-      b.innerHTML = `${esc(label)}<span class="lora-cat-n">${n}</span>`;
-      b.addEventListener('click', () => {
-        state.lib.cat = key; state.lib.page = 0;
-        renderLibCats(E);
-        renderLibMenu(E, $('lib-search').value);
-        $('lib-menu').style.display = '';
-      });
-      box.appendChild(b);
-    }
+    renderCatBar(box, state.lib, (key) => {
+      state.lib.cat = key; state.lib.page = 0;
+      renderLibMenu(E, $('lib-search').value);
+      $('lib-menu').style.display = '';
+    });
   }
 
   function renderLibMenu(E, filter) {

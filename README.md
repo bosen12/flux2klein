@@ -71,7 +71,8 @@
 - 送出時面板會即時插入一個 `LoraLoader` 節點、把 model/clip 從 checkpoint 改接到它（VAE 不受影響）
 
 ### 詞庫（Illustrious 專用）
-- 從 `special_prompts` 的數十個分類夾**單選**一個情境詞庫（共 2232 個），介面與 LoRA 選單同款（分類 chip＋搜尋＋hover `.webp` 預覽＋每頁 80 分頁）
+- 從 `special_prompts` 的數十個分類夾**單選**一個情境詞庫（2000＋個），介面與 LoRA 選單同款（分類＋搜尋＋hover `.webp` 預覽＋每頁 80 分頁）
+- 分類多（＞8）時自動**收合成一行**（「分類：目前 ▾」），點開才用高度動畫攤出完整 grid、選完自動收起；分類少（如 LoRA）維持平鋪
 - 選取後：把該詞庫的 `REQUIRED_POSITIVE + POSITIVE` 以逗號串接**填進正向提示詞框**（可再手動編輯），並記住它的 `NEGATIVE`
 - 送出時自動把該詞庫的 `NEGATIVE` 寫進負向節點
 - 後端用 `ast` **安全解析** `.py`（只取那三個 list，不 import、不執行）
