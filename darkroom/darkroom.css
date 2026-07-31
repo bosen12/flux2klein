@@ -48,6 +48,14 @@ button { cursor: pointer; background: #21232c; color: var(--ink); border: 1px so
          padding: 7px 12px; border-radius: 8px; font-size: 13px; transition: background .12s, border-color .12s; }
 button:hover:not(:disabled) { background: #2a2d38; border-color: #3a3d49; }
 button:disabled { opacity: .45; cursor: not-allowed; }
+/* 主要按鈕：hover 時一道柔光掃過（比照主面板生成鈕的 beam） */
+button.primary { position: relative; overflow: hidden; }
+button.primary::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(105deg, transparent 32%, rgba(255,255,255,.38) 50%, transparent 68%);
+  transform: translateX(-130%); transition: transform .6s var(--ease-out);
+}
+button.primary:hover:not(:disabled)::after { transform: translateX(130%); }
 button.primary { background: linear-gradient(180deg, #eaad57, var(--amber-d)); border-color: var(--amber-d);
                  color: #241a08; font-weight: 650; }
 button.primary:hover:not(:disabled) { filter: brightness(1.06); }
@@ -64,7 +72,12 @@ input[type=text]::placeholder { color: var(--faint); }
           box-shadow: 0 1px 0 rgba(255,255,255,.02) inset, 0 6px 20px -12px rgba(0,0,0,.6); }
 .brand { display: flex; align-items: baseline; gap: 9px; }
 .brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--amber);
-              box-shadow: 0 0 10px 1px rgba(230,163,74,.6); transform: translateY(-1px); }
+              transform: translateY(-1px); animation: safelight 3.2s ease-in-out infinite; }
+/* 暗房安全燈：品牌點輕輕呼吸 */
+@keyframes safelight {
+  0%, 100% { box-shadow: 0 0 8px 1px rgba(234,173,87,.45); }
+  50%      { box-shadow: 0 0 15px 3px rgba(234,173,87,.8); }
+}
 .brand h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: .3px; }
 .brand .sub { font-family: var(--mono); font-size: 11px; color: var(--faint); letter-spacing: .5px; }
 .search-wrap { position: relative; flex: 1; max-width: 420px; }
@@ -122,10 +135,18 @@ input[type=text]::placeholder { color: var(--faint); }
 .main-title h2 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: .2px; }
 .main-sub { font-family: var(--mono); font-size: 12px; color: var(--dim); margin-top: 4px; }
 .head-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.seg { display: inline-flex; background: var(--sunk); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-.seg button { border: 0; border-radius: 0; background: transparent; color: var(--dim); padding: 6px 12px; font-size: 12px; }
-.seg button.on { background: #23252f; color: var(--ink); }
-.seg button + button { border-left: 1px solid var(--line); }
+/* 篩選段：滑動膠囊（比照主面板的分頁膠囊，換頁時滑過去而非瞬切） */
+.seg { position: relative; display: inline-flex; background: var(--sunk); border: 1px solid var(--line); border-radius: 8px; padding: 3px; }
+.seg-pill { position: absolute; top: 3px; left: 0; height: calc(100% - 6px); width: 0;
+            background: #262934; border: 1px solid var(--line-2); border-radius: 6px;
+            box-shadow: 0 1px 4px rgba(0,0,0,.35); pointer-events: none; z-index: 0;
+            transform: translateX(3px);
+            transition: transform var(--d-ui) var(--ease-out), width var(--d-ui) var(--ease-out); }
+.seg button { position: relative; z-index: 1; border: 0; border-radius: 6px; background: transparent;
+              color: var(--dim); padding: 6px 12px; font-size: 12px;
+              transition: color var(--d-ui) var(--ease-out); }
+.seg button.on { color: var(--ink); }
+.seg button:hover:not(.on) { color: var(--ink); }
 .gen-group { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px;
              background: var(--sunk); border: 1px solid var(--line); border-radius: 10px; }
 .gen-group .gen-label { font-family: var(--mono); font-size: 10px; letter-spacing: 1px; color: var(--faint); }

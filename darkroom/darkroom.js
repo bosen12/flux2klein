@@ -304,9 +304,21 @@ function cssAttr(s) { return String(s).replace(/["\\]/g, '\\$&'); }
 $('view-seg').addEventListener('click', e => {
   const btn = e.target.closest('button'); if (!btn) return;
   VIEW = btn.dataset.v;
-  [...$('view-seg').children].forEach(b => b.classList.toggle('on', b === btn));
+  $('view-seg').querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn));
+  moveSegPill();
   render();
 });
+
+// 篩選段的滑動膠囊：量目前 .on 按鈕的位置/寬度，讓膠囊滑過去（比照主面板分頁）
+function moveSegPill() {
+  const seg = $('view-seg'), pill = $('seg-pill');
+  const active = seg && seg.querySelector('button.on');
+  if (!active || !pill) return;
+  pill.style.width = active.offsetWidth + 'px';
+  pill.style.transform = `translateX(${active.offsetLeft}px)`;
+}
+moveSegPill();
+addEventListener('resize', moveSegPill);
 
 let searchTimer;
 $('search').oninput = e => {
