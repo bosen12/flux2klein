@@ -146,6 +146,20 @@
           <div id="lora-panel" style="display:none"></div>
         </div>
 
+        <!-- Illustrious：詞庫（special_prompts）單選；選單由 app.js 建 -->
+        <div class="field" id="lib-field" style="display:none">
+          <label class="lora-head" id="lib-toggle">
+            <input type="checkbox" id="lib-on">
+            <span class="lora-head-ic" aria-hidden="true">❖</span>
+            <span class="lora-head-body">
+              <span class="lora-head-name">詞庫</span>
+              <span class="lora-head-desc">挑一個情境，正向自動填入、負向自動套用</span>
+            </span>
+            <span class="lora-head-sw"></span>
+          </label>
+          <div id="lib-panel" style="display:none"></div>
+        </div>
+
         <div class="field" id="model-field">
           <label>模型 <span class="hint">Diffusion + Text Encoder（成套）</span></label>
           <select id="model-set">

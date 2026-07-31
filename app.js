@@ -23,6 +23,10 @@
     //（這裡在 const I 宣告前，不能引用 I）。
     lora: { list: null, counts: {}, folders: [], cat: 'all', page: 0, loading: false,
             enabled: false, selected: null, strength: 0.8, text: '', inject: true },
+    // Illustrious 的「詞庫」（special_prompts）。單選一個情境：選取時把正向填進
+    // 提示詞框（可再編輯），送出時把該詞庫的 negative 寫進負向節點。
+    lib: { list: null, counts: {}, folders: [], cat: 'all', page: 0, loading: false,
+           enabled: false, selected: null, negative: [] },
   };
 
   // 兩個引擎的品牌與主題資訊
@@ -266,6 +270,9 @@
     const hasLora = !!(eng && eng.lora);
     show('lora-field', hasLora);                        // 目前只有 Illustrious 有
     if (hasLora) setupLora(eng);
+    const hasLib = !!(eng && eng.promptLib);
+    show('lib-field', hasLib);
+    if (hasLib) setupLib(eng);
     suppressReveal = false;
     $('images-hint').textContent = `需 ${m.images.filter(i => !i.mask).length} 張`;
 
@@ -708,6 +715,176 @@
   }
   function hideLoraHover() { const h = $('lora-hover'); if (h) h.style.display = 'none'; }
 
+  /* ---------------- 詞庫（Illustrious 專用，單選；沿用 LoRA 選單樣式） ---------------- */
+  const libPreviewUrl = (l) => '/panel/prompt-preview?cat=' + encodeURIComponent(l.folder || '') + '&file=' + encodeURIComponent((l.name || '') + '.webp');
+
+  function setupLib(E) {
+    const on = $('lib-on');
+    on.checked = state.lib.enabled;
+    $('lib-toggle').classList.toggle('on', state.lib.enabled);
+    on.onchange = () => {
+      state.lib.enabled = on.checked;
+      $('lib-toggle').classList.toggle('on', on.checked);
+      show('lib-panel', on.checked);
+    };
+    show('lib-panel', state.lib.enabled);
+    if (!$('lib-panel').dataset.built) buildLibPanel(E);
+    if (state.lib.list === null && !state.lib.loading) fetchLibs(E);
+  }
+
+  async function fetchLibs(E) {
+    state.lib.loading = true;
+    try {
+      const res = await fetch('/panel/prompts');
+      const data = await res.json();
+      state.lib.list = data.items || [];
+      state.lib.counts = data.counts || {};
+      state.lib.folders = data.folders || [];
+    } catch (e) {
+      state.lib.list = [];
+      log('詞庫清單載入失敗：' + e.message, 'err');
+    }
+    state.lib.loading = false;
+    renderLibCats(E);
+    const menu = $('lib-menu');
+    if (menu && menu.style.display !== 'none') renderLibMenu(E, $('lib-search').value);
+  }
+
+  function buildLibPanel(E) {
+    const p = $('lib-panel');
+    p.innerHTML =
+      `<div class="lora-cats" id="lib-cats"></div>
+       <div class="lora-pick">
+         <input type="text" id="lib-search" class="lora-search" placeholder="搜尋詞庫（名稱）…" autocomplete="off">
+         <div class="lora-menu" id="lib-menu" style="display:none"></div>
+       </div>
+       <div class="lora-current" id="lib-current"></div>
+       <div class="lib-note">選取後正向會填進上方提示詞框（可再編輯），負向於送出時自動套用</div>`;
+    p.dataset.built = '1';
+    const search = $('lib-search'), menu = $('lib-menu');
+    const open = () => { renderLibMenu(E, search.value); menu.style.display = ''; };
+    search.addEventListener('focus', open);
+    search.addEventListener('input', () => { state.lib.page = 0; open(); });
+    document.addEventListener('pointerdown', (e) => {
+      if (!$('lib-panel').contains(e.target)) { menu.style.display = 'none'; hideLoraHover(); }
+    });
+    renderLibCats(E);
+    renderLibCurrent();
+  }
+
+  function renderLibCats(E) {
+    const box = $('lib-cats'); if (!box) return;
+    const counts = state.lib.counts || {};
+    const total = (state.lib.list || []).length;
+    const cats = [['all', '全部', total], ...state.lib.folders.map(f => [f, f, counts[f] || 0])];
+    box.innerHTML = '';
+    for (const [key, label, n] of cats) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'lora-cat' + (state.lib.cat === key ? ' on' : '');
+      b.innerHTML = `${esc(label)}<span class="lora-cat-n">${n}</span>`;
+      b.addEventListener('click', () => {
+        state.lib.cat = key; state.lib.page = 0;
+        renderLibCats(E);
+        renderLibMenu(E, $('lib-search').value);
+        $('lib-menu').style.display = '';
+      });
+      box.appendChild(b);
+    }
+  }
+
+  function renderLibMenu(E, filter) {
+    const menu = $('lib-menu'); if (!menu) return;
+    const list = state.lib.list;
+    if (list === null) { menu.innerHTML = '<div class="lora-empty">載入中…</div>'; return; }
+    if (!list.length) { menu.innerHTML = '<div class="lora-empty">找不到詞庫（資料夾為空或讀不到）</div>'; return; }
+    const q = (filter || '').toLowerCase().trim();
+    const cat = state.lib.cat;
+    let rows = list.filter(l => cat === 'all' || l.folder === cat);
+    if (q) rows = rows.filter(l => l.name.toLowerCase().includes(q) || l.folder.toLowerCase().includes(q));
+    const total = rows.length;
+    if (!total) { menu.innerHTML = '<div class="lora-empty">沒有符合的詞庫</div>'; return; }
+    const pages = Math.ceil(total / LORA_RENDER_CAP);
+    if (state.lib.page >= pages) state.lib.page = pages - 1;
+    if (state.lib.page < 0) state.lib.page = 0;
+    const page = state.lib.page;
+    const shown = rows.slice(page * LORA_RENDER_CAP, page * LORA_RENDER_CAP + LORA_RENDER_CAP);
+    menu.innerHTML = '';
+    for (const l of shown) {
+      const sel = state.lib.selected && state.lib.selected.folder === l.folder && state.lib.selected.file === l.file;
+      const row = document.createElement('div');
+      row.className = 'lora-opt' + (sel ? ' sel' : '');
+      const thumb = l.preview
+        ? `<img class="lora-thumb" src="${libPreviewUrl(l)}" alt="" loading="lazy">`
+        : '<span class="lora-thumb ph"></span>';
+      const badge = cat === 'all' ? `<span class="lora-opt-folder">${esc(l.folder)}</span>` : '';
+      row.innerHTML = `${thumb}<span class="lora-opt-body"><span class="lora-opt-name">${badge}${esc(l.name)}</span></span>`;
+      row.addEventListener('click', () => selectLib(l));
+      if (l.preview) {
+        row.addEventListener('mouseenter', () => showLibHover(l, row));
+        row.addEventListener('mouseleave', hideLoraHover);
+      }
+      menu.appendChild(row);
+    }
+    if (pages > 1) {
+      const nav = document.createElement('div');
+      nav.className = 'lora-pager';
+      nav.innerHTML =
+        `<button type="button" class="lora-page-btn" data-dir="-1"${page === 0 ? ' disabled' : ''}>‹ 上一頁</button>` +
+        `<span class="lora-page-info">第 ${page + 1} / ${pages} 頁 · 共 ${total} 個</span>` +
+        `<button type="button" class="lora-page-btn" data-dir="1"${page >= pages - 1 ? ' disabled' : ''}>下一頁 ›</button>`;
+      nav.querySelectorAll('.lora-page-btn').forEach(btn => btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        state.lib.page = page + (+btn.dataset.dir);
+        renderLibMenu(E, filter);
+        menu.scrollTop = 0;
+      }));
+      menu.appendChild(nav);
+    }
+  }
+
+  async function selectLib(l) {
+    $('lib-menu').style.display = 'none';
+    $('lib-search').value = '';
+    hideLoraHover();
+    try {
+      const res = await fetch('/panel/prompt?cat=' + encodeURIComponent(l.folder) + '&file=' + encodeURIComponent(l.file));
+      const d = await res.json();
+      const pos = [...(d.required || []), ...(d.positive || [])].join(', ');
+      $('prompt').value = pos;                       // 正向填進提示詞框（取代，可再編輯）
+      state.lib.negative = d.negative || [];
+      state.lib.selected = l;
+      log(`詞庫：${l.name} — 正向已填入提示詞框（${(d.positive || []).length} 組），負向 ${state.lib.negative.length} 個待送出套用`, 'info');
+    } catch (e) {
+      log('詞庫讀取失敗：' + e.message, 'err');
+    }
+    renderLibCurrent();
+  }
+
+  function renderLibCurrent() {
+    const box = $('lib-current'); if (!box) return;
+    const l = state.lib.selected;
+    if (!l) { box.innerHTML = '<span class="lora-none">尚未選擇詞庫</span>'; box.classList.remove('has'); return; }
+    const thumb = l.preview ? `<img src="${libPreviewUrl(l)}" alt="">` : '<span class="lora-thumb ph"></span>';
+    box.innerHTML = `${thumb}<span class="lora-cur-name">${esc(l.name)}</span><button type="button" class="lora-clear" title="取消選擇">✕</button>`;
+    box.classList.add('has');
+    box.querySelector('.lora-clear').addEventListener('click', () => {
+      state.lib.selected = null; state.lib.negative = [];
+      renderLibCurrent();
+    });
+  }
+
+  function showLibHover(l, row) {
+    const h = $('lora-hover'); if (!h || !l.preview) return;   // 沿用同一個浮框元素
+    h.innerHTML = `<img src="${libPreviewUrl(l)}" alt="">`;
+    const r = row.getBoundingClientRect(), w = 180;
+    let left = r.right + 10;
+    if (left + w > window.innerWidth) left = r.left - w - 10;
+    h.style.left = Math.max(8, left) + 'px';
+    h.style.top = Math.min(r.top, window.innerHeight - 240) + 'px';
+    h.style.display = 'block';
+  }
+
   function onPickImage(nodeId, file, dropEl) {
     if (!file) return;
     const url = URL.createObjectURL(file);
@@ -944,6 +1121,11 @@
       }
       log(`LoRA：${sel.title}（強度 ${state.lora.strength.toFixed(2)}` +
           `${state.lora.inject && trig ? '，觸發詞 ' + trig : ''}）`, 'info');
+    }
+    // 詞庫：套用選定詞庫的負向到 neg 節點（正向已於選取時填進提示詞框）
+    if (E.promptLib && state.lib.enabled && state.lib.selected && state.lib.negative.length && tpl[nd.neg]) {
+      tpl[nd.neg].inputs.text = state.lib.negative.join(', ');
+      log(`詞庫負向已套用（${state.lib.negative.length} 個）：${state.lib.selected.name}`, 'info');
     }
     log(`送出節點：${Object.keys(tpl).join(', ')}`, 'info');
     // 送出

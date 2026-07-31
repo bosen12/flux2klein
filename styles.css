@@ -1157,8 +1157,9 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-#lora-field { display: flex; flex-direction: column; gap: 0; }
-#lora-panel { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
+#lora-field, #lib-field { display: flex; flex-direction: column; gap: 0; }
+#lora-panel, #lib-panel { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
+.lib-note { font-size: var(--fs-xs); color: var(--text-faint); line-height: 1.5; }
 
 /* 搜尋框 + 下拉選單 */
 .lora-pick { position: relative; }

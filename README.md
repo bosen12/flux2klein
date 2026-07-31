@@ -70,6 +70,12 @@
   並用開關決定要不要把框裡的內容加進提示詞
 - 送出時面板會即時插入一個 `LoraLoader` 節點、把 model/clip 從 checkpoint 改接到它（VAE 不受影響）
 
+### 詞庫（Illustrious 專用）
+- 從 `special_prompts` 的數十個分類夾**單選**一個情境詞庫（共 2232 個），介面與 LoRA 選單同款（分類 chip＋搜尋＋hover `.webp` 預覽＋每頁 80 分頁）
+- 選取後：把該詞庫的 `REQUIRED_POSITIVE + POSITIVE` 以逗號串接**填進正向提示詞框**（可再手動編輯），並記住它的 `NEGATIVE`
+- 送出時自動把該詞庫的 `NEGATIVE` 寫進負向節點
+- 後端用 `ast` **安全解析** `.py`（只取那三個 list，不 import、不執行）
+
 ### 動態背景
 - 整頁 WebGL 流動彩霧背景（Vanta.js FOG），配色自動跟隨當前引擎主題色
 - 函式庫（`three.min.js` + `vanta.fog.min.js`）**已 vendored 在專案內、離線可用**，不需另外安裝
@@ -194,6 +200,8 @@ Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188
 - **增強分支裁剪** — Krea2 和 Illustrious 的增強功能（放大、二次採樣等）透過開關控制：關閉時從 prompt 物件刪除該分支的所有節點，ComfyUI 就不會執行。
 
 - **LoRA 清單端點** — `serve.py` 另外提供兩個面板專屬端點（不轉發給 ComfyUI）：`/panel/loras` 掃多個分類夾（`LORA_FOLDERS`）、回每個 LoRA 的所屬分類、觸發詞與預覽圖檔名；`/panel/lora-preview?folder=…&file=…` 送出預覽圖（分類須在白名單、擋目錄穿越）。LoRA 根目錄可用環境變數 `LORA_ROOT` 覆寫。
+
+- **詞庫端點** — 同樣是面板專屬（不轉發）：`/panel/prompts` 掃 `PROMPTS_ROOT`（`special_prompts`）的分類夾、回每個詞庫的分類/名稱/有無預覽；`/panel/prompt?cat=…&file=…` 用 `ast` 安全解析單一 `.py` 回三個 list；`/panel/prompt-preview?cat=…&file=…` 送 `.webp`。根目錄用 `PROMPTS_ROOT` 覆寫。
 
 ---
 

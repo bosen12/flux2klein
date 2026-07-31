@@ -39,6 +39,9 @@ window.YZ_I = {
     modelConsumers: ['77:75', '79:62', '78:58', '82:14'],
     clipConsumers: ['5', '6', '82:25'],
   },
+  // 詞庫（special_prompts）：選取時正向填進提示詞框，送出時把 negative 寫進
+  // neg 節點（見 MODES.it2i.nodes.neg）。詳見 app.js 的 state.lib。
+  promptLib: true,
   // 各輸出的 PreviewImage 節點（收集圖片做對照）
   outputs: { base: '73', hires: '56', controlnet: '64', seedvr2: '81', sdupscale: '83' },
   compareLabels: { hires: '第二階段', controlnet: 'ControlNet', seedvr2: 'SeedVR2', sdupscale: 'SD 放大' },
