@@ -17,11 +17,12 @@
     running: false,
     // 進度計時
     run: null,
-    // Illustrious 的 LoRA 風格（單選）。list 啟動時抓一次；words 是「表面」複本，
-    // 可增刪、不動 metadata 原始 trainedWords。strength 字面值須與 illustrious.js
-    // 的 lora.defaultStrength 一致（這裡在 const I 宣告前，不能引用 I）。
+    // Illustrious 的 LoRA 風格（單選）。list 啟動時抓一次；text 是「表面」文字框，
+    // 選 LoRA 時帶入其 trainedWords，之後可自由編輯、不動 metadata 原始檔。
+    // strength 字面值須與 illustrious.js 的 lora.defaultStrength 一致
+    //（這裡在 const I 宣告前，不能引用 I）。
     lora: { list: null, loading: false, enabled: false, selected: null,
-            strength: 0.8, words: [], inject: true },
+            strength: 0.8, text: '', inject: true },
   };
 
   // 兩個引擎的品牌與主題資訊
@@ -556,11 +557,10 @@
        </div>
        <div class="lora-words-box">
          <div class="lora-words-head">
-           <span class="lora-words-title">觸發詞 <span class="hint">可刪可加，不影響原始檔</span></span>
+           <span class="lora-words-title">觸發詞 <span class="hint">可自由編輯，不影響原始檔</span></span>
            <label class="lora-inject"><input type="checkbox" id="lora-inject"${state.lora.inject ? ' checked' : ''}><span>加入提示詞</span></label>
          </div>
-         <div class="chips" id="lora-chips"></div>
-         <input type="text" id="lora-chip-add" class="chip-add" placeholder="＋ 新增觸發詞，Enter 確認" autocomplete="off">
+         <textarea id="lora-words" class="lora-words" placeholder="選 LoRA 後自動帶入觸發詞，可自由增刪"></textarea>
        </div>`;
     p.dataset.built = '1';
     if (!document.getElementById('lora-hover')) {
@@ -581,13 +581,7 @@
       $('lora-strength-out').textContent = state.lora.strength.toFixed(2);
     });
     $('lora-inject').addEventListener('change', (e) => { state.lora.inject = e.target.checked; });
-    const add = $('lora-chip-add');
-    add.addEventListener('keydown', (e) => {
-      if (e.key !== 'Enter') return;
-      e.preventDefault();
-      const v = add.value.trim();
-      if (v) { state.lora.words.push(v); add.value = ''; renderLoraWords(); }
-    });
+    $('lora-words').addEventListener('input', (e) => { state.lora.text = e.target.value; });
     renderLoraCurrent();
     renderLoraWords();
   }
@@ -623,7 +617,7 @@
 
   function selectLora(l) {
     state.lora.selected = l;
-    state.lora.words = (l.trainedWords || []).slice();   // 表面複本，之後增刪不動原始 metadata
+    state.lora.text = (l.trainedWords || []).join(', ');   // 帶入觸發詞，之後可自由編輯、不動原始 metadata
     $('lora-menu').style.display = 'none';
     $('lora-search').value = '';
     hideLoraHover();
@@ -639,22 +633,15 @@
     box.innerHTML = `${thumb}<span class="lora-cur-name">${esc(l.title)}</span><button type="button" class="lora-clear" title="取消選擇">✕</button>`;
     box.classList.add('has');
     box.querySelector('.lora-clear').addEventListener('click', () => {
-      state.lora.selected = null; state.lora.words = [];
+      state.lora.selected = null; state.lora.text = '';
       renderLoraCurrent(); renderLoraWords();
     });
   }
 
+  // 把 state.lora.text 同步進文字框（框內容就是要注入的觸發詞，使用者可自由改）
   function renderLoraWords() {
-    const box = $('lora-chips'); if (!box) return;
-    box.innerHTML = '';
-    if (!state.lora.words.length) { box.innerHTML = '<span class="lora-none">無觸發詞</span>'; return; }
-    state.lora.words.forEach((w, i) => {
-      const chip = document.createElement('span');
-      chip.className = 'chip';
-      chip.innerHTML = `<span>${esc(w)}</span><button type="button" title="移除">✕</button>`;
-      chip.querySelector('button').addEventListener('click', () => { state.lora.words.splice(i, 1); renderLoraWords(); });
-      box.appendChild(chip);
-    });
+    const box = $('lora-words'); if (!box) return;
+    box.value = state.lora.text || '';
   }
 
   function showLoraHover(l, row) {
@@ -897,14 +884,14 @@
       };
       for (const id of L.modelConsumers) if (tpl[id]) tpl[id].inputs.model = [nid, 0];
       for (const id of L.clipConsumers) if (tpl[id]) tpl[id].inputs.clip = [nid, 1];
-      // 觸發詞注入正向提示詞（表面清單；使用者可增刪、可關閉）
-      if (state.lora.inject && state.lora.words.length && tpl[nd.prompt]) {
-        const trig = state.lora.words.join(', ');
-        const base = (tpl[nd.prompt].inputs.text || '').trim();
+      // 觸發詞注入正向提示詞（文字框內容；使用者可自由編輯、可關閉）
+      const trig = (state.lora.text || '').trim().replace(/[,\s]+$/, '');
+      if (state.lora.inject && trig && tpl[nd.prompt]) {
+        const base = (tpl[nd.prompt].inputs.text || '').trim().replace(/,\s*$/, '');
         tpl[nd.prompt].inputs.text = base ? base + ', ' + trig : trig;
       }
       log(`LoRA：${sel.title}（強度 ${state.lora.strength.toFixed(2)}` +
-          `${state.lora.inject && state.lora.words.length ? '，觸發詞 ' + state.lora.words.join(', ') : ''}）`, 'info');
+          `${state.lora.inject && trig ? '，觸發詞 ' + trig : ''}）`, 'info');
     }
     log(`送出節點：${Object.keys(tpl).join(', ')}`, 'info');
     // 送出

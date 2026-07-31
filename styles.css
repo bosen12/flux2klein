@@ -1183,26 +1183,15 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .lora-words-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
 .lora-inject { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-dim); cursor: pointer; user-select: none; }
 .lora-inject input { accent-color: var(--accent); }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip {
-  display: inline-flex; align-items: center; gap: 6px;
-  border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
-  padding: 4px 6px 4px 10px; border-radius: 999px; font-size: var(--fs-xs);
-  animation: loraMenuIn var(--dur-2) var(--ease-entrance);
+/* 觸發詞編輯框：跟提示詞框同一種樣式，直接打字增刪 */
+.lora-words {
+  width: 100%; box-sizing: border-box; min-height: 66px; resize: vertical;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--panel-2); color: var(--text);
+  padding: 9px 11px; font-size: var(--fs-sm); font-family: inherit; line-height: 1.5;
+  transition: border-color var(--dur-1), box-shadow var(--dur-1), background var(--dur-1);
 }
-.chip button {
-  border: none; background: transparent; cursor: pointer; color: var(--text-faint);
-  font-size: 12px; line-height: 1; padding: 2px; border-radius: 50%;
-  transition: color var(--dur-1), background var(--dur-1);
-}
-.chip button:hover { color: #fff; background: color-mix(in srgb, var(--accent) 60%, transparent); }
-.chip-add {
-  width: 100%; box-sizing: border-box;
-  border: 1px dashed var(--border-strong); border-radius: var(--radius-sm);
-  background: transparent; color: var(--text); padding: 7px 10px; font-size: var(--fs-xs); font-family: inherit;
-  transition: border-color var(--dur-1), background var(--dur-1);
-}
-.chip-add:focus { outline: none; border-style: solid; border-color: var(--accent); background: var(--panel-2); }
+.lora-words:focus { outline: none; border-color: var(--accent); background: var(--panel); box-shadow: var(--focus-ring); }
 .lora-none { font-size: var(--fs-xs); color: var(--text-faint); }
 
 /* hover 浮出的預覽小圖（不用太大） */
