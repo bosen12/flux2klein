@@ -479,6 +479,12 @@ def do_generate(rel: str, seed: int | None = None, in_batch: bool = False):
 # HTTP handler
 # ---------------------------------------------------------------------------
 class Handler(BaseHTTPRequestHandler):
+    # HTTP/1.1 → 開 keep-alive：瀏覽器重用連線，不再每張縮圖/圖片都重開 TCP 握手。
+    # 這是跟 Jellyfin/Stash 載入順暢度最大的差別（它們是 keep-alive/HTTP2）。所有回應
+    # 都有 Content-Length（304 無 body），符合 keep-alive 的前提。
+    protocol_version = "HTTP/1.1"
+    timeout = 30          # 閒置的 keep-alive 連線 30s 後關掉，不長期佔著執行緒
+
     def log_message(self, format, *args):
         pass
 
@@ -751,6 +757,8 @@ def main():
     print("[serve   ] 若手機連不上:Windows 防火牆首次可能跳出提示,請允許 Python 存取")
 
     srv = ThreadingHTTPServer((bind_host, port), Handler)
+    # 開機就先在背景把詞庫掃一遍暖快取，第一次開頁的 /api/libs 才不用等 ~1s 掃描
+    threading.Thread(target=lambda: scan_libraries(), daemon=True).start()
     if not args.no_open:
         try:
             import webbrowser
