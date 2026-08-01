@@ -755,12 +755,11 @@ def main():
     except Exception:
         pass
     cfg = load_config()
-    # 詞庫資料夾：config > gsp 預設。設定後 scan/生成都指向這裡。
-    if cfg.get("special_dir"):
-        apply_special_dir(cfg["special_dir"])
 
     ap = argparse.ArgumentParser(description="Special Prompts 詞庫可視化管理 UI")
     # 預設值一律先吃 config，再讓 CLI 覆寫（省略欄位就用內建預設）
+    ap.add_argument("--special-dir", default=cfg.get("special_dir"),
+                    help="詞庫資料夾（覆寫 config 的 special_dir；不同 bat 可指不同路徑）")
     ap.add_argument("--host", default=cfg.get("host", "0.0.0.0"),
                     help="綁定介面(預設 0.0.0.0=所有介面;auto=只綁 Tailscale;127.0.0.1=僅本機)")
     ap.add_argument("--port", type=int, default=int(cfg.get("port", 7860)))
@@ -772,6 +771,10 @@ def main():
                     help="同時最多跑幾張(預設 2)")
     ap.add_argument("--no-open", action="store_true", help="啟動時不自動開瀏覽器")
     args = ap.parse_args()
+
+    # 詞庫資料夾：CLI --special-dir > config > gsp 預設。設定後 scan/生成都指向這裡。
+    if args.special_dir:
+        apply_special_dir(args.special_dir)
 
     if not SPECIAL_DIR.is_dir():
         print(f"[warn] 找不到詞庫資料夾:{SPECIAL_DIR}")
