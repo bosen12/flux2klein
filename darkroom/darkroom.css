@@ -260,7 +260,7 @@ input[type=text]::placeholder { color: var(--faint); }
 
 .tarot-cards { display: flex; gap: 16px; justify-content: center; align-items: center; flex-wrap: wrap; perspective: 1500px; }
 .tarot-card {
-  width: clamp(120px, 15vw, 158px); aspect-ratio: 2 / 3.35; cursor: pointer; position: relative;
+  width: clamp(120px, 15vw, 158px); cursor: pointer; position: relative;
   transform: translateY(var(--arc-y, 0)) rotate(var(--arc-rot, 0deg));
   animation: tarotDeal var(--d-enter) var(--ease-out) both;
 }
@@ -269,15 +269,18 @@ input[type=text]::placeholder { color: var(--faint); }
   to   { opacity: 1; transform: translateY(var(--arc-y, 0)) rotate(var(--arc-rot, 0deg)); }
 }
 .tarot-inner {
-  position: absolute; inset: 0; transform-style: preserve-3d;
+  position: relative; transform-style: preserve-3d;   /* 相對定位：高度由牌面（正方圖+文字）決定 */
   transition: transform .62s var(--ease-out);
 }
 .tarot-card.revealed .tarot-inner { transform: rotateY(180deg); }
 .tarot-back, .tarot-front {
-  position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  backface-visibility: hidden; -webkit-backface-visibility: hidden;
   border-radius: 13px; overflow: hidden; border: 1px solid var(--line-2);
   box-shadow: 0 12px 30px -10px rgba(0,0,0,.6);
 }
+/* 牌面在流內定尺寸；牌背絕對定位疊上去、同尺寸 */
+.tarot-front { position: relative; }
+.tarot-back { position: absolute; inset: 0; }
 /* 牌背：暗房琥珀神祕紋 */
 .tarot-back {
   display: grid; place-items: center;
@@ -295,8 +298,8 @@ input[type=text]::placeholder { color: var(--faint); }
 }
 /* 牌面：預覽圖 + 名稱 */
 .tarot-front { transform: rotateY(180deg); background: var(--panel); display: flex; flex-direction: column; }
-.tarot-front img { width: 100%; flex: 1; min-height: 0; object-fit: cover; display: block; }
-.tarot-noimg { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+.tarot-front img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; }   /* 正方形圖 */
+.tarot-noimg { aspect-ratio: 1 / 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
                gap: 6px; color: var(--faint); font-size: 12px; background: var(--sunk); }
 .tarot-noimg svg { width: 28px; height: 28px; opacity: .5; }
 .tarot-name { padding: 8px 9px 2px; font-size: 12.5px; font-weight: 600; line-height: 1.3;
