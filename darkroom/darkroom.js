@@ -448,14 +448,10 @@ function drawTarot() {
   const picks = sampleN(ALL, Math.min(5, ALL.length));
   const wrap = $('tarot-cards');
   wrap.innerHTML = '';
-  const n = picks.length, mid = (n - 1) / 2;
   picks.forEach((it, i) => {
     const card = document.createElement('div');
     card.className = 'tarot-card';
-    const off = i - mid;                                  // 中間 0、兩側 ±
-    card.style.setProperty('--arc-y', (Math.abs(off) * 10).toFixed(1) + 'px');   // 微弧：兩側略低
-    card.style.setProperty('--arc-rot', (off * 4).toFixed(1) + 'deg');
-    card.style.animationDelay = REDUCE ? '0ms' : (i * 90) + 'ms';                 // 發牌 stagger
+    card.style.animationDelay = REDUCE ? '0ms' : (i * 90) + 'ms';                 // 發牌 stagger（平行排列，無弧度）
     const relEnc = encodeURIComponent(it.rel);
     const face = it.has_image
       ? `<img loading="lazy" decoding="async" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="">`
@@ -463,11 +459,15 @@ function drawTarot() {
     card.innerHTML =
       `<div class="tarot-inner">
          <div class="tarot-back"><span class="tarot-emblem">✦</span></div>
-         <div class="tarot-front">${face}<div class="tarot-name"></div><div class="tarot-folder"></div></div>
+         <div class="tarot-front">${face}<div class="tarot-name"></div><div class="tarot-folder"></div><div class="tarot-glare"></div></div>
        </div>`;
     card.querySelector('.tarot-name').textContent = it.name;
     card.querySelector('.tarot-folder').textContent = it.folder || '(根目錄)';
     card.addEventListener('click', () => { closeTarot(); openModal(it.rel); });
+    if (!REDUCE) {                                        // 3D 傾斜（參考 Aceternity 3D card）
+      card.addEventListener('mousemove', e => tiltCard(card, e));
+      card.addEventListener('mouseleave', () => { card.style.transform = ''; });
+    }
     wrap.appendChild(card);
   });
   $('tarot').classList.add('open');
@@ -476,6 +476,22 @@ function drawTarot() {
   if (REDUCE) { cards.forEach(c => c.classList.add('revealed')); return; }
   const dealDone = n * 90 + 360;
   cards.forEach((c, i) => setTimeout(() => c.classList.add('revealed'), dealDone + i * 150));
+}
+
+// 卡片隨滑鼠 3D 傾斜（參考 Aceternity 3D card）：依游標相對卡片中心算 rotateX/Y，
+// 並讓光澤跟著游標。翻牌後牌面已非鏡像，傾斜方向自然。
+function tiltCard(card, e) {
+  const r = card.getBoundingClientRect();
+  const px = (e.clientX - r.left) / r.width - 0.5;    // -0.5 ~ 0.5
+  const py = (e.clientY - r.top) / r.height - 0.5;
+  const MAX = 11;
+  card.style.transform =
+    `rotateX(${(-py * MAX).toFixed(2)}deg) rotateY(${(px * MAX).toFixed(2)}deg) scale(1.06)`;
+  const g = card.querySelector('.tarot-glare');
+  if (g) {
+    g.style.setProperty('--gx', ((px + 0.5) * 100).toFixed(1) + '%');
+    g.style.setProperty('--gy', ((py + 0.5) * 100).toFixed(1) + '%');
+  }
 }
 
 function closeTarot() { $('tarot').classList.remove('open'); }

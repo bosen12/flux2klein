@@ -258,29 +258,35 @@ input[type=text]::placeholder { color: var(--faint); }
 .tarot-actions { display: flex; gap: 8px; margin-left: auto; }
 .tarot-hint { font-family: var(--mono); font-size: 11px; color: var(--faint); letter-spacing: .5px; }
 
-.tarot-cards { display: flex; gap: 16px; justify-content: center; align-items: center; flex-wrap: wrap; perspective: 1500px; }
+.tarot-cards { display: flex; gap: 18px; justify-content: center; align-items: center; flex-wrap: wrap; perspective: 1100px; }
 .tarot-card {
-  width: clamp(120px, 15vw, 158px); cursor: pointer; position: relative;
-  transform: translateY(var(--arc-y, 0)) rotate(var(--arc-rot, 0deg));
-  animation: tarotDeal var(--d-enter) var(--ease-out) both;
+  width: clamp(150px, 17vw, 196px); cursor: pointer; position: relative;
+  transform-style: preserve-3d;                  /* 讓卡片的 3D 傾斜與內層翻牌都吃到 perspective */
+  /* backwards：發牌動畫結束後回到基準（transform:none），hover 的滑鼠傾斜（JS 內嵌
+     transform）才不會被 animation 的 fill 蓋掉。平行排列、無弧度。 */
+  animation: tarotDeal var(--d-enter) var(--ease-out) backwards;
+  transition: transform .13s var(--ease-out);    /* 傾斜跟手；離開時滑順歸位 */
+  z-index: 1;
 }
+.tarot-card:hover { z-index: 5; }   /* 傾斜/放大交給 JS（tiltCard），這裡只抬層級避免被鄰卡蓋住 */
 @keyframes tarotDeal {
-  from { opacity: 0; transform: translateY(46px) scale(.86) rotate(0deg); }
-  to   { opacity: 1; transform: translateY(var(--arc-y, 0)) rotate(var(--arc-rot, 0deg)); }
+  from { opacity: 0; transform: translateY(46px) scale(.86); }
+  to   { opacity: 1; transform: none; }
 }
 .tarot-inner {
   position: relative; transform-style: preserve-3d;   /* 相對定位：高度由牌面（正方圖+文字）決定 */
+  transform: rotateY(180deg);                         /* 預設面朝下（顯示牌背） */
   transition: transform .62s var(--ease-out);
 }
-.tarot-card.revealed .tarot-inner { transform: rotateY(180deg); }
+.tarot-card.revealed .tarot-inner { transform: rotateY(0deg); }   /* 翻開：牌面朝上、且非鏡像 */
 .tarot-back, .tarot-front {
   backface-visibility: hidden; -webkit-backface-visibility: hidden;
   border-radius: 13px; overflow: hidden; border: 1px solid var(--line-2);
   box-shadow: 0 12px 30px -10px rgba(0,0,0,.6);
 }
-/* 牌面在流內定尺寸；牌背絕對定位疊上去、同尺寸 */
+/* 牌面在流內定尺寸（不旋轉＝翻開後非鏡像）；牌背絕對定位疊上、旋轉 180 藏在背面 */
 .tarot-front { position: relative; }
-.tarot-back { position: absolute; inset: 0; }
+.tarot-back { position: absolute; inset: 0; transform: rotateY(180deg); }
 /* 牌背：暗房琥珀神祕紋 */
 .tarot-back {
   display: grid; place-items: center;
@@ -296,9 +302,17 @@ input[type=text]::placeholder { color: var(--faint); }
   border: 2px solid color-mix(in srgb, var(--amber) 50%, transparent);
   box-shadow: 0 0 18px rgba(234,173,87,.35), inset 0 0 12px rgba(234,173,87,.25);
 }
-/* 牌面：預覽圖 + 名稱 */
-.tarot-front { transform: rotateY(180deg); background: var(--panel); display: flex; flex-direction: column; }
+/* 牌面：預覽圖 + 名稱（不旋轉，翻開後正向非鏡像） */
+.tarot-front { background: var(--panel); display: flex; flex-direction: column; }
 .tarot-front img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; }   /* 正方形圖 */
+/* 光澤：跟著游標的高光（Aceternity 風），hover 時淡入 */
+.tarot-glare {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0;
+  transition: opacity var(--d-ui) var(--ease-out); mix-blend-mode: screen;
+  background: radial-gradient(circle at var(--gx, 50%) var(--gy, 50%),
+              rgba(255,240,210,.32), transparent 42%);
+}
+.tarot-card:hover .tarot-glare { opacity: 1; }
 .tarot-noimg { aspect-ratio: 1 / 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
                gap: 6px; color: var(--faint); font-size: 12px; background: var(--sunk); }
 .tarot-noimg svg { width: 28px; height: 28px; opacity: .5; }
