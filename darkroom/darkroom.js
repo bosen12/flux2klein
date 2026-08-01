@@ -26,8 +26,11 @@ async function loadAll(force = false) {
   }
   buildRail();
   render();
+  // 只對「正在跑」的起輪詢（最多 = 併發數）。批次會把上萬個標成 queued，若也
+  // 對 queued 起輪詢會瞬間開幾萬個 /api/status 迴圈灌爆瀏覽器 → 白畫面。批次進度
+  // 由 pollBatch（單一 batch_status 輪詢）＋ running_rels 處理，queued 不需個別輪詢。
   for (const it of ALL)
-    if (it.job && (it.job.status === 'queued' || it.job.status === 'running')) pollStatus(it.rel);
+    if (it.job && it.job.status === 'running') pollStatus(it.rel);
 }
 
 function folderStats() {
