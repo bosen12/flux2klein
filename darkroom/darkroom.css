@@ -174,6 +174,7 @@ input[type=text]::placeholder { color: var(--faint); }
         grid-template-columns: repeat(auto-fill, minmax(184px, 1fr)); }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
         overflow: hidden; display: flex; flex-direction: column;
+        touch-action: manipulation; -webkit-tap-highlight-color: transparent;
         transition: border-color var(--d-micro) var(--ease-out),
                     transform var(--d-micro) var(--ease-out),
                     box-shadow var(--d-micro) var(--ease-out);
@@ -185,10 +186,16 @@ input[type=text]::placeholder { color: var(--faint); }
 .card.reveal { opacity: 0; transform: translateY(12px); }
 .card.reveal.in { opacity: 1; transform: none;
   transition: opacity var(--d-enter) var(--ease-out), transform var(--d-enter) var(--ease-out); }
-.thumb { aspect-ratio: 1/1; background: var(--sunk); cursor: pointer; overflow: hidden;
+/* 未載入時給一個柔和的斜向底（非純黑），切資料夾就不會「黑一下」 */
+.thumb { aspect-ratio: 1/1; cursor: pointer; overflow: hidden;
+         background: linear-gradient(135deg, #1b1d27, var(--sunk));
          display: flex; align-items: center; justify-content: center; position: relative; }
+/* 縮圖：預設 opacity 1（絕不會因事件沒觸發而隱形），載入完成（.ld）時才「播一次」
+   淡入動畫。未載入時 img 無像素、透出底下的柔和底，不是黑框。 */
 .thumb img { width: 100%; height: 100%; object-fit: cover; display: block;
              transition: transform var(--d-ui) var(--ease-out); }
+.thumb img.ld { animation: thumbFade var(--d-ui) var(--ease-out); }
+@keyframes thumbFade { from { opacity: 0; } to { opacity: 1; } }
 .card:hover .thumb img { transform: scale(1.04); }
 .thumb .empty { display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--faint); font-size: 12px; }
 .thumb .empty svg { width: 26px; height: 26px; opacity: .5; }
@@ -249,6 +256,7 @@ input[type=text]::placeholder { color: var(--faint); }
   align-items: center; justify-content: center; padding: 24px;
   background: radial-gradient(circle at 50% 30%, rgba(35,30,18,.6), rgba(8,8,11,.86));
   backdrop-filter: blur(7px);
+  overscroll-behavior: contain; overflow: auto;   /* 手機捲動不穿透到背後清單 */
 }
 .tarot-overlay.open { display: flex; animation: fadeIn var(--d-pop) var(--ease-out); }
 .tarot-stage { width: 100%; max-width: 920px; display: flex; flex-direction: column; align-items: center; gap: 20px; }
@@ -263,6 +271,7 @@ input[type=text]::placeholder { color: var(--faint); }
 @media (max-width: 760px) { .tarot-cards { grid-template-columns: repeat(2, auto); } }
 .tarot-card {
   width: clamp(150px, 17vw, 196px); cursor: pointer; position: relative;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;   /* 手機：防雙擊縮放、去點按高亮 */
   transform-style: preserve-3d;                  /* 讓卡片的 3D 傾斜與內層翻牌都吃到 perspective */
   /* backwards：發牌動畫結束後回到基準（transform:none），hover 的滑鼠傾斜（JS 內嵌
      transform）才不會被 animation 的 fill 蓋掉。平行排列、無弧度。 */
@@ -329,4 +338,8 @@ input[type=text]::placeholder { color: var(--faint); }
   filter: brightness(1.05);
 }
 
-@media (max-width: 640px) { .tarot-cards { gap: 10px; } }
+/* 手機：一次一張，把單張放大、置中，好按好看 */
+@media (max-width: 640px) {
+  .tarot-cards { gap: 10px; }
+  .tarot-card { width: min(72vw, 300px); }
+}

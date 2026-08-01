@@ -180,7 +180,7 @@ function cardOf(it) {
   el.dataset.rel = it.rel;
   const relEnc = encodeURIComponent(it.rel);
   const thumbHtml = it.has_image
-    ? `<span class="badge has">已生成</span><img loading="lazy" decoding="async" width="360" height="360" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="">`
+    ? `<span class="badge has">已生成</span><img loading="lazy" decoding="async" width="360" height="360" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="" onload="this.classList.add('ld')" onerror="this.classList.add('ld')">`
     : `<span class="badge">未生成</span><div class="empty">${ICON_EMPTY}<span>尚無圖片</span></div>`;
   el.innerHTML = `
     <div class="thumb">${thumbHtml}</div>
@@ -444,10 +444,16 @@ function sampleN(arr, n) {
   return a.slice(0, n);
 }
 
+const CN_NUM = ['零', '一', '二', '三', '四', '五', '六', '七', '八'];
+const isMobile = () => matchMedia('(max-width: 640px)').matches || matchMedia('(pointer: coarse)').matches;
+
 function drawTarot() {
   if (!ALL.length) return;
-  const picks = sampleN(ALL, Math.min(8, ALL.length));   // 抽 8 張（上下各 4）
+  const want = isMobile() ? 1 : 8;                       // 手機一次一張，桌面 8 張（4+4）
+  const picks = sampleN(ALL, Math.min(want, ALL.length));
   const n = picks.length;
+  const title = document.querySelector('.tarot-title');
+  if (title) title.textContent = `✦ 抽選${CN_NUM[n] || n}張 ✦`;
   const wrap = $('tarot-cards');
   wrap.innerHTML = '';
   picks.forEach((it, i) => {
@@ -455,8 +461,9 @@ function drawTarot() {
     card.className = 'tarot-card';
     card.style.animationDelay = REDUCE ? '0ms' : (i * 90) + 'ms';                 // 發牌 stagger（平行排列，無弧度）
     const relEnc = encodeURIComponent(it.rel);
+    // 抽卡的牌面圖是「上方可見」的少數幾張 → 直接載入（不 lazy），翻牌前才不會空白
     const face = it.has_image
-      ? `<img loading="lazy" decoding="async" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="">`
+      ? `<img decoding="async" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="">`
       : `<div class="tarot-noimg">${ICON_EMPTY}<span>尚無圖</span></div>`;
     card.innerHTML =
       `<div class="tarot-inner">
@@ -477,7 +484,22 @@ function drawTarot() {
   const cards = [...wrap.children];
   if (REDUCE) { cards.forEach(c => c.classList.add('revealed')); return; }
   const dealDone = n * 90 + 360;
-  cards.forEach((c, i) => setTimeout(() => c.classList.add('revealed'), dealDone + i * 150));
+  const startT = performance.now();
+  cards.forEach((c, i) => {
+    const minAt = dealDone + i * 150;                    // 發牌時序
+    const reveal = () => {
+      const wait = Math.max(0, minAt - (performance.now() - startT));
+      setTimeout(() => c.classList.add('revealed'), wait);
+    };
+    // 翻牌前先確保圖已載入，避免翻開是空白（無圖的卡直接照時序翻）
+    const img = c.querySelector('.tarot-front img');
+    if (!img || img.complete) { reveal(); return; }
+    let fired = false;
+    const go = () => { if (!fired) { fired = true; reveal(); } };
+    img.addEventListener('load', go, { once: true });
+    img.addEventListener('error', go, { once: true });
+    setTimeout(go, 3000);                                // 保險：最多等 3s 就翻，不讓慢圖卡住
+  });
 }
 
 // 卡片隨滑鼠 3D 傾斜（參考 Aceternity 3D card）：依游標相對卡片中心算 rotateX/Y，
