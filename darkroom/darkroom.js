@@ -431,6 +431,13 @@ async function launchBatch(scope, regenerate) {
     alert(regenerate ? '目前範圍沒有可生成的項目' : '目前範圍沒有缺圖的項目');
     return;
   }
+  // 補缺少：打亂順序（不從頭跑到尾，每次補到的是隨機分佈的詞庫）
+  if (!regenerate) {
+    for (let i = rels.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [rels[i], rels[j]] = [rels[j], rels[i]];
+    }
+  }
   const scopeTxt = scope === 'all' ? '全部詞庫' : (SEARCH ? '搜尋結果' : '此資料夾');
   const modeTxt = regenerate ? '重新生成(會覆蓋既有圖)' : '補齊缺少的';
   if (!confirm(`${scopeTxt} · ${modeTxt}\n共 ${rels.length} 張,將以每次 2 張並行處理,可能耗時很久。確定?`)) return;
