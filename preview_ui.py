@@ -146,6 +146,10 @@ THUMB_QUALITY = 72
 THUMB_DIR = Path(__file__).resolve().parent / ".thumb_cache"
 _thumb_locks: dict[str, threading.Lock] = {}
 _thumb_locks_guard = threading.Lock()
+# 併發上限:伺服器是多執行緒,瀏覽時瀏覽器會同時要一堆縮圖,若每個都馬上用 PIL
+# 縮放(LANCZOS+webp 編碼)會把所有 CPU 核心塞滿(實測 CPU 一直 55%+/溫度飆高)。
+# 用 semaphore 把「同時現場生成」的張數壓到 2,快取命中的不受限、照樣快。
+_thumb_gen_sem = threading.Semaphore(2)
 
 
 def _thumb_lock(key: str) -> threading.Lock:
@@ -176,11 +180,14 @@ def make_thumb(src: Path) -> tuple[bytes, str]:
     with _thumb_lock(etag):
         if cache_file.is_file():  # 可能剛被別的執行緒建好
             return cache_file.read_bytes(), '"' + etag + '"'
-        with Image.open(src) as im:
-            im = im.convert("RGB")
-            im.thumbnail((THUMB_MAX, THUMB_MAX), Image.LANCZOS)
-            buf = io.BytesIO()
-            im.save(buf, format="WEBP", quality=THUMB_QUALITY, method=4)
+        # 只有「真的要現場生成」才佔用併發額度;快取命中在上面就回了、不進這裡。
+        # method=1 比預設 4 快很多、檔案只大一點點(縮圖不在意)。
+        with _thumb_gen_sem:
+            with Image.open(src) as im:
+                im = im.convert("RGB")
+                im.thumbnail((THUMB_MAX, THUMB_MAX), Image.LANCZOS)
+                buf = io.BytesIO()
+                im.save(buf, format="WEBP", quality=THUMB_QUALITY, method=1)
         data = buf.getvalue()
         try:
             cache_file.write_bytes(data)
