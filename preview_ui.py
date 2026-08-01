@@ -86,6 +86,12 @@ def apply_special_dir(path_str: str):
     gsp.SPECIAL_DIR = p
 
 
+def plog(msg: str):
+    """主控台 log：帶時間戳、立即 flush，讓 bat 視窗看得到即時進度。
+    HTTP 請求那種雜訊仍靜音（Handler.log_message），只印生成/批次這類有用的事件。"""
+    print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
+
+
 # ---------------------------------------------------------------------------
 # 前端靜態檔（拆成 darkroom/ 資料夾，跟主面板一樣分 html/css/js，不再內嵌字串）
 # ---------------------------------------------------------------------------
@@ -294,6 +300,8 @@ def do_batch(rels: list[str]):
             running=True, stop=False, total=len(rels),
             done=0, ok=0, fail=0, running_rels=[],
         )
+    total = len(rels)
+    plog(f"[batch] 開始 · 共 {total} 張 · 併發 {STATE['concurrency']}")
     idx = {"i": 0}
     idx_lock = threading.Lock()
 
@@ -309,7 +317,7 @@ def do_batch(rels: list[str]):
             with STATE["batch_lock"]:
                 STATE["batch"]["running_rels"].append(rel)
             try:
-                do_generate(rel)
+                do_generate(rel, in_batch=True)
             finally:
                 job = get_job(rel)
                 with STATE["batch_lock"]:
@@ -321,6 +329,9 @@ def do_batch(rels: list[str]):
                         STATE["batch"]["ok"] += 1
                     else:
                         STATE["batch"]["fail"] += 1
+                    done, ok, fail = STATE["batch"]["done"], STATE["batch"]["ok"], STATE["batch"]["fail"]
+                tag = "OK " if job.get("status") == "done" else "ERR"
+                plog(f"[batch] {done}/{total} ok={ok} fail={fail} · {tag} {rel} · {job.get('message', '')}")
 
     n = max(1, int(STATE["concurrency"]))
     threads = [threading.Thread(target=worker, daemon=True) for _ in range(n)]
@@ -328,15 +339,21 @@ def do_batch(rels: list[str]):
         t.start()
     for t in threads:
         t.join()
+    b = get_batch()
     set_batch(running=False, running_rels=[])
+    stopped = b.get("stop")
+    plog(f"[batch] {'已停止' if stopped else '完成'} · {b.get('done')}/{total} · ok {b.get('ok')} · fail {b.get('fail')}")
 
 
-def do_generate(rel: str, seed: int | None = None):
+def do_generate(rel: str, seed: int | None = None, in_batch: bool = False):
     if not STATE["comfy_base"]:
         set_job(rel, "error", "ComfyUI 未連線")
+        if not in_batch:
+            plog(f"[gen] ERR {rel} — ComfyUI 未連線")
         return
     with STATE["gen_sem"]:
         try:
+            plog(f"[gen] ▶ 生成中 {rel}")   # 即時顯示現在在處理哪個詞庫
             set_job(rel, "running", "載入詞庫...")
             py = py_of(rel)
             req, pos, neg = load_lib(py)
@@ -375,9 +392,11 @@ def do_generate(rel: str, seed: int | None = None):
                 "done",
                 f"完成 · {dt:.1f}s · {len(img_bytes)//1024}KB · seed={seed}",
             )
+            if not in_batch:   # 批次的每張進度由 do_batch 統一印，避免重複
+                plog(f"[gen] OK  {rel}  {dt:.1f}s  {len(img_bytes)//1024}KB  seed={seed}")
         except Exception as e:
             set_job(rel, "error", f"{type(e).__name__}: {e}")
-            traceback.print_exc()
+            plog(f"[gen] ERR {rel}  {type(e).__name__}: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -554,6 +573,11 @@ class Handler(BaseHTTPRequestHandler):
 # main
 # ---------------------------------------------------------------------------
 def main():
+    # 行緩衝：讓 log 即時出現，就算 bat 把輸出導向檔案也不會卡在緩衝區
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except Exception:
+        pass
     cfg = load_config()
     # 詞庫資料夾：config > gsp 預設。設定後 scan/生成都指向這裡。
     if cfg.get("special_dir"):
