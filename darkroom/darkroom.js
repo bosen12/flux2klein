@@ -509,9 +509,10 @@ const CN_NUM = ['零', '一', '二', '三', '四', '五', '六', '七', '八'];
 const isMobile = () => matchMedia('(max-width: 640px)').matches || matchMedia('(pointer: coarse)').matches;
 
 function drawTarot() {
-  if (!ALL.length) return;
-  const want = isMobile() ? 1 : 8;                       // 手機一次一張，桌面 8 張（4+4）
-  const picks = sampleN(ALL, Math.min(want, ALL.length));
+  const pool = ALL.filter(x => x.has_image);             // 只抽有 webp（旁邊有圖）的詞庫
+  if (!pool.length) { alert('目前沒有任何已生成預覽圖的詞庫可抽'); return; }
+  const want = isMobile() ? 1 : 8;                        // 手機一次一張，桌面 8 張（4+4）
+  const picks = sampleN(pool, Math.min(want, pool.length));
   const n = picks.length;
   const title = document.querySelector('.tarot-title');
   if (title) title.textContent = `✦ 抽選${CN_NUM[n] || n}張 ✦`;
