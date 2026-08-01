@@ -189,12 +189,16 @@ def make_thumb(src: Path) -> tuple[bytes, str]:
         # 只有「真的要現場生成」才佔用併發額度;快取命中在上面就回了、不進這裡。
         # method=1 比預設 4 快很多、檔案只大一點點(縮圖不在意)。
         with _thumb_gen_sem:
+            t0 = time.time()
+            plog(f"[thumb] Pillow 縮圖 {src.parent.name}/{src.name}")
             with Image.open(src) as im:
                 im = im.convert("RGB")
                 im.thumbnail((THUMB_MAX, THUMB_MAX), Image.LANCZOS)
                 buf = io.BytesIO()
                 im.save(buf, format="WEBP", quality=THUMB_QUALITY, method=1)
-        data = buf.getvalue()
+            data = buf.getvalue()
+            plog(f"[thumb] 完成 {src.parent.name}/{src.name}  {time.time()-t0:.2f}s  {len(data)//1024}KB")
+        # data 已在上面取得
         try:
             cache_file.write_bytes(data)
         except OSError:
