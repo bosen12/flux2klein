@@ -35,8 +35,20 @@ function folderStats() {
     if (!map.has(f)) map.set(f, { name: f, total: 0, have: 0 });
     const s = map.get(f); s.total++; if (x.has_image) s.have++;
   }
-  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-Hant'));
+  // 有數字前綴的照數值排（9 < 10 < 100，不會像字串序把 100 排到 99 前）；
+  // 沒數字前綴的（如 _tools）排在後面、彼此照名稱序。
+  const numOf = s => { const m = /^(\d+)/.exec(s); return m ? +m[1] : null; };
+  const arr = [...map.values()].sort((a, b) => {
+    const na = numOf(a.name), nb = numOf(b.name);
+    if (na !== null && nb !== null) return na - nb;
+    if (na !== null) return -1;
+    if (nb !== null) return 1;
+    return a.name.localeCompare(b.name, 'zh-Hant', { numeric: true });
+  });
+  if (RAIL_DESC) arr.reverse();
+  return arr;
 }
+let RAIL_DESC = localStorage.getItem('yz-rail-desc') === '1';   // 資料夾排序方向（預設升冪）
 
 let _railSig = '';
 function buildRail() {
@@ -348,6 +360,17 @@ $('search').oninput = e => {
 };
 $('rescan').onclick = () => loadAll(true);
 $('menu-btn').onclick = () => $('rail').classList.toggle('open');
+// 資料夾排序方向切換（升冪 ↑ / 降冪 ↓），記住選擇
+function updateRailSortLabel() {
+  const b = $('rail-sort'); if (b) b.textContent = RAIL_DESC ? '降冪 ↓' : '升冪 ↑';
+}
+updateRailSortLabel();
+$('rail-sort').onclick = () => {
+  RAIL_DESC = !RAIL_DESC;
+  localStorage.setItem('yz-rail-desc', RAIL_DESC ? '1' : '0');
+  updateRailSortLabel();
+  buildRail();
+};
 
 let railTimer;
 $('folder-search').oninput = e => {
