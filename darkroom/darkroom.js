@@ -445,7 +445,8 @@ function sampleN(arr, n) {
 
 function drawTarot() {
   if (!ALL.length) return;
-  const picks = sampleN(ALL, Math.min(5, ALL.length));
+  const picks = sampleN(ALL, Math.min(8, ALL.length));   // 抽 8 張（上下各 4）
+  const n = picks.length;
   const wrap = $('tarot-cards');
   wrap.innerHTML = '';
   picks.forEach((it, i) => {

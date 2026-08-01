@@ -258,7 +258,9 @@ input[type=text]::placeholder { color: var(--faint); }
 .tarot-actions { display: flex; gap: 8px; margin-left: auto; }
 .tarot-hint { font-family: var(--mono); font-size: 11px; color: var(--faint); letter-spacing: .5px; }
 
-.tarot-cards { display: flex; gap: 18px; justify-content: center; align-items: center; flex-wrap: wrap; perspective: 1100px; }
+.tarot-cards { display: grid; grid-template-columns: repeat(4, auto); justify-content: center;
+               gap: 18px; perspective: 1100px; }   /* 4 欄 → 8 張自動排成上下各 4 */
+@media (max-width: 760px) { .tarot-cards { grid-template-columns: repeat(2, auto); } }
 .tarot-card {
   width: clamp(150px, 17vw, 196px); cursor: pointer; position: relative;
   transform-style: preserve-3d;                  /* 讓卡片的 3D 傾斜與內層翻牌都吃到 perspective */
