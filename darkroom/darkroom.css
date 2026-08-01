@@ -209,18 +209,29 @@ input[type=text]::placeholder { color: var(--faint); }
          padding: 2px 7px; border-radius: 20px; background: rgba(19,19,24,.82); backdrop-filter: blur(4px);
          border: 1px solid var(--line); color: var(--dim); }
 .badge.has { color: var(--amber); border-color: rgba(230,163,74,.4); }
-.card-body { padding: 9px 11px 4px; }
-.card-name { font-size: 12.5px; font-weight: 550; word-break: break-all; line-height: 1.35; }
+.card-body { padding: 9px 11px 10px; }
+.card-name { font-size: 12.5px; font-weight: 550; line-height: 1.35;
+             overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-all; }
 .card-folder { font-family: var(--mono); font-size: 10.5px; color: var(--faint); margin-top: 3px; }
-.status { font-size: 10.5px; padding: 3px 11px 0; min-height: 15px; font-family: var(--mono); color: var(--faint);
-          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status { font-size: 10.5px; padding: 0 11px; font-family: var(--mono); color: var(--faint);
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-height: 0; transition: max-height var(--d-ui) var(--ease-out); }
+.status:not(:empty) { max-height: 18px; padding-bottom: 9px; }   /* 沒狀態時不占高度，有才展開 */
 .status.queued, .status.running { color: var(--run); }
 .status.done { color: var(--ok); }
 .status.error { color: var(--err); }
 .status.running::before { content: "◐ "; display: inline-block; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.card-actions { padding: 7px 11px 11px; }
-.card-actions button { width: 100%; font-size: 12px; padding: 6px; }
+/* 生成按鈕改成疊在縮圖底部、hover 才浮現——格線平常是乾淨的圖片牆 */
+.thumb .gen-btn { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 2; width: auto;
+  padding: 7px 6px; font-size: 12px; font-weight: 600; border-radius: 8px;
+  background: rgba(19,19,24,.78); backdrop-filter: blur(6px); border: 1px solid var(--line-2); color: var(--ink);
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.thumb .gen-btn:hover { background: linear-gradient(180deg, #eaad57, var(--amber-d)); color: #241a08; border-color: var(--amber-d); }
+@media (hover: hover) {   /* 桌面：平常藏起、hover 卡片才滑出（觸控裝置維持常駐、好按） */
+  .thumb .gen-btn { opacity: 0; transform: translateY(6px);
+    transition: opacity var(--d-micro) var(--ease-out), transform var(--d-micro) var(--ease-out), background var(--d-micro), color var(--d-micro); }
+  .card:hover .thumb .gen-btn { opacity: 1; transform: none; }
+}
 
 .empty-state { padding: 80px 20px; text-align: center; color: var(--faint); }
 .empty-state .big { font-size: 15px; color: var(--dim); margin-bottom: 6px; }

@@ -197,15 +197,13 @@ function cardOf(it) {
     ? `<span class="badge has">已生成</span><img loading="lazy" decoding="async" width="360" height="360" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="" onload="this.classList.add('ld')" onerror="this.classList.add('ld')">`
     : `<span class="badge">未生成</span><div class="empty">${ICON_EMPTY}<span>尚無圖片</span></div>`;
   el.innerHTML = `
-    <div class="thumb">${thumbHtml}<span class="pick-box" aria-hidden="true"></span><span class="flag-x" aria-hidden="true">✕</span></div>
+    <div class="thumb">${thumbHtml}<span class="pick-box" aria-hidden="true"></span><span class="flag-x" aria-hidden="true">✕</span>
+      <button class="gen-btn">${it.has_image ? '重新生成' : '生成'}</button></div>
     <div class="card-body">
       <div class="card-name"></div>
       ${SEARCH ? '<div class="card-folder"></div>' : ''}
     </div>
-    <div class="status"></div>
-    <div class="card-actions">
-      <button class="gen-btn">${it.has_image ? '重新生成' : '生成'}</button>
-    </div>`;
+    <div class="status"></div>`;
   el.querySelector('.card-name').textContent = it.name;
   if (SEARCH) el.querySelector('.card-folder').textContent = it.folder || '(根目錄)';
   // 選取模式：點縮圖＝標記/取消不優質；平常＝開大圖
