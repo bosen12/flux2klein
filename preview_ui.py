@@ -21,6 +21,7 @@ preview_ui.py
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import io
 import json
@@ -272,20 +273,90 @@ def get_job(rel: str) -> dict:
         return dict(STATE["jobs"].get(rel) or {})
 
 
-def scan_libraries() -> list[dict]:
+# --- 詞庫清單快取 ---------------------------------------------------------
+# 掃描一次要走完整棵樹（實測 12569 個 .py：rglob 0.45s + 每筆探 .webp/.png 約
+# 25000 次 stat 0.47s），而 /api/libs 是開頁與重掃的唯一阻塞點——TTFB 1.1s 全
+# 花在這裡，畫面在那之前是空的。所以把「檔案系統那一半」快取起來：
+#   * 首次請求同步掃，之後直接回快取；
+#   * 超過 SCAN_TTL 只在背景重掃（stale-while-revalidate），請求永遠不等；
+#   * 生成成功時就地更新那一筆（唯一由本程式造成的變動，不必整棵重掃）；
+#   * 「重掃」鈕帶 force=1 同步重掃，使用者要的就是即時反映外部改動。
+# job 狀態不進快取——它會變，每次回應時才疊上去（純記憶體查表，成本可忽略）。
+SCAN_TTL = 60.0
+_scan = {"items": None, "at": 0.0, "refreshing": False}
+_scan_lock = threading.Lock()
+
+
+def _scan_fs() -> list[dict]:
+    """實際走檔案系統，回傳不含 job 的項目清單。"""
+    t0 = time.time()
     items = []
     for py in gsp.iter_libraries(None):
         img = find_image(py)
-        rel = rel_of(py)
         items.append({
-            "rel": rel,
+            "rel": rel_of(py),
             "name": py.stem,
             "folder": py.parent.name if py.parent != SPECIAL_DIR else "",
             "has_image": img is not None,
             "image_mtime": int(img.stat().st_mtime) if img else 0,
-            "job": get_job(rel),
         })
+    plog(f"[scan] 掃描詞庫 {len(items)} 筆 · {time.time() - t0:.2f}s")
     return items
+
+
+def _scan_refresh_bg():
+    def work():
+        try:
+            items = _scan_fs()
+            with _scan_lock:
+                _scan["items"] = items
+                _scan["at"] = time.time()
+        finally:
+            with _scan_lock:
+                _scan["refreshing"] = False
+    threading.Thread(target=work, daemon=True).start()
+
+
+def scan_libraries(force: bool = False) -> list[dict]:
+    with _scan_lock:
+        cached = _scan["items"]
+        stale = (time.time() - _scan["at"]) > SCAN_TTL
+        if cached is not None and not force:
+            # 過期就在背景重掃，這次仍回舊的（同一時間只排一個背景掃描）
+            if stale and not _scan["refreshing"]:
+                _scan["refreshing"] = True
+                need_bg = True
+            else:
+                need_bg = False
+        else:
+            need_bg = False
+    if cached is not None and not force:
+        if need_bg:
+            _scan_refresh_bg()
+    else:
+        cached = _scan_fs()
+        with _scan_lock:
+            _scan["items"] = cached
+            _scan["at"] = time.time()
+    # 疊上即時 job 狀態（快取只存檔案系統那一半）
+    with STATE["jobs_lock"]:
+        jobs = STATE["jobs"]
+        return [dict(it, job=dict(jobs.get(it["rel"]) or {})) for it in cached]
+
+
+def _scan_note_image(rel: str, img: Path):
+    """生成成功後就地更新快取裡那一筆，免得為了一張圖重掃整棵樹。"""
+    with _scan_lock:
+        if _scan["items"] is None:
+            return
+        for it in _scan["items"]:
+            if it["rel"] == rel:
+                it["has_image"] = True
+                try:
+                    it["image_mtime"] = int(img.stat().st_mtime)
+                except OSError:
+                    pass
+                return
 
 
 def get_batch() -> dict:
@@ -390,6 +461,7 @@ def do_generate(rel: str, seed: int | None = None, in_batch: bool = False):
                     old_png.unlink()
                 except OSError:
                     pass
+            _scan_note_image(rel, out_img)
             dt = time.time() - t0
             set_job(
                 rel,
@@ -410,23 +482,41 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
-    def _send_json(self, obj, code: int = 200):
-        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+    # 文字類回應壓縮：/api/libs 是 2.2MB 的 JSON，gzip 後只剩 9%（實測 0.19MB，
+    # 壓縮成本 12ms）。對手機走 Tailscale 連是數量級差異。圖片已經是壓縮格式，
+    # 不走這裡（_send_cacheable 不壓）。小回應壓了反而虧，設下限。
+    GZIP_MIN = 1400
 
-    def _send_bytes(self, body: bytes, content_type: str = "application/octet-stream", code: int = 200):
+    def _gzip_ok(self, body: bytes, content_type: str) -> bool:
+        if len(body) < self.GZIP_MIN:
+            return False
+        if not any(t in content_type for t in ("json", "text/", "javascript")):
+            return False
+        return "gzip" in (self.headers.get("Accept-Encoding") or "")
+
+    def _write_body(self, body: bytes, content_type: str, code: int, extra: dict | None = None):
+        gz = self._gzip_ok(body, content_type)
+        if gz:
+            body = gzip.compress(body, 5)
         self.send_response(code)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        if gz:
+            self.send_header("Content-Encoding", "gzip")
+        self.send_header("Vary", "Accept-Encoding")
+        for k, v in (extra or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
+
+    def _send_json(self, obj, code: int = 200):
+        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        self._write_body(body, "application/json; charset=utf-8", code,
+                         {"Cache-Control": "no-store"})
+
+    def _send_bytes(self, body: bytes, content_type: str = "application/octet-stream", code: int = 200):
+        self._write_body(body, content_type, code, {"Cache-Control": "no-store"})
 
     def _send_cacheable(self, body: bytes, content_type: str, etag: str, max_age: int = 604800):
         """帶 ETag + max-age;若 If-None-Match 命中則回 304(不重送 body)。"""
@@ -458,7 +548,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if u.path == "/api/libs":
                 self._send_json({
-                    "items": scan_libraries(),
+                    "items": scan_libraries(force=qs.get("force", [""])[0] == "1"),
                     "workflow": str(STATE["workflow_path"]),
                     "comfy": STATE["comfy_base"],
                     "steps": STATE["steps"],

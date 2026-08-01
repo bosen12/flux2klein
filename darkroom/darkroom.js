@@ -8,8 +8,9 @@ const pollers = new Set();
 const REDUCE_MOTION = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const $ = id => document.getElementById(id);
 
-async function loadAll() {
-  const r = await fetch('/api/libs');
+// force=true 才讓後端重掃檔案系統（「重掃」鈕）；一般開頁吃後端快取，秒回。
+async function loadAll(force = false) {
+  const r = await fetch('/api/libs' + (force ? '?force=1' : ''));
   const j = await r.json();
   ALL = j.items;
   const conn = $('conn');
@@ -345,7 +346,7 @@ $('search').oninput = e => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => { SEARCH = e.target.value.trim(); buildRail(); render(); }, 180);
 };
-$('rescan').onclick = loadAll;
+$('rescan').onclick = () => loadAll(true);
 $('menu-btn').onclick = () => $('rail').classList.toggle('open');
 
 let railTimer;

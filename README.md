@@ -179,6 +179,7 @@ Windows 雙擊即可（會自動啟動 Groq 多 key 代理）：
 - **啟動**：跑 `preview_ui.bat`（或 `python preview_ui.py`），預設開在 `http://localhost:7860/`。要真的生成圖需先開 ComfyUI。
 - **面板按鈕**：主面板頂部「AI Assistant」旁有「**詞庫暗房**」按鈕，點了用新視窗開這個工具（不嵌入面板）。工具沒啟動的話新視窗會連不上——先跑 `preview_ui.bat`。
 - **設定**：機器相關路徑放 `preview_config.json`（已 gitignore，複製 `preview_config.example.json` 來改）——`special_dir`（詞庫資料夾，預設指向 `animebot`）、`comfy`、`workflow`、`port` 等。**面板的詞庫選單（`serve.py`）也讀同一個 `special_dir`**，所以兩邊看的是同一份詞庫。
+- **「重掃」鈕的用途**：詞庫清單在伺服器端有快取，開頁／重整都直接吃快取（秒回）。**在暗房外面新增或刪除詞庫檔之後，按「重掃」才會看到**（重掃是唯一會重走檔案系統的操作，約 1 秒）。快取超過 60 秒會自動在背景更新，不會擋住畫面；用暗房自己生成的圖則是立刻反映，不用重掃。
 
 ---
 
