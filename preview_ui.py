@@ -25,6 +25,7 @@ import gzip
 import hashlib
 import io
 import json
+import os
 import random
 import socket
 import subprocess
@@ -91,6 +92,56 @@ def plog(msg: str):
     """主控台 log：帶時間戳、立即 flush，讓 bat 視窗看得到即時進度。
     HTTP 請求那種雜訊仍靜音（Handler.log_message），只印生成/批次這類有用的事件。"""
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
+
+
+# ---------------------------------------------------------------------------
+# 詞庫品質旗標（黑名單）——AI 寫的詞庫少數不理想，使用者可標記。存後端 JSON 讓
+# 手機/桌面共享。寫入走鎖 + 原子替換（temp → os.replace），多端同時標不會寫壞。
+# 只記錄，不影響抽卡/顯示（依需求）。key 是詞庫的 rel（資料夾/檔名.py）。
+# ---------------------------------------------------------------------------
+FLAGS_PATH = Path(__file__).resolve().parent / "flags.json"
+_flags: dict = {}                 # rel -> {"at": ts}
+_flags_lock = threading.Lock()
+
+
+def _load_flags():
+    global _flags
+    if not FLAGS_PATH.is_file():
+        return
+    try:
+        with open(FLAGS_PATH, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        fl = d.get("flagged") if isinstance(d, dict) else None
+        if isinstance(fl, dict):
+            _flags = fl
+        elif isinstance(fl, list):        # 容忍純 list 格式
+            _flags = {r: {} for r in fl}
+        plog(f"[flags] 載入 {len(_flags)} 筆已標記")
+    except Exception as e:
+        plog(f"[flags] 讀取失敗，從空白開始：{e}")
+
+
+def _save_flags_locked():
+    """呼叫端須已持有 _flags_lock。原子寫：temp → replace。"""
+    tmp = FLAGS_PATH.with_suffix(".json.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"flagged": _flags}, f, ensure_ascii=False)
+    os.replace(tmp, FLAGS_PATH)
+
+
+def set_flag(rel: str, flagged: bool) -> bool:
+    with _flags_lock:
+        if flagged:
+            _flags[rel] = {"at": time.time()}
+        else:
+            _flags.pop(rel, None)
+        _save_flags_locked()
+        return rel in _flags
+
+
+def flagged_set() -> set:
+    with _flags_lock:
+        return set(_flags.keys())
 
 
 # ---------------------------------------------------------------------------
@@ -338,10 +389,11 @@ def scan_libraries(force: bool = False) -> list[dict]:
         with _scan_lock:
             _scan["items"] = cached
             _scan["at"] = time.time()
-    # 疊上即時 job 狀態（快取只存檔案系統那一半）
+    # 疊上即時 job 狀態與品質旗標（快取只存檔案系統那一半，這兩者會變、不進快取）
     with STATE["jobs_lock"]:
-        jobs = STATE["jobs"]
-        return [dict(it, job=dict(jobs.get(it["rel"]) or {})) for it in cached]
+        jobs = dict(STATE["jobs"])
+    fl = flagged_set()
+    return [dict(it, job=dict(jobs.get(it["rel"]) or {}), flagged=(it["rel"] in fl)) for it in cached]
 
 
 def _scan_note_image(rel: str, img: Path):
@@ -616,6 +668,30 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             data = {}
         try:
+            if u.path == "/api/flag":
+                rel = data.get("rel") or ""
+                try:
+                    py = py_of(rel)
+                except Exception:
+                    self._send_json({"error": "路徑不合法"}, 400)
+                    return
+                if not py.is_file():
+                    self._send_json({"error": "詞庫不存在"}, 404)
+                    return
+                now = set_flag(rel, bool(data.get("flagged")))
+                plog(f"[flag] {'標記不優質' if now else '取消標記'} {rel}")
+                self._send_json({"ok": True, "rel": rel, "flagged": now})
+                return
+            if u.path == "/api/steps":
+                try:
+                    s = max(1, min(150, int(data.get("steps"))))
+                except Exception:
+                    self._send_json({"error": "steps 需為整數"}, 400)
+                    return
+                STATE["steps"] = s
+                plog(f"[steps] 生成步數設為 {s}")
+                self._send_json({"ok": True, "steps": s})
+                return
             if u.path == "/api/generate":
                 rel = data.get("rel") or ""
                 py = py_of(rel)
@@ -756,6 +832,7 @@ def main():
         print(f"[serve   ] {open_url}")
     print("[serve   ] 若手機連不上:Windows 防火牆首次可能跳出提示,請允許 Python 存取")
 
+    _load_flags()                 # 載入品質旗標黑名單
     srv = ThreadingHTTPServer((bind_host, port), Handler)
     # 開機就先在背景把詞庫掃一遍暖快取，第一次開頁的 /api/libs 才不用等 ~1s 掃描
     threading.Thread(target=lambda: scan_libraries(), daemon=True).start()

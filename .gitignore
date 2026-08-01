@@ -36,3 +36,6 @@ assets/
 
 # 誤建的空檔
 /ComfyUI
+
+# 詞庫品質旗標（個人判斷，不進版控）
+flags.json
