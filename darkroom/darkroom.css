@@ -242,3 +242,72 @@ input[type=text]::placeholder { color: var(--faint); }
   .menu-btn { display: inline-flex !important; }
 }
 .menu-btn { display: none; }
+
+/* ==================== 抽卡（塔羅式發牌翻牌） ==================== */
+.tarot-overlay {
+  position: fixed; inset: 0; z-index: 120; display: none;
+  align-items: center; justify-content: center; padding: 24px;
+  background: radial-gradient(circle at 50% 30%, rgba(35,30,18,.6), rgba(8,8,11,.86));
+  backdrop-filter: blur(7px);
+}
+.tarot-overlay.open { display: flex; animation: fadeIn var(--d-pop) var(--ease-out); }
+.tarot-stage { width: 100%; max-width: 920px; display: flex; flex-direction: column; align-items: center; gap: 20px; }
+.tarot-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; flex-wrap: wrap; }
+.tarot-title { font-size: 17px; font-weight: 650; letter-spacing: 2px; color: var(--amber);
+               text-shadow: 0 0 16px rgba(234,173,87,.4); }
+.tarot-actions { display: flex; gap: 8px; margin-left: auto; }
+.tarot-hint { font-family: var(--mono); font-size: 11px; color: var(--faint); letter-spacing: .5px; }
+
+.tarot-cards { display: flex; gap: 16px; justify-content: center; align-items: center; flex-wrap: wrap; perspective: 1500px; }
+.tarot-card {
+  width: clamp(120px, 15vw, 158px); aspect-ratio: 2 / 3.35; cursor: pointer; position: relative;
+  transform: translateY(var(--arc-y, 0)) rotate(var(--arc-rot, 0deg));
+  animation: tarotDeal var(--d-enter) var(--ease-out) both;
+}
+@keyframes tarotDeal {
+  from { opacity: 0; transform: translateY(46px) scale(.86) rotate(0deg); }
+  to   { opacity: 1; transform: translateY(var(--arc-y, 0)) rotate(var(--arc-rot, 0deg)); }
+}
+.tarot-inner {
+  position: absolute; inset: 0; transform-style: preserve-3d;
+  transition: transform .62s var(--ease-out);
+}
+.tarot-card.revealed .tarot-inner { transform: rotateY(180deg); }
+.tarot-back, .tarot-front {
+  position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  border-radius: 13px; overflow: hidden; border: 1px solid var(--line-2);
+  box-shadow: 0 12px 30px -10px rgba(0,0,0,.6);
+}
+/* 牌背：暗房琥珀神祕紋 */
+.tarot-back {
+  display: grid; place-items: center;
+  background:
+    radial-gradient(circle at 50% 34%, color-mix(in srgb, var(--amber) 24%, transparent), transparent 56%),
+    repeating-linear-gradient(135deg, rgba(234,173,87,.06) 0 10px, transparent 10px 20px),
+    linear-gradient(160deg, #23252f, #15161d);
+  border-color: color-mix(in srgb, var(--amber) 34%, var(--line));
+}
+.tarot-emblem {
+  width: 58px; height: 58px; display: grid; place-items: center; font-size: 26px;
+  color: var(--amber); border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--amber) 50%, transparent);
+  box-shadow: 0 0 18px rgba(234,173,87,.35), inset 0 0 12px rgba(234,173,87,.25);
+}
+/* 牌面：預覽圖 + 名稱 */
+.tarot-front { transform: rotateY(180deg); background: var(--panel); display: flex; flex-direction: column; }
+.tarot-front img { width: 100%; flex: 1; min-height: 0; object-fit: cover; display: block; }
+.tarot-noimg { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+               gap: 6px; color: var(--faint); font-size: 12px; background: var(--sunk); }
+.tarot-noimg svg { width: 28px; height: 28px; opacity: .5; }
+.tarot-name { padding: 8px 9px 2px; font-size: 12.5px; font-weight: 600; line-height: 1.3;
+              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tarot-folder { padding: 0 9px 9px; font-family: var(--mono); font-size: 10px; color: var(--amber);
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 翻開後 hover：琥珀光暈 + 微亮（不動 transform，避開 3D 衝突） */
+.tarot-card.revealed:hover .tarot-front {
+  border-color: color-mix(in srgb, var(--amber) 60%, transparent);
+  box-shadow: 0 16px 34px -10px rgba(0,0,0,.65), 0 0 0 3px rgba(234,173,87,.16);
+  filter: brightness(1.05);
+}
+
+@media (max-width: 640px) { .tarot-cards { gap: 10px; } }

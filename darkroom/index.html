@@ -19,6 +19,7 @@
     <input type="text" id="search" placeholder="跨資料夾搜尋名稱…" autocomplete="off">
   </div>
   <div class="spacer"></div>
+  <button class="ghost" id="draw-cards" title="從全部隨機抽五張（塔羅）">✦ 抽卡</button>
   <button class="ghost" id="rescan" title="重新掃描">↻ 重掃</button>
   <div class="conn" id="conn"><span class="led"></span><span id="conn-text">…</span></div>
 </div>
@@ -71,6 +72,21 @@
   <button class="m-nav prev" id="m-prev" aria-label="上一個">‹</button>
   <div class="modal-inner" id="modal-inner"></div>
   <button class="m-nav next" id="m-next" aria-label="下一個">›</button>
+</div>
+
+<!-- 抽卡：從全部隨機抽 5 張，塔羅式發牌 + 翻牌呈現 -->
+<div id="tarot" class="tarot-overlay">
+  <div class="tarot-stage">
+    <div class="tarot-head">
+      <span class="tarot-title">✦ 抽選五張 ✦</span>
+      <div class="tarot-actions">
+        <button class="primary" id="tarot-redraw">再抽一次</button>
+        <button id="tarot-close">關閉 (Esc)</button>
+      </div>
+    </div>
+    <div class="tarot-cards" id="tarot-cards"></div>
+    <div class="tarot-hint">點任一張看大圖與提示詞</div>
+  </div>
 </div>
 
 <script src="/darkroom.js" defer></script>

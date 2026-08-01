@@ -423,10 +423,66 @@ $('modal').addEventListener('click', e => { if (e.target.id === 'modal') closeMo
 $('m-prev').onclick = () => modalStep(-1);
 $('m-next').onclick = () => modalStep(1);
 window.addEventListener('keydown', e => {
+  if ($('tarot').classList.contains('open') && e.key === 'Escape') { closeTarot(); return; }
   if (!$('modal').classList.contains('open')) return;
   if (e.key === 'Escape') closeModal();
   else if (e.key === 'ArrowLeft') modalStep(-1);
   else if (e.key === 'ArrowRight') modalStep(1);
 });
+
+/* ---------------- 抽卡（塔羅式發牌 + 翻牌） ---------------- */
+const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// 洗牌取樣 n 張（不重複）。ALL 上萬筆，複製一次成本可接受（只在抽卡時）。
+function sampleN(arr, n) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a.slice(0, n);
+}
+
+function drawTarot() {
+  if (!ALL.length) return;
+  const picks = sampleN(ALL, Math.min(5, ALL.length));
+  const wrap = $('tarot-cards');
+  wrap.innerHTML = '';
+  const n = picks.length, mid = (n - 1) / 2;
+  picks.forEach((it, i) => {
+    const card = document.createElement('div');
+    card.className = 'tarot-card';
+    const off = i - mid;                                  // 中間 0、兩側 ±
+    card.style.setProperty('--arc-y', (Math.abs(off) * 10).toFixed(1) + 'px');   // 微弧：兩側略低
+    card.style.setProperty('--arc-rot', (off * 4).toFixed(1) + 'deg');
+    card.style.animationDelay = REDUCE ? '0ms' : (i * 90) + 'ms';                 // 發牌 stagger
+    const relEnc = encodeURIComponent(it.rel);
+    const face = it.has_image
+      ? `<img loading="lazy" decoding="async" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="">`
+      : `<div class="tarot-noimg">${ICON_EMPTY}<span>尚無圖</span></div>`;
+    card.innerHTML =
+      `<div class="tarot-inner">
+         <div class="tarot-back"><span class="tarot-emblem">✦</span></div>
+         <div class="tarot-front">${face}<div class="tarot-name"></div><div class="tarot-folder"></div></div>
+       </div>`;
+    card.querySelector('.tarot-name').textContent = it.name;
+    card.querySelector('.tarot-folder').textContent = it.folder || '(根目錄)';
+    card.addEventListener('click', () => { closeTarot(); openModal(it.rel); });
+    wrap.appendChild(card);
+  });
+  $('tarot').classList.add('open');
+  // 發牌完成後依序翻牌；reduced-motion 直接全開
+  const cards = [...wrap.children];
+  if (REDUCE) { cards.forEach(c => c.classList.add('revealed')); return; }
+  const dealDone = n * 90 + 360;
+  cards.forEach((c, i) => setTimeout(() => c.classList.add('revealed'), dealDone + i * 150));
+}
+
+function closeTarot() { $('tarot').classList.remove('open'); }
+
+$('draw-cards').onclick = drawTarot;
+$('tarot-redraw').onclick = drawTarot;
+$('tarot-close').onclick = closeTarot;
+$('tarot').addEventListener('click', e => { if (e.target.id === 'tarot') closeTarot(); });
 
 loadAll().then(() => pollBatch());
