@@ -197,7 +197,7 @@ function cardOf(it) {
     ? `<span class="badge has">已生成</span><img loading="lazy" decoding="async" width="360" height="360" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="" onload="this.classList.add('ld')" onerror="this.classList.add('ld')">`
     : `<span class="badge">未生成</span><div class="empty">${ICON_EMPTY}<span>尚無圖片</span></div>`;
   el.innerHTML = `
-    <div class="thumb">${thumbHtml}<button class="flag-btn" title="標記/取消不優質">🚩</button></div>
+    <div class="thumb">${thumbHtml}<span class="pick-box" aria-hidden="true"></span><span class="flag-x" aria-hidden="true">✕</span></div>
     <div class="card-body">
       <div class="card-name"></div>
       ${SEARCH ? '<div class="card-folder"></div>' : ''}
@@ -208,9 +208,9 @@ function cardOf(it) {
     </div>`;
   el.querySelector('.card-name').textContent = it.name;
   if (SEARCH) el.querySelector('.card-folder').textContent = it.folder || '(根目錄)';
-  el.querySelector('.thumb').onclick = () => openModal(it.rel);
+  // 選取模式：點縮圖＝標記/取消不優質；平常＝開大圖
+  el.querySelector('.thumb').onclick = () => { if (SELECTING) toggleFlag(it.rel); else openModal(it.rel); };
   el.querySelector('.gen-btn').onclick = (e) => { e.stopPropagation(); generate(it.rel); };
-  el.querySelector('.flag-btn').onclick = (e) => { e.stopPropagation(); toggleFlag(it.rel); };
   if (it.job && it.job.status) updateStatusEl(el.querySelector('.status'), it.job);
   return el;
 }
@@ -239,10 +239,9 @@ async function toggleFlag(rel, force) {
   updateReviewCount();
 }
 
-// 把某 rel 的旗標狀態套到畫面上（格線卡片 + 審核網格都更新）
+// 把某 rel 的旗標狀態套到畫面上（格線卡片）
 function applyFlagVisual(rel, flagged) {
-  const sel = `[data-rel="${cssAttr(rel)}"]`;
-  document.querySelectorAll('#grid .card' + sel + ', #review-grid .rv' + sel)
+  document.querySelectorAll(`#grid .card[data-rel="${cssAttr(rel)}"]`)
     .forEach(el => el.classList.toggle('flagged', flagged));
 }
 
@@ -605,74 +604,27 @@ $('steps-input').onblur = () => {   // 失焦時把值夾回合法範圍
   if (Number.isFinite(s)) $('steps-input').value = Math.max(1, Math.min(150, s));
 };
 
-/* ---------------- 審核模式（品質篩選） ---------------- */
-let REVIEW_FILTER = 'all', REVIEW_SEARCH = '';
+/* ---------------- 選取模式（品質篩選） ----------------
+   點「篩選」進入選取模式：格線每張卡出現選取框，點卡片＝標記不優質（明顯紅叉、
+   不開大圖），再點取消；再按「篩選」退出、回到正常（點卡片開大圖）。 */
+let SELECTING = false;
 
 function updateReviewCount() {
-  const el = $('review-count'); if (!el) return;
+  const el = $('flag-count'); if (!el) return;
   const n = ALL.filter(x => x.flagged).length;
-  el.textContent = n ? `· 已標記 ${n}` : '';
+  el.textContent = n ? ` ${n}` : '';
 }
 
-function reviewList() {
-  let list = ALL;
-  if (REVIEW_FILTER === 'flagged') list = list.filter(x => x.flagged);
-  else if (REVIEW_FILTER === 'clean') list = list.filter(x => !x.flagged);
-  if (REVIEW_SEARCH) {
-    const q = REVIEW_SEARCH.toLowerCase();
-    list = list.filter(x => x.name.toLowerCase().includes(q) || (x.folder || '').toLowerCase().includes(q));
-  }
-  return list;
+function setSelecting(on) {
+  SELECTING = on;
+  document.body.classList.toggle('selecting', on);
+  $('review-btn').classList.toggle('on', on);
+  $('review-btn').firstChild.textContent = on ? '✓ 篩選中' : '🚩 篩選';
 }
 
-const REVIEW_CAP = 300;   // 一次最多渲染這麼多，避免上萬張一次爆
-function renderReview() {
-  const grid = $('review-grid');
-  const list = reviewList();
-  grid.innerHTML = '';
-  const shown = list.slice(0, REVIEW_CAP);
-  const frag = document.createDocumentFragment();
-  for (const it of shown) {
-    const el = document.createElement('div');
-    el.className = 'rv' + (it.flagged ? ' flagged' : '') + (it.has_image ? '' : ' noimg');
-    el.dataset.rel = it.rel;
-    const relEnc = encodeURIComponent(it.rel);
-    const thumb = it.has_image
-      ? `<img loading="lazy" decoding="async" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="" onload="this.classList.add('ld')" onerror="this.classList.add('ld')">`
-      : `<div class="rv-empty">${ICON_EMPTY}</div>`;
-    el.innerHTML = `${thumb}<button class="rv-flag" title="標記/取消不優質">🚩</button><div class="rv-name"></div>`;
-    el.querySelector('.rv-name').textContent = it.name;
-    el.querySelector('img, .rv-empty')?.addEventListener('click', () => openModal(it.rel));
-    el.querySelector('.rv-flag').addEventListener('click', (e) => { e.stopPropagation(); toggleFlag(it.rel); });
-    frag.appendChild(el);
-  }
-  grid.appendChild(frag);
-  if (list.length > shown.length) {
-    const more = document.createElement('div');
-    more.className = 'rv-more';
-    more.textContent = `顯示前 ${shown.length} / 共 ${list.length} — 用搜尋或「已標記/未標記」縮小`;
-    grid.appendChild(more);
-  }
-}
-
-function openReview() { $('review').classList.add('open'); renderReview(); updateReviewCount(); }
-function closeReview() { $('review').classList.remove('open'); }
-
-$('review-btn').onclick = openReview;
-$('review-close').onclick = closeReview;
-$('review-seg').addEventListener('click', e => {
-  const b = e.target.closest('button'); if (!b) return;
-  REVIEW_FILTER = b.dataset.f;
-  [...$('review-seg').children].forEach(x => x.classList.toggle('on', x === b));
-  renderReview();
-});
-let rvSearchTimer;
-$('review-search').oninput = e => {
-  clearTimeout(rvSearchTimer);
-  rvSearchTimer = setTimeout(() => { REVIEW_SEARCH = e.target.value.trim(); renderReview(); }, 180);
-};
+$('review-btn').onclick = () => setSelecting(!SELECTING);
 window.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && $('review').classList.contains('open')) closeReview();
+  if (e.key === 'Escape' && SELECTING) setSelecting(false);
 });
 
 loadAll().then(() => pollBatch());

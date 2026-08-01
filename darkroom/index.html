@@ -24,7 +24,7 @@
     <input type="number" id="steps-input" min="1" max="150" step="1" value="25" inputmode="numeric">
   </label>
   <button class="ghost" id="draw-cards" title="從全部隨機抽卡（塔羅）">✦ 抽卡</button>
-  <button class="ghost" id="review-btn" title="審核詞庫品質：勾選不理想的">🚩 篩選</button>
+  <button class="ghost" id="review-btn" title="進入選取模式：點卡片標記不優質（紅叉）">🚩 篩選<span id="flag-count" class="flag-count"></span></button>
   <button class="ghost" id="rescan" title="重新掃描">↻ 重掃</button>
   <div class="conn" id="conn"><span class="led"></span><span id="conn-text">…</span></div>
 </div>
@@ -96,25 +96,6 @@
     <div class="tarot-hint">點任一張看大圖與提示詞</div>
   </div>
 </div>
-
-<!-- 審核模式：密集縮圖，每張右上勾選＝標記不優質；只記錄到後端 flags.json -->
-<div id="review" class="review-overlay">
-  <div class="review-head">
-    <div class="review-title">🚩 詞庫品質篩選 <span id="review-count" class="review-count"></span></div>
-    <div class="review-tools">
-      <div class="seg" id="review-seg" role="group" aria-label="篩選">
-        <button data-f="all" class="on">全部</button>
-        <button data-f="flagged">已標記</button>
-        <button data-f="clean">未標記</button>
-      </div>
-      <input type="text" id="review-search" class="review-search" placeholder="搜尋名稱…" autocomplete="off">
-      <button id="review-close">關閉 (Esc)</button>
-    </div>
-  </div>
-  <div class="review-hint">點縮圖看大圖；點右上角旗標＝標記不優質（再點取消）。標記只記錄、不影響抽卡與顯示。</div>
-  <div id="review-grid" class="review-grid"></div>
-</div>
-
 <script src="/darkroom.js" defer></script>
 </body>
 </html>
