@@ -39,3 +39,6 @@ assets/
 
 # 詞庫品質旗標（個人判斷，不進版控）
 flags.json
+
+# 詞庫收藏（個人判斷，不進版控）
+favorites.json

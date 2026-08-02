@@ -386,6 +386,28 @@ body.selecting .thumb { cursor: pointer; }
 .card.flagged .pick-box::after { content: "✓"; position: absolute; inset: 0; display: grid; place-items: center;
   color: #fff; font-size: 14px; font-weight: 900; }
 
+/* 收藏星號：右上角。桌面平常藏、hover 卡片才浮現；已收藏＝金色實心星常駐。
+   選取模式讓位給 pick-box（兩者同在右上角）。 */
+.fav-btn { position: absolute; top: 7px; right: 7px; z-index: 4; width: 30px; height: 30px;
+  display: grid; place-items: center; padding: 0; border: none; border-radius: 999px;
+  background: rgba(18,19,28,.5); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+  color: var(--ink); cursor: pointer; opacity: 0; transform: scale(.82) translateY(-2px);
+  transition: opacity var(--d-micro) var(--ease-out), transform var(--d-micro) var(--ease-out),
+              background var(--d-micro) var(--ease-out), color var(--d-micro) var(--ease-out); }
+.fav-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.5;
+  stroke-linejoin: round; transition: fill var(--d-ui) var(--ease-out), stroke var(--d-ui) var(--ease-out); }
+.fav-btn:hover { background: rgba(18,19,28,.82); color: var(--amber); transform: none; }
+.fav-btn:active { transform: scale(.9); }
+.fav-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; opacity: 1; transform: none; }
+@media (hover: hover) { .card:hover .fav-btn { opacity: 1; transform: none; } }
+@media (hover: none)  { .fav-btn { opacity: .92; transform: none; background: rgba(18,19,28,.35); } }
+/* 已收藏：金色實心星、常駐、微光 */
+.card.favorited .fav-btn { opacity: 1; transform: none; color: var(--amber); }
+.card.favorited .fav-btn svg { fill: var(--amber); stroke: var(--amber);
+  filter: drop-shadow(0 0 5px rgba(234,173,87,.55)); }
+/* 選取模式讓位 */
+body.selecting .fav-btn { display: none; }
+
 /* 已標記＝明顯紅叉（一直看得到，不分模式）＋紅框＋紅色蒙版 */
 .flag-x { position: absolute; inset: 0; z-index: 2; display: none; place-items: center; pointer-events: none;
   color: #ff4444; font-size: clamp(48px, 42%, 96px); font-weight: 900; line-height: 1;

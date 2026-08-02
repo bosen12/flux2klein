@@ -190,18 +190,35 @@ function appendPage() {
 }
 
 const ICON_EMPTY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="m21 15-5-5L5 21"/></svg>';
+const ICON_STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.1l2.63 5.33 5.88.85-4.25 4.15 1 5.86L12 16.79 6.74 19.6l1-5.86L3.49 9.28l5.88-.85z"/></svg>';
+
+// 縮圖內部標記：星號、選取框、紅叉、生成鈕全部就地重建（reloadThumb 會覆寫
+// thumb.innerHTML，所以這些覆蓋層要有單一來源，避免生成後星號/生成鈕被清掉）。
+function thumbInnerHTML(it) {
+  const relEnc = encodeURIComponent(it.rel);
+  const media = it.has_image
+    ? `<span class="badge has">已生成</span><img loading="lazy" decoding="async" width="360" height="360" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="" onload="this.classList.add('ld')" onerror="this.classList.add('ld')">`
+    : `<span class="badge">未生成</span><div class="empty">${ICON_EMPTY}<span>尚無圖片</span></div>`;
+  return `${media}` +
+    `<button class="fav-btn" type="button" aria-label="收藏" aria-pressed="${it.favorited ? 'true' : 'false'}">${ICON_STAR}</button>` +
+    `<span class="pick-box" aria-hidden="true"></span>` +
+    `<span class="flag-x" aria-hidden="true">✕</span>` +
+    `<button class="gen-btn">${it.has_image ? '重新生成' : '生成'}</button>`;
+}
+
+function wireThumb(thumb, it) {
+  // 選取模式：點縮圖＝標記/取消不優質；平常＝開大圖
+  thumb.onclick = () => { if (SELECTING) toggleFlag(it.rel); else openModal(it.rel); };
+  thumb.querySelector('.gen-btn').onclick = (e) => { e.stopPropagation(); generate(it.rel); };
+  thumb.querySelector('.fav-btn').onclick = (e) => { e.stopPropagation(); toggleFav(it.rel); };
+}
 
 function cardOf(it) {
   const el = document.createElement('div');
-  el.className = 'card' + (it.has_image ? '' : ' missing') + (it.flagged ? ' flagged' : '');
+  el.className = 'card' + (it.has_image ? '' : ' missing') + (it.flagged ? ' flagged' : '') + (it.favorited ? ' favorited' : '');
   el.dataset.rel = it.rel;
-  const relEnc = encodeURIComponent(it.rel);
-  const thumbHtml = it.has_image
-    ? `<span class="badge has">已生成</span><img loading="lazy" decoding="async" width="360" height="360" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="" onload="this.classList.add('ld')" onerror="this.classList.add('ld')">`
-    : `<span class="badge">未生成</span><div class="empty">${ICON_EMPTY}<span>尚無圖片</span></div>`;
   el.innerHTML = `
-    <div class="thumb">${thumbHtml}<span class="pick-box" aria-hidden="true"></span><span class="flag-x" aria-hidden="true">✕</span>
-      <button class="gen-btn">${it.has_image ? '重新生成' : '生成'}</button></div>
+    <div class="thumb">${thumbInnerHTML(it)}</div>
     <div class="card-body">
       <div class="card-name"></div>
       ${SEARCH ? '<div class="card-folder"></div>' : ''}
@@ -209,9 +226,7 @@ function cardOf(it) {
     <div class="status"></div>`;
   el.querySelector('.card-name').textContent = it.name;
   if (SEARCH) el.querySelector('.card-folder').textContent = it.folder || '(根目錄)';
-  // 選取模式：點縮圖＝標記/取消不優質；平常＝開大圖
-  el.querySelector('.thumb').onclick = () => { if (SELECTING) toggleFlag(it.rel); else openModal(it.rel); };
-  el.querySelector('.gen-btn').onclick = (e) => { e.stopPropagation(); generate(it.rel); };
+  wireThumb(el.querySelector('.thumb'), it);
   if (it.job && it.job.status) updateStatusEl(el.querySelector('.status'), it.job);
   return el;
 }
@@ -244,6 +259,47 @@ async function toggleFlag(rel, force) {
 function applyFlagVisual(rel, flagged) {
   document.querySelectorAll(`#grid .card[data-rel="${cssAttr(rel)}"]`)
     .forEach(el => el.classList.toggle('flagged', flagged));
+}
+
+// 收藏／取消收藏：樂觀更新（先變色再送），失敗回退。點右上角星號直接切換，
+// 不需要進選取模式。
+async function toggleFav(rel, force) {
+  const it = ALL.find(x => x.rel === rel);
+  const next = (typeof force === 'boolean') ? force : !(it && it.favorited);
+  if (it) it.favorited = next;
+  applyFavVisual(rel, next, true);          // 立刻反映＋播放收藏動畫
+  try {
+    const r = await fetch('/api/favorite', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rel, favorited: next }),
+    });
+    const j = await r.json();
+    if (j.error) throw new Error(j.error);
+    if (it) it.favorited = j.favorited;
+    applyFavVisual(rel, j.favorited, false);
+  } catch (e) {
+    if (it) it.favorited = !next;           // 回退
+    applyFavVisual(rel, !next, false);
+    alert('收藏失敗：' + e.message);
+  }
+}
+
+// 把收藏狀態套到畫面（格線卡片）。animate=true 且是「加入收藏」時，星號彈跳一下。
+// 用 element.animate（class 重啟動畫在連續觸發時不可靠，見 CLAUDE.md）。
+function applyFavVisual(rel, favorited, animate) {
+  document.querySelectorAll(`#grid .card[data-rel="${cssAttr(rel)}"]`).forEach(el => {
+    el.classList.toggle('favorited', favorited);
+    const btn = el.querySelector('.fav-btn');
+    if (!btn) return;
+    btn.setAttribute('aria-pressed', favorited ? 'true' : 'false');
+    if (animate && favorited && document.visibilityState === 'visible'
+        && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      btn.animate(
+        [{ transform: 'scale(1)' }, { transform: 'scale(1.4)' }, { transform: 'scale(1)' }],
+        { duration: 340, easing: 'cubic-bezier(.34,1.56,.64,1)' },   // spring 過衝
+      );
+    }
+  });
 }
 
 function updateStatusEl(el, job) {
@@ -295,12 +351,12 @@ async function pollStatus(rel) {
 function reloadThumb(rel) {
   const card = document.querySelector(`.card[data-rel="${cssAttr(rel)}"]`);
   if (!card) return;
+  const it = ALL.find(x => x.rel === rel);
+  if (!it) return;
   card.classList.remove('missing');
   const thumb = card.querySelector('.thumb');
-  thumb.innerHTML = `<span class="badge has">已生成</span><img loading="lazy" decoding="async" width="360" height="360" src="/api/thumb?rel=${encodeURIComponent(rel)}&v=${Date.now()}" alt="">`;
-  thumb.onclick = () => openModal(rel);
-  const btn = card.querySelector('.gen-btn');
-  if (btn) btn.textContent = '重新生成';
+  thumb.innerHTML = thumbInnerHTML(it);   // 連星號/選取框/生成鈕一起重建，不會被清掉
+  wireThumb(thumb, it);
 }
 
 function reloadModalImage(rel) {

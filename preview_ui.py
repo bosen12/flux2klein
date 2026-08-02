@@ -145,6 +145,55 @@ def flagged_set() -> set:
 
 
 # ---------------------------------------------------------------------------
+# 收藏（我的最愛）：結構同品質旗標，另存一份 favorites.json。只記錄，不影響
+# 抽卡/顯示。key 是詞庫的 rel。
+# ---------------------------------------------------------------------------
+FAVS_PATH = Path(__file__).resolve().parent / "favorites.json"
+_favs: dict = {}                  # rel -> {"at": ts}
+_favs_lock = threading.Lock()
+
+
+def _load_favs():
+    global _favs
+    if not FAVS_PATH.is_file():
+        return
+    try:
+        with open(FAVS_PATH, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        fv = d.get("favorited") if isinstance(d, dict) else None
+        if isinstance(fv, dict):
+            _favs = fv
+        elif isinstance(fv, list):        # 容忍純 list 格式
+            _favs = {r: {} for r in fv}
+        plog(f"[favs] 載入 {len(_favs)} 筆收藏")
+    except Exception as e:
+        plog(f"[favs] 讀取失敗，從空白開始：{e}")
+
+
+def _save_favs_locked():
+    """呼叫端須已持有 _favs_lock。原子寫：temp → replace。"""
+    tmp = FAVS_PATH.with_suffix(".json.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"favorited": _favs}, f, ensure_ascii=False)
+    os.replace(tmp, FAVS_PATH)
+
+
+def set_fav(rel: str, favorited: bool) -> bool:
+    with _favs_lock:
+        if favorited:
+            _favs[rel] = {"at": time.time()}
+        else:
+            _favs.pop(rel, None)
+        _save_favs_locked()
+        return rel in _favs
+
+
+def fav_set() -> set:
+    with _favs_lock:
+        return set(_favs.keys())
+
+
+# ---------------------------------------------------------------------------
 # 前端靜態檔（拆成 darkroom/ 資料夾，跟主面板一樣分 html/css/js，不再內嵌字串）
 # ---------------------------------------------------------------------------
 DARKROOM_DIR = Path(__file__).resolve().parent / "darkroom"
@@ -393,7 +442,14 @@ def scan_libraries(force: bool = False) -> list[dict]:
     with STATE["jobs_lock"]:
         jobs = dict(STATE["jobs"])
     fl = flagged_set()
-    return [dict(it, job=dict(jobs.get(it["rel"]) or {}), flagged=(it["rel"] in fl)) for it in cached]
+    fv = fav_set()
+    return [
+        dict(it,
+             job=dict(jobs.get(it["rel"]) or {}),
+             flagged=(it["rel"] in fl),
+             favorited=(it["rel"] in fv))
+        for it in cached
+    ]
 
 
 def _scan_note_image(rel: str, img: Path):
@@ -682,6 +738,20 @@ class Handler(BaseHTTPRequestHandler):
                 plog(f"[flag] {'標記不優質' if now else '取消標記'} {rel}")
                 self._send_json({"ok": True, "rel": rel, "flagged": now})
                 return
+            if u.path == "/api/favorite":
+                rel = data.get("rel") or ""
+                try:
+                    py = py_of(rel)
+                except Exception:
+                    self._send_json({"error": "路徑不合法"}, 400)
+                    return
+                if not py.is_file():
+                    self._send_json({"error": "詞庫不存在"}, 404)
+                    return
+                now = set_fav(rel, bool(data.get("favorited")))
+                plog(f"[fav] {'收藏' if now else '取消收藏'} {rel}")
+                self._send_json({"ok": True, "rel": rel, "favorited": now})
+                return
             if u.path == "/api/steps":
                 try:
                     s = max(1, min(150, int(data.get("steps"))))
@@ -836,6 +906,7 @@ def main():
     print("[serve   ] 若手機連不上:Windows 防火牆首次可能跳出提示,請允許 Python 存取")
 
     _load_flags()                 # 載入品質旗標黑名單
+    _load_favs()                  # 載入收藏清單
     srv = ThreadingHTTPServer((bind_host, port), Handler)
     # 開機就先在背景把詞庫掃一遍暖快取，第一次開頁的 /api/libs 才不用等 ~1s 掃描
     threading.Thread(target=lambda: scan_libraries(), daemon=True).start()
