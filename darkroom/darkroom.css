@@ -60,6 +60,12 @@ button.primary { background: linear-gradient(180deg, #eaad57, var(--amber-d)); b
 button.primary:hover:not(:disabled) { filter: brightness(1.06); }
 button.ghost { background: transparent; border-color: var(--line); color: var(--dim); }
 button.danger { color: #ffd9d3; border-color: #5a2e2a; background: #2a1a18; }
+/* 頂列「打標」連結：長得像 ghost 按鈕（button 樣式是 element 選擇器，錨點吃不到，這裡補上） */
+a.taglink { display: inline-flex; align-items: center; gap: 4px; text-decoration: none; cursor: pointer;
+  background: transparent; color: var(--dim); border: 1px solid var(--line);
+  padding: 7px 12px; border-radius: 8px; font-size: 13px; line-height: 1;
+  transition: background .12s, border-color .12s, color .12s; }
+a.taglink:hover { background: #2a2d38; border-color: #3a3d49; color: var(--ink); }
 input[type=text] { background: var(--sunk); color: var(--ink); border: 1px solid var(--line);
                    padding: 8px 12px 8px 30px; border-radius: 8px; font-size: 13px; }
 input[type=text]::placeholder { color: var(--faint); }
@@ -424,3 +430,34 @@ body.selecting .fav-btn { display: none; }
 .card.flagged .flag-x { display: grid; }
 .card.flagged { border-color: var(--err); box-shadow: 0 0 0 2px var(--err) inset; }
 .card.flagged .card-name { color: var(--err); }
+
+/* ── 稀有度：檔名前綴標註（稀有=黃／特別=藍／傳奇=彩色），格線＋抽卡都顯示 ──
+   光暈一律用 box-shadow（不受卡片 overflow:hidden 裁切）。傳奇用 @property 讓
+   邊框/光暈的「色相」連續轉，只動 border/shadow 不動縮圖本身。角標見 .rar-tag。 */
+:root { --rar-rare: #ffd23e; --rar-special: #49a6ff; }
+@property --rar-h { syntax: "<number>"; inherits: false; initial-value: 275; }
+@keyframes rarHue { from { --rar-h: 0; } to { --rar-h: 360; } }
+
+.rar-tag { position: absolute; z-index: 3; font-size: 10px; font-weight: 800; letter-spacing: .06em;
+  padding: 2px 8px; border-radius: 999px; line-height: 1.5; pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,.45); }
+.rar-tag.rare      { color: #241a00; background: var(--rar-rare); }
+.rar-tag.special   { color: #04203f; background: var(--rar-special); }
+.rar-tag.legendary { color: #fff; background: linear-gradient(90deg,#ff5f6d,#ffb347,#42f5a1,#41b6ff,#b47bff); }
+.thumb .rar-tag        { top: 34px; left: 8px; }   /* 格線：讓開左上角的生成狀態徽章 */
+.tarot-front .rar-tag  { top: 8px;  left: 8px; }
+
+.card.rar-rare    { border-color: var(--rar-rare);    box-shadow: inset 0 0 0 1px var(--rar-rare),    0 0 16px -3px var(--rar-rare); }
+.card.rar-special { border-color: var(--rar-special); box-shadow: inset 0 0 0 1px var(--rar-special), 0 0 16px -3px var(--rar-special); }
+.card.rar-legendary { border-color: hsl(var(--rar-h) 90% 64%);
+  box-shadow: inset 0 0 0 1px hsl(var(--rar-h) 90% 64%), 0 0 18px -3px hsl(var(--rar-h) 90% 60%);
+  animation: rarHue 5s linear infinite; }
+
+/* 抽卡牌面光暈：套在 .tarot-front（backface 隱藏，翻開後才看得到，是揭牌的彩蛋） */
+.tarot-card.rar-rare    .tarot-front { border-color: var(--rar-rare);
+  box-shadow: 0 12px 30px -10px rgba(0,0,0,.6), 0 0 22px -3px var(--rar-rare); }
+.tarot-card.rar-special .tarot-front { border-color: var(--rar-special);
+  box-shadow: 0 12px 30px -10px rgba(0,0,0,.6), 0 0 22px -3px var(--rar-special); }
+.tarot-card.rar-legendary .tarot-front { border-color: hsl(var(--rar-h) 90% 64%);
+  box-shadow: 0 12px 30px -10px rgba(0,0,0,.6), 0 0 26px -3px hsl(var(--rar-h) 90% 60%);
+  animation: rarHue 5s linear infinite; }

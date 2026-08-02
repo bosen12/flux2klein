@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>詞庫打標 · 稀有度</title>
+<link rel="stylesheet" href="/darkroom.css">
+<link rel="stylesheet" href="/tag.css">
+</head>
+<body class="tagger">
+<div class="topbar">
+  <button class="menu-btn ghost" id="menu-btn" aria-label="開關資料夾列">☰</button>
+  <div class="brand">
+    <span class="dot"></span>
+    <h1>詞庫打標</h1>
+    <span class="sub" id="total-tag">…</span>
+  </div>
+  <div class="search-wrap">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    <input type="text" id="search" placeholder="跨資料夾搜尋名稱…" autocomplete="off">
+  </div>
+  <div class="spacer"></div>
+  <a class="ghost linklike" href="/" title="回詞庫暗房">← 暗房</a>
+  <button class="ghost" id="rescan" title="重新掃描">↻ 重掃</button>
+  <div class="conn" id="conn"><span class="led"></span><span id="conn-text">…</span></div>
+</div>
+
+<div class="body">
+  <nav class="rail" id="rail" aria-label="資料夾">
+    <div class="rail-head">
+      <span>資料夾 · Chapters</span>
+      <button id="rail-sort" class="rail-sort" title="切換升冪／降冪排序">升冪 ↑</button>
+    </div>
+    <div class="rail-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input type="text" id="folder-search" placeholder="搜尋資料夾…" autocomplete="off">
+      <button id="folder-search-clear" aria-label="清除" title="清除" style="display:none;">✕</button>
+    </div>
+    <div id="rail-list"></div>
+    <div id="rail-empty" class="rail-empty" style="display:none;">找不到符合的資料夾</div>
+  </nav>
+
+  <main class="main" id="main">
+    <div class="main-head">
+      <div>
+        <div class="main-title"><span class="num" id="mt-num"></span><h2 id="mt-name">載入中…</h2></div>
+        <div class="main-sub" id="mt-sub"></div>
+      </div>
+      <div class="head-actions">
+        <button class="ghost" id="sel-all">全選本資料夾</button>
+        <button class="ghost" id="sel-clear">清除選取</button>
+      </div>
+    </div>
+    <div id="grid" class="grid tag-grid"></div>
+  </main>
+</div>
+
+<!-- 底部：先選取詞庫，再點稀有度套用（會先跳確認預覽） -->
+<div class="tagbar" id="tagbar">
+  <span class="tagbar-count" id="tagbar-count">已選 0</span>
+  <span class="tagbar-hint">選取詞庫後，點下方套用稀有度（改檔名前會先預覽）</span>
+  <div class="spacer"></div>
+  <div class="rar-picker" id="rar-picker" role="group" aria-label="套用稀有度">
+    <button data-r="rare" class="rar-pick rare" disabled>稀有版</button>
+    <button data-r="special" class="rar-pick special" disabled>特別版</button>
+    <button data-r="legendary" class="rar-pick legendary" disabled>傳奇版</button>
+    <button data-r="" class="rar-pick none" disabled>移除標記</button>
+  </div>
+</div>
+
+<!-- 確認預覽 -->
+<div id="confirm" class="modal">
+  <div class="confirm-inner">
+    <h3 id="confirm-title">確認改名</h3>
+    <div id="confirm-sub" class="confirm-sub"></div>
+    <div id="confirm-list" class="confirm-list"></div>
+    <div class="confirm-actions">
+      <button id="confirm-cancel">取消</button>
+      <button class="primary" id="confirm-go">確認改名</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="/tag.js" defer></script>
+</body>
+</html>

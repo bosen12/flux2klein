@@ -202,6 +202,11 @@ STATIC_FILES = {
     "/index.html": ("index.html", "text/html; charset=utf-8"),
     "/darkroom.css": ("darkroom.css", "text/css; charset=utf-8"),
     "/darkroom.js": ("darkroom.js", "application/javascript; charset=utf-8"),
+    # 稀有度打標:獨立頁面(共用同一個伺服器與 /api/*、darkroom.css 的樣式底)
+    "/tag": ("tag.html", "text/html; charset=utf-8"),
+    "/tag.html": ("tag.html", "text/html; charset=utf-8"),
+    "/tag.css": ("tag.css", "text/css; charset=utf-8"),
+    "/tag.js": ("tag.js", "application/javascript; charset=utf-8"),
 }
 
 # ---------------------------------------------------------------------------
@@ -245,6 +250,34 @@ def find_image(py: Path) -> Path | None:
         if p.is_file():
             return p
     return None
+
+
+# --- 稀有度：以檔名前綴標註(無分隔)。傳奇 > 特別 > 稀有 ----------------------
+# 前綴放最前面,例如「傳奇版我是白癡.py」。稀有度純由檔名衍生,不另存 JSON;
+# 打標網頁的工作就是改檔名來加/換/移除這個前綴。
+RARITY_TOKENS = (("legendary", "傳奇版"), ("special", "特別版"), ("rare", "稀有版"))
+
+
+def rarity_of(stem: str) -> tuple[str, str]:
+    """回傳 (key, token)。沒有前綴則 ("", "")。"""
+    for key, tok in RARITY_TOKENS:
+        if stem.startswith(tok):
+            return key, tok
+    return "", ""
+
+
+def strip_rarity(stem: str) -> str:
+    """去掉稀有度前綴,回傳原本的名字。"""
+    _, tok = rarity_of(stem)
+    return stem[len(tok):] if tok else stem
+
+
+def token_for(key: str) -> str:
+    """由 key 取前綴字;未知或空回傳 ""。"""
+    for k, tok in RARITY_TOKENS:
+        if k == key:
+            return tok
+    return ""
 
 
 # --- 縮圖快取 -------------------------------------------------------------
@@ -359,6 +392,29 @@ def py_of(rel: str) -> Path:
     return p
 
 
+def do_rename(py: Path, new_py: Path):
+    """把詞庫 .py 連同旁邊的預覽圖(.webp/.png)一起改名,並把旗標/收藏的 key
+    從舊 rel 遷到新 rel(否則改名後這兩者會指向不存在的舊 rel)。"""
+    old_rel = rel_of(py)
+    py.rename(new_py)                       # 先改 .py(它才是詞庫的身分)
+    for ext in IMG_EXTS:                    # 再連同同名預覽圖一起改
+        oi = py.with_suffix(ext)
+        if oi.is_file():
+            try:
+                oi.rename(new_py.with_suffix(ext))
+            except OSError as e:
+                plog(f"[rename] 預覽圖改名失敗 {oi.name}: {e}")
+    new_rel = rel_of(new_py)
+    with _flags_lock:
+        if old_rel in _flags:
+            _flags[new_rel] = _flags.pop(old_rel)
+            _save_flags_locked()
+    with _favs_lock:
+        if old_rel in _favs:
+            _favs[new_rel] = _favs.pop(old_rel)
+            _save_favs_locked()
+
+
 def set_job(rel: str, status: str, message: str = ""):
     with STATE["jobs_lock"]:
         STATE["jobs"][rel] = {
@@ -393,9 +449,13 @@ def _scan_fs() -> list[dict]:
     items = []
     for py in gsp.iter_libraries(None):
         img = find_image(py)
+        stem = py.stem
+        rk, _tok = rarity_of(stem)
         items.append({
             "rel": rel_of(py),
-            "name": py.stem,
+            "name": stem,                       # 完整檔名(含稀有度前綴)
+            "display_name": strip_rarity(stem), # 去前綴的顯示名
+            "rarity": rk,                        # "" / rare / special / legendary
             "folder": py.parent.name if py.parent != SPECIAL_DIR else "",
             "has_image": img is not None,
             "image_mtime": int(img.stat().st_mtime) if img else 0,
@@ -751,6 +811,52 @@ class Handler(BaseHTTPRequestHandler):
                 now = set_fav(rel, bool(data.get("favorited")))
                 plog(f"[fav] {'收藏' if now else '取消收藏'} {rel}")
                 self._send_json({"ok": True, "rel": rel, "favorited": now})
+                return
+            if u.path == "/api/rename":
+                # 大量套用稀有度：對每個 rel 依 rarity 前綴改檔名。dry=1 只回傳
+                # 「舊名→新名」預覽不實際動檔;dry 關掉才真的改。rarity 空字串=移除標記。
+                rels = data.get("rels") or []
+                rarity_key = data.get("rarity", "") or ""
+                dry = bool(data.get("dry"))
+                token = token_for(rarity_key)
+                if rarity_key and not token:
+                    self._send_json({"error": "未知稀有度"}, 400)
+                    return
+                results = []
+                for rel in rels:
+                    try:
+                        py = py_of(rel)
+                    except Exception:
+                        results.append({"rel": rel, "error": "路徑不合法"})
+                        continue
+                    if not py.is_file():
+                        results.append({"rel": rel, "error": "詞庫不存在"})
+                        continue
+                    base = strip_rarity(py.stem)
+                    new_stem = (token + base) if token else base
+                    new_py = py.with_name(new_stem + ".py")
+                    item = {"rel": rel, "old_name": py.stem, "new_name": new_stem,
+                            "new_rel": rel_of(new_py)}
+                    if new_stem == py.stem:
+                        item["skip"] = True
+                        results.append(item)
+                        continue
+                    if new_py.exists():
+                        item["error"] = "目標檔名已存在"
+                        results.append(item)
+                        continue
+                    if not dry:
+                        try:
+                            do_rename(py, new_py)
+                            item["ok"] = True
+                        except Exception as e:
+                            item["error"] = f"{type(e).__name__}: {e}"
+                    results.append(item)
+                did = sum(1 for r in results if r.get("ok"))
+                if not dry and did:
+                    scan_libraries(force=True)   # 重建快取反映新檔名
+                    plog(f"[rename] {rarity_key or '移除標記'} × {did} 筆")
+                self._send_json({"ok": True, "dry": dry, "results": results})
                 return
             if u.path == "/api/steps":
                 try:

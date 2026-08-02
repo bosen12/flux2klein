@@ -191,6 +191,8 @@ function appendPage() {
 
 const ICON_EMPTY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="m21 15-5-5L5 21"/></svg>';
 const ICON_STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.1l2.63 5.33 5.88.85-4.25 4.15 1 5.86L12 16.79 6.74 19.6l1-5.86L3.49 9.28l5.88-.85z"/></svg>';
+const RARITY_LABEL = { rare: '稀有', special: '特別', legendary: '傳奇' };
+const rarTag = (r) => r ? `<span class="rar-tag ${r}">${RARITY_LABEL[r] || ''}</span>` : '';
 
 // 縮圖內部標記：星號、選取框、紅叉、生成鈕全部就地重建（reloadThumb 會覆寫
 // thumb.innerHTML，所以這些覆蓋層要有單一來源，避免生成後星號/生成鈕被清掉）。
@@ -200,6 +202,7 @@ function thumbInnerHTML(it) {
     ? `<span class="badge has">已生成</span><img loading="lazy" decoding="async" width="360" height="360" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="" onload="this.classList.add('ld')" onerror="this.classList.add('ld')">`
     : `<span class="badge">未生成</span><div class="empty">${ICON_EMPTY}<span>尚無圖片</span></div>`;
   return `${media}` +
+    rarTag(it.rarity) +
     `<button class="fav-btn" type="button" aria-label="收藏" aria-pressed="${it.favorited ? 'true' : 'false'}">${ICON_STAR}</button>` +
     `<span class="pick-box" aria-hidden="true"></span>` +
     `<span class="flag-x" aria-hidden="true">✕</span>` +
@@ -215,7 +218,8 @@ function wireThumb(thumb, it) {
 
 function cardOf(it) {
   const el = document.createElement('div');
-  el.className = 'card' + (it.has_image ? '' : ' missing') + (it.flagged ? ' flagged' : '') + (it.favorited ? ' favorited' : '');
+  el.className = 'card' + (it.has_image ? '' : ' missing') + (it.flagged ? ' flagged' : '')
+    + (it.favorited ? ' favorited' : '') + (it.rarity ? ' rar-' + it.rarity : '');
   el.dataset.rel = it.rel;
   el.innerHTML = `
     <div class="thumb">${thumbInnerHTML(it)}</div>
@@ -224,7 +228,7 @@ function cardOf(it) {
       ${SEARCH ? '<div class="card-folder"></div>' : ''}
     </div>
     <div class="status"></div>`;
-  el.querySelector('.card-name').textContent = it.name;
+  el.querySelector('.card-name').textContent = it.display_name || it.name;
   if (SEARCH) el.querySelector('.card-folder').textContent = it.folder || '(根目錄)';
   wireThumb(el.querySelector('.thumb'), it);
   if (it.job && it.job.status) updateStatusEl(el.querySelector('.status'), it.job);
@@ -390,7 +394,7 @@ function openModal(rel, resetNav = true) {
       <div class="prompt-label">負向 Prompt</div>
       <div class="prompt-block" id="neg">載入中…</div>
     </div>`;
-  $('modal-title').textContent = item.name;
+  $('modal-title').textContent = item.display_name || item.name;
   $('modal-folder').textContent = item.folder || '(根目錄)';
   $('modal-gen').onclick = () => generate(rel);
   $('modal-close').onclick = closeModal;
@@ -579,7 +583,7 @@ function drawTarot() {
   wrap.innerHTML = '';
   picks.forEach((it, i) => {
     const card = document.createElement('div');
-    card.className = 'tarot-card';
+    card.className = 'tarot-card' + (it.rarity ? ' rar-' + it.rarity : '');
     card.style.animationDelay = REDUCE ? '0ms' : (i * 48) + 'ms';                 // 發牌 stagger（平行排列，無弧度）
     const relEnc = encodeURIComponent(it.rel);
     // 抽卡的牌面圖是「上方可見」的少數幾張 → 直接載入（不 lazy）。翻牌不再乾等它載入，
@@ -590,9 +594,9 @@ function drawTarot() {
     card.innerHTML =
       `<div class="tarot-inner">
          <div class="tarot-back"><span class="tarot-emblem">✦</span></div>
-         <div class="tarot-front${it.has_image ? ' loading' : ''}">${face}<div class="tarot-name"></div><div class="tarot-folder"></div><div class="tarot-glare"></div></div>
+         <div class="tarot-front${it.has_image ? ' loading' : ''}">${face}${rarTag(it.rarity)}<div class="tarot-name"></div><div class="tarot-folder"></div><div class="tarot-glare"></div></div>
        </div>`;
-    card.querySelector('.tarot-name').textContent = it.name;
+    card.querySelector('.tarot-name').textContent = it.display_name || it.name;
     card.querySelector('.tarot-folder').textContent = it.folder || '(根目錄)';
     card.addEventListener('click', () => { closeTarot(); openModal(it.rel); });
     if (!REDUCE) {                                        // 3D 傾斜（參考 Aceternity 3D card）

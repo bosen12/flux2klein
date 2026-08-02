@@ -181,6 +181,15 @@ Windows 雙擊即可（會自動啟動 Groq 多 key 代理）：
 - **設定**：機器相關路徑放 `preview_config.json`（已 gitignore，複製 `preview_config.example.json` 來改）——`special_dir`（詞庫資料夾，預設指向 `animebot`）、`comfy`、`workflow`、`port` 等。**面板的詞庫選單（`serve.py`）也讀同一個 `special_dir`**，所以兩邊看的是同一份詞庫。
 - **「重掃」鈕的用途**：詞庫清單在伺服器端有快取，開頁／重整都直接吃快取（秒回）。**在暗房外面新增或刪除詞庫檔之後，按「重掃」才會看到**（重掃是唯一會重走檔案系統的操作，約 1 秒）。快取超過 60 秒會自動在背景更新，不會擋住畫面；用暗房自己生成的圖則是立刻反映，不用重掃。
 - **收藏**：每張縮圖右上角有**星號**，點一下就收藏（金色實心星常駐）、再點取消。桌面平常藏起、hover 卡片才浮現，已收藏的則一直亮著。收藏清單存後端 `favorites.json`（已 gitignore，跟品質旗標 `flags.json` 同一套機制），只記錄、不影響抽卡與顯示。
+- **稀有度**：以**檔名前綴**標註三個等級——`稀有版`（黃光）、`特別版`（藍光）、`傳奇版`（彩色循環光暈），例如 `傳奇版我是白癡.py`。格線與**抽卡**都會顯示對應顏色的光暈＋角標；顯示名稱會自動去掉前綴、只留原名。稀有度純由檔名衍生，不另存 JSON。
+
+### 稀有度打標頁（`/tag`）
+
+大量標稀有度、直接改檔名的**獨立頁面**，跟暗房共用同一個 `preview_ui.py` 伺服器（暗房頂列有「🏷 打標」連結，或直接開 `http://localhost:7860/tag`）。
+
+- 左側選資料夾、主區點縮圖多選（跨資料夾保留選取），下方點「稀有版／特別版／傳奇版／移除標記」套用。
+- **改名前一定先跳預覽**：列出每筆「舊名 → 新名」，已是該狀態的標為「無變化」、撞名的標為「目標檔名已存在」且不會動它，按「確認改名」才真的改。
+- 改名會**連同旁邊的預覽圖 `.webp`／`.png` 一起改名**，並把該詞庫的旗標／收藏記錄遷到新檔名；重新標記會**替換**既有前綴而非疊加。
 
 ---
 
@@ -238,7 +247,7 @@ Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188
 | `three.min.js` | Three.js r134（Vanta 依賴，vendored） |
 | `vanta.fog.min.js` | Vanta.js FOG WebGL 背景（vendored） |
 | `preview_ui.py` | 詞庫暗房：獨立工具的後端（供 `darkroom/` 靜態檔＋ `/api/*`，見上節） |
-| `darkroom/` | 暗房前端：`index.html` / `darkroom.css` / `darkroom.js`（跟主面板一樣分檔） |
+| `darkroom/` | 暗房前端：`index.html` / `darkroom.css` / `darkroom.js`；另含稀有度打標頁 `tag.html` / `tag.css` / `tag.js`（`/tag`，共用同一伺服器與 `darkroom.css`） |
 | `generate_special_previews.py` | 暗房的 ComfyUI 生成邏輯（`preview_ui.py` 依賴） |
 | `preview_ui.bat` | 啟動詞庫暗房 |
 | `preview_config.example.json` | 暗房設定範本（複製成 `preview_config.json`，後者已 gitignore） |
