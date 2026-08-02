@@ -19,6 +19,15 @@ const REDUCE_MOTION = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+// 顯示目前操作的詞庫資料夾（尾兩段），避免兩個 bat 的不同 special_dir 搞混改到別份。
+function setDataset(dir) {
+  const el = $('dataset');
+  if (!el || !dir) return;
+  const parts = String(dir).replace(/\\/g, '/').split('/').filter(Boolean);
+  el.textContent = parts.slice(-2).join('/');
+  el.title = '目前操作的詞庫資料夾：' + dir;
+}
+
 const ICON_EMPTY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="m21 15-5-5L5 21"/></svg>';
 const RARITY_LABEL = { rare: '稀有', special: '特別', legendary: '傳奇' };
 const RARITY_FULL = { rare: '稀有版', special: '特別版', legendary: '傳奇版', '': '移除標記' };
@@ -31,6 +40,7 @@ async function loadAll(force = false) {
   const total = ALL.length;
   const tagged = ALL.filter(x => x.rarity).length;
   $('total-tag').textContent = `${tagged}/${total} 已標稀有度`;
+  setDataset(j.special_dir);
   if (CUR_FOLDER === null) {
     const folders = folderStats();
     CUR_FOLDER = folders.length ? folders[0].name : '';

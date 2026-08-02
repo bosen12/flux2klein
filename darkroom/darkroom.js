@@ -8,6 +8,16 @@ const pollers = new Set();
 const REDUCE_MOTION = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const $ = id => document.getElementById(id);
 
+// 顯示目前操作的詞庫資料夾（兩個 bat 不同 special_dir 都開 7860，避免搞混改到別份）。
+// 顯示路徑尾兩段就足以分辨（…/projects/special_prompts vs …/animebot/special_prompts）。
+function setDataset(dir) {
+  const el = $('dataset');
+  if (!el || !dir) return;
+  const parts = String(dir).replace(/\\/g, '/').split('/').filter(Boolean);
+  el.textContent = parts.slice(-2).join('/');
+  el.title = '目前操作的詞庫資料夾：' + dir;
+}
+
 // force=true 才讓後端重掃檔案系統（「重掃」鈕）；一般開頁吃後端快取，秒回。
 async function loadAll(force = false) {
   const r = await fetch('/api/libs' + (force ? '?force=1' : ''));
@@ -18,6 +28,7 @@ async function loadAll(force = false) {
   $('conn-text').textContent = j.comfy ? `ComfyUI 就緒 · steps ${j.steps}` : 'ComfyUI 未連線';
   const total = ALL.length, have = ALL.filter(x => x.has_image).length;
   $('total-tag').textContent = `${have}/${total} 已生成`;
+  setDataset(j.special_dir);
   if (typeof j.steps === 'number' && document.activeElement !== $('steps-input')) $('steps-input').value = j.steps;
   updateReviewCount();
   if (CUR_FOLDER === null) {
@@ -199,8 +210,8 @@ const rarTag = (r) => r ? `<span class="rar-tag ${r}">${RARITY_LABEL[r] || ''}</
 function thumbInnerHTML(it) {
   const relEnc = encodeURIComponent(it.rel);
   const media = it.has_image
-    ? `<span class="badge has">已生成</span><img loading="lazy" decoding="async" width="360" height="360" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="" onload="this.classList.add('ld')" onerror="this.classList.add('ld')">`
-    : `<span class="badge">未生成</span><div class="empty">${ICON_EMPTY}<span>尚無圖片</span></div>`;
+    ? `<img loading="lazy" decoding="async" width="360" height="360" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="" onload="this.classList.add('ld')" onerror="this.classList.add('ld')">`
+    : `<div class="empty">${ICON_EMPTY}<span>尚無圖片</span></div>`;
   return `${media}` +
     rarTag(it.rarity) +
     `<button class="fav-btn" type="button" aria-label="收藏" aria-pressed="${it.favorited ? 'true' : 'false'}">${ICON_STAR}</button>` +

@@ -60,6 +60,12 @@ button.primary { background: linear-gradient(180deg, #eaad57, var(--amber-d)); b
 button.primary:hover:not(:disabled) { filter: brightness(1.06); }
 button.ghost { background: transparent; border-color: var(--line); color: var(--dim); }
 button.danger { color: #ffd9d3; border-color: #5a2e2a; background: #2a1a18; }
+/* 目前操作的詞庫資料夾標籤：兩個 bat（不同 special_dir）都開在 7860、頁面長一樣，
+   顯示路徑尾兩段避免搞混改到別份資料。 */
+.dataset { font-family: var(--mono); font-size: 11px; color: var(--amber); white-space: nowrap;
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--line)); border-radius: 6px; padding: 2px 8px; }
+.dataset::before { content: "📁 "; }
+.dataset:empty { display: none; }
 /* 頂列「打標」連結：長得像 ghost 按鈕（button 樣式是 element 選擇器，錨點吃不到，這裡補上） */
 a.taglink { display: inline-flex; align-items: center; gap: 4px; text-decoration: none; cursor: pointer;
   background: transparent; color: var(--dim); border: 1px solid var(--line);
@@ -91,6 +97,10 @@ input[type=text]::placeholder { color: var(--faint); }
 .search-wrap input { width: 100%; }
 .spacer { flex: 1; }
 .conn { font-family: var(--mono); font-size: 11px; color: var(--dim); display: flex; align-items: center; gap: 6px; }
+/* 頂列連線指示器固定寬度、靠右對齊：文字從「…」變「ComfyUI 就緒 · steps 25」時
+   寬度不變，右側按鈕群才不會因為 spacer 重排而瞬移（換頁時尤其明顯）。170 = 最長
+   字串「…steps 250」151px + led/gap/餘裕。只作用在頂列 #conn，不動 batch-progress。 */
+#conn { min-width: 170px; justify-content: flex-end; }
 .conn .led { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
 .conn.on .led { background: var(--ok); box-shadow: 0 0 7px var(--ok); }
 
@@ -211,10 +221,6 @@ input[type=text]::placeholder { color: var(--faint); }
 .card:hover .thumb img { transform: scale(1.04); }
 .thumb .empty { display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--faint); font-size: 12px; }
 .thumb .empty svg { width: 26px; height: 26px; opacity: .5; }
-.badge { position: absolute; top: 8px; left: 8px; font-family: var(--mono); font-size: 10px;
-         padding: 2px 7px; border-radius: 20px; background: rgba(19,19,24,.82); backdrop-filter: blur(4px);
-         border: 1px solid var(--line); color: var(--dim); }
-.badge.has { color: var(--amber); border-color: rgba(230,163,74,.4); }
 .card-body { padding: 9px 11px 10px; }
 .card-name { font-size: 12.5px; font-weight: 550; line-height: 1.35;
              overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-all; }
@@ -444,7 +450,7 @@ body.selecting .fav-btn { display: none; }
 .rar-tag.rare      { color: #241a00; background: var(--rar-rare); }
 .rar-tag.special   { color: #04203f; background: var(--rar-special); }
 .rar-tag.legendary { color: #fff; background: linear-gradient(90deg,#ff5f6d,#ffb347,#42f5a1,#41b6ff,#b47bff); }
-.thumb .rar-tag        { top: 34px; left: 8px; }   /* 格線：讓開左上角的生成狀態徽章 */
+.thumb .rar-tag        { top: 8px; left: 8px; }    /* 格線左上角（已移除生成狀態徽章） */
 .tarot-front .rar-tag  { top: 8px;  left: 8px; }
 
 .card.rar-rare    { border-color: var(--rar-rare);    box-shadow: inset 0 0 0 1px var(--rar-rare),    0 0 16px -3px var(--rar-rare); }

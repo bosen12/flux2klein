@@ -179,6 +179,7 @@ Windows 雙擊即可（會自動啟動 Groq 多 key 代理）：
 - **啟動**：跑 `preview_ui.bat`（或 `python preview_ui.py`），預設開在 `http://localhost:7860/`。要真的生成圖需先開 ComfyUI。
 - **面板按鈕**：主面板頂部「AI Assistant」旁有「**詞庫暗房**」按鈕，點了用新視窗開這個工具（不嵌入面板）。工具沒啟動的話新視窗會連不上——先跑 `preview_ui.bat`。
 - **設定**：機器相關路徑放 `preview_config.json`（已 gitignore，複製 `preview_config.example.json` 來改）——`special_dir`（詞庫資料夾，預設指向 `animebot`）、`comfy`、`workflow`、`port` 等。**面板的詞庫選單（`serve.py`）也讀同一個 `special_dir`**，所以兩邊看的是同一份詞庫。
+- **兩份詞庫別搞混**：`preview_ui.bat`（`special_prompts`）與 `preview_ui_animebot.bat`（`animebot\special_prompts`）**共用同一個 port 7860、一次只能開一個**。改名等操作在後端就被限制在啟動時的 `special_dir` 內、**動不到另一份**；但兩個頁面長得一樣，所以頂列會顯示**目前操作的資料夾**（如 `animebot/special_prompts`），切換 bat 時看一眼就知道現在是哪份。
 - **「重掃」鈕的用途**：詞庫清單在伺服器端有快取，開頁／重整都直接吃快取（秒回）。**在暗房外面新增或刪除詞庫檔之後，按「重掃」才會看到**（重掃是唯一會重走檔案系統的操作，約 1 秒）。快取超過 60 秒會自動在背景更新，不會擋住畫面；用暗房自己生成的圖則是立刻反映，不用重掃。
 - **收藏**：每張縮圖右上角有**星號**，點一下就收藏（金色實心星常駐）、再點取消。桌面平常藏起、hover 卡片才浮現，已收藏的則一直亮著。收藏清單存後端 `favorites.json`（已 gitignore，跟品質旗標 `flags.json` 同一套機制），只記錄、不影響抽卡與顯示。
 - **稀有度**：以**檔名前綴**標註三個等級——`稀有版`（黃光）、`特別版`（藍光）、`傳奇版`（彩色循環光暈），例如 `傳奇版我是白癡.py`。格線與**抽卡**都會顯示對應顏色的光暈＋角標；顯示名稱會自動去掉前綴、只留原名。稀有度純由檔名衍生，不另存 JSON。
