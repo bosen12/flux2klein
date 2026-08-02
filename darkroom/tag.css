@@ -96,12 +96,13 @@ body.tagger .main { padding-bottom: 84px; }
 
 /* ── 抽卡打標：一次 16 張較小的卡（4×4），每張牌面下方 4 顆稀有度按鈕 ──
    抽卡外框/發牌/翻牌/光環都沿用 darkroom.css，這裡只調尺寸與加打標按鈕。 */
-.ttag-stage { max-width: 1060px; }
+.ttag-stage { max-width: 1240px; }
 .ttag-progress { font-family: var(--mono); font-size: 12.5px; color: var(--amber); white-space: nowrap; }
-.tarot-cards.ttag { gap: 13px; }
-.tarot-cards.ttag .tarot-card { width: clamp(110px, 12.5vw, 150px); cursor: default; }
-@media (max-width: 900px) { .tarot-cards.ttag { grid-template-columns: repeat(3, auto); } }
-@media (max-width: 600px) { .tarot-cards.ttag { grid-template-columns: repeat(2, auto); } }
+.tarot-cards.ttag { grid-template-columns: repeat(5, auto); gap: 14px; }   /* 5 欄 × 3 列 = 15 張 */
+.tarot-cards.ttag .tarot-card { width: clamp(150px, 14.5vw, 200px); cursor: default; }
+@media (max-width: 1120px) { .tarot-cards.ttag { grid-template-columns: repeat(4, auto); } }
+@media (max-width: 900px)  { .tarot-cards.ttag { grid-template-columns: repeat(3, auto); } }
+@media (max-width: 620px)  { .tarot-cards.ttag { grid-template-columns: repeat(2, auto); } }
 .ttag .tarot-name { font-size: 11.5px; padding: 6px 8px 2px; }
 
 /* 每張卡的 4 顆稀有度按鈕 */
@@ -116,5 +117,6 @@ body.tagger .main { padding-bottom: 84px; }
 .ttag-card.assigned-rare      .ttag-rar button[data-r="rare"]      { background:var(--rar-rare); color:#241a00; border-color:var(--rar-rare); }
 .ttag-card.assigned-special   .ttag-rar button[data-r="special"]   { background:var(--rar-special); color:#04203f; border-color:var(--rar-special); }
 .ttag-card.assigned-legendary .ttag-rar button[data-r="legendary"] { background:linear-gradient(90deg,#ff5f6d,#ffb347,#42f5a1,#41b6ff,#b47bff); color:#fff; border-color:transparent; }
-/* 滑鼠所在卡（提示鍵盤 1-4 會標到這張） */
-.ttag-card.khover .tarot-front { outline: 2px solid color-mix(in srgb, var(--amber) 55%, transparent); outline-offset: 2px; }
+/* 鍵盤焦點卡（方向鍵移動、數字鍵標到這張）：整張卡外環，翻面前後都看得到 */
+.ttag-card.focused { outline: 2px solid color-mix(in srgb, var(--amber) 70%, transparent);
+  outline-offset: 3px; border-radius: 15px; }
