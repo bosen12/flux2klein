@@ -292,7 +292,7 @@ input[type=text]::placeholder { color: var(--faint); }
   transform-style: preserve-3d;                  /* 讓卡片的 3D 傾斜與內層翻牌都吃到 perspective */
   /* backwards：發牌動畫結束後回到基準（transform:none），hover 的滑鼠傾斜（JS 內嵌
      transform）才不會被 animation 的 fill 蓋掉。平行排列、無弧度。 */
-  animation: tarotDeal var(--d-enter) var(--ease-out) backwards;
+  animation: tarotDeal 340ms var(--ease-out) backwards;
   transition: transform .13s var(--ease-out);    /* 傾斜跟手；離開時滑順歸位 */
   z-index: 1;
 }
@@ -304,7 +304,7 @@ input[type=text]::placeholder { color: var(--faint); }
 .tarot-inner {
   position: relative; transform-style: preserve-3d;   /* 相對定位：高度由牌面（正方圖+文字）決定 */
   transform: rotateY(180deg);                         /* 預設面朝下（顯示牌背） */
-  transition: transform .62s var(--ease-out);
+  transition: transform .42s var(--ease-out);
 }
 .tarot-card.revealed .tarot-inner { transform: rotateY(0deg); }   /* 翻開：牌面朝上、且非鏡像 */
 .tarot-back, .tarot-front {
@@ -332,7 +332,16 @@ input[type=text]::placeholder { color: var(--faint); }
 }
 /* 牌面：預覽圖 + 名稱（不旋轉，翻開後正向非鏡像） */
 .tarot-front { background: var(--panel); display: flex; flex-direction: column; }
-.tarot-front img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; }   /* 正方形圖 */
+.tarot-front img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; position: relative; z-index: 2; }   /* 正方形圖 */
+.tarot-front img.ld { animation: thumbFade var(--d-ui) var(--ease-out); }   /* 翻牌後才到的圖淡入（快取的圖不觸發） */
+/* 圖還沒載入：牌面上緣方形區跑一道琥珀微光，讓翻開等圖時像「沖洗中」而非空白 */
+.tarot-front.loading::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; aspect-ratio: 1 / 1; z-index: 1; pointer-events: none;
+  background: linear-gradient(100deg, transparent 18%, rgba(234,173,87,.10) 40%,
+              rgba(234,173,87,.20) 50%, rgba(234,173,87,.10) 60%, transparent 82%);
+  background-size: 220% 100%; animation: tarotShimmer 1.1s linear infinite;
+}
+@keyframes tarotShimmer { from { background-position: 175% 0; } to { background-position: -60% 0; } }
 /* 光澤：跟著游標的高光（Aceternity 風），hover 時淡入 */
 .tarot-glare {
   position: absolute; inset: 0; pointer-events: none; opacity: 0;

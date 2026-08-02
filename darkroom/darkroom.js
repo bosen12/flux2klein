@@ -580,16 +580,17 @@ function drawTarot() {
   picks.forEach((it, i) => {
     const card = document.createElement('div');
     card.className = 'tarot-card';
-    card.style.animationDelay = REDUCE ? '0ms' : (i * 90) + 'ms';                 // 發牌 stagger（平行排列，無弧度）
+    card.style.animationDelay = REDUCE ? '0ms' : (i * 48) + 'ms';                 // 發牌 stagger（平行排列，無弧度）
     const relEnc = encodeURIComponent(it.rel);
-    // 抽卡的牌面圖是「上方可見」的少數幾張 → 直接載入（不 lazy），翻牌前才不會空白
+    // 抽卡的牌面圖是「上方可見」的少數幾張 → 直接載入（不 lazy）。翻牌不再乾等它載入，
+    // 圖較慢時牌面先顯示載入微光（.tarot-front.loading），圖到了 onload 淡入並收掉微光。
     const face = it.has_image
-      ? `<img decoding="async" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="">`
+      ? `<img decoding="async" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="" onload="this.classList.add('ld');this.closest('.tarot-front').classList.remove('loading')" onerror="this.closest('.tarot-front').classList.remove('loading')">`
       : `<div class="tarot-noimg">${ICON_EMPTY}<span>尚無圖</span></div>`;
     card.innerHTML =
       `<div class="tarot-inner">
          <div class="tarot-back"><span class="tarot-emblem">✦</span></div>
-         <div class="tarot-front">${face}<div class="tarot-name"></div><div class="tarot-folder"></div><div class="tarot-glare"></div></div>
+         <div class="tarot-front${it.has_image ? ' loading' : ''}">${face}<div class="tarot-name"></div><div class="tarot-folder"></div><div class="tarot-glare"></div></div>
        </div>`;
     card.querySelector('.tarot-name').textContent = it.name;
     card.querySelector('.tarot-folder').textContent = it.folder || '(根目錄)';
@@ -604,22 +605,13 @@ function drawTarot() {
   // 發牌完成後依序翻牌；reduced-motion 直接全開
   const cards = [...wrap.children];
   if (REDUCE) { cards.forEach(c => c.classList.add('revealed')); return; }
-  const dealDone = n * 90 + 360;
-  const startT = performance.now();
+  const dealDone = n * 48 + 220;
   cards.forEach((c, i) => {
-    const minAt = dealDone + i * 150;                    // 發牌時序
-    const reveal = () => {
-      const wait = Math.max(0, minAt - (performance.now() - startT));
-      setTimeout(() => c.classList.add('revealed'), wait);
-    };
-    // 翻牌前先確保圖已載入，避免翻開是空白（無圖的卡直接照時序翻）
+    // 照固定節奏翻牌，不再等圖片載入（否則慢圖會把整段動畫拖到數秒）。已快取的圖
+    // 立刻收掉載入微光；未快取的翻開先顯示微光，onload 再淡入。
     const img = c.querySelector('.tarot-front img');
-    if (!img || img.complete) { reveal(); return; }
-    let fired = false;
-    const go = () => { if (!fired) { fired = true; reveal(); } };
-    img.addEventListener('load', go, { once: true });
-    img.addEventListener('error', go, { once: true });
-    setTimeout(go, 3000);                                // 保險：最多等 3s 就翻，不讓慢圖卡住
+    if (img && img.complete && img.naturalWidth) c.querySelector('.tarot-front').classList.remove('loading');
+    setTimeout(() => c.classList.add('revealed'), dealDone + i * 80);
   });
 }
 
