@@ -463,16 +463,18 @@ body.selecting .fav-btn { display: none; }
   animation: rarHue 5s linear infinite; }
 
 /* 揭牌後的旋轉光環（比照選中資料夾的 beam-spin：conic 一道亮弧繞邊框轉，
-   mask-composite 只留 2px 邊環）。顏色 --beam-c 預設琥珀，稀有度覆寫，傳奇整圈彩虹。
-   只在翻開(.revealed)後出現＝揭牌高潮；overflow:hidden 下用 inset:0 才不被裁掉。 */
-.tarot-front { --beam-c: var(--amber); }
+   mask-composite 只留 2px 邊環）。顏色 --beam-c 依稀有度，傳奇整圈彩虹。只在翻開
+   (.revealed)後出現＝揭牌高潮；overflow:hidden 下用 inset:0 才不被裁掉。
+   **只有標了稀有度的卡才有光環，普通版（無前綴）不加。** */
 .tarot-card.rar-rare    .tarot-front { --beam-c: var(--rar-rare); }
 .tarot-card.rar-special .tarot-front { --beam-c: var(--rar-special); }
-.tarot-card.revealed .tarot-front::after {
+.tarot-card.rar-rare.revealed      .tarot-front::after,
+.tarot-card.rar-special.revealed   .tarot-front::after,
+.tarot-card.rar-legendary.revealed .tarot-front::after {
   content: ''; position: absolute; inset: 0; z-index: 3; pointer-events: none;
   border-radius: inherit; padding: 2px;
   background: conic-gradient(from var(--beam),
-    transparent 0%, rgba(255,255,255,.95) 6%, var(--beam-c) 16%, transparent 34%, transparent 100%);
+    transparent 0%, rgba(255,255,255,.95) 6%, var(--beam-c, var(--amber)) 16%, transparent 34%, transparent 100%);
   animation: beam-spin 3.2s linear infinite;
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
           mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
