@@ -20,6 +20,24 @@ body.tagger .main { padding-bottom: 84px; }
   box-shadow: 0 0 0 2px var(--amber) inset, 0 10px 26px -12px rgba(0,0,0,.6) !important; }
 .tcard.selected .thumb img { transform: scale(1.03); }
 
+/* 暫存標註（尚未改名）：虛線外框 + 左下「→ 稀有/特別/傳奇/無」角標，
+   跟「已是稀有度」的實線光暈區隔。點角標可取消該筆暫存。 */
+.tcard.staged { border-style: dashed !important; }
+.tcard.stage-rare      { border-color: var(--rar-rare) !important;    box-shadow: 0 0 0 1px var(--rar-rare) inset,    0 0 14px -4px var(--rar-rare) !important; }
+.tcard.stage-special   { border-color: var(--rar-special) !important; box-shadow: 0 0 0 1px var(--rar-special) inset, 0 0 14px -4px var(--rar-special) !important; }
+.tcard.stage-legendary { border-color: #b47bff !important;            box-shadow: 0 0 0 1px #b47bff inset,            0 0 14px -4px #b47bff !important; }
+.tcard.stage-none      { border-color: var(--faint) !important;       box-shadow: 0 0 0 1px var(--faint) inset !important; }
+.stage-tag { position: absolute; left: 8px; bottom: 8px; z-index: 4; cursor: pointer;
+  font-size: 10px; font-weight: 800; letter-spacing: .04em; padding: 3px 8px; border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.45); border: 1px solid rgba(0,0,0,.25);
+  transition: filter var(--d-micro) var(--ease-out); }
+.stage-tag.stage-rare      { background: var(--rar-rare); color: #241a00; }
+.stage-tag.stage-special   { background: var(--rar-special); color: #04203f; }
+.stage-tag.stage-legendary { background: linear-gradient(90deg,#ff5f6d,#ffb347,#42f5a1,#41b6ff,#b47bff); color: #fff; }
+.stage-tag.stage-none      { background: var(--dim); color: #10121a; }
+.stage-tag:hover { filter: brightness(1.12); }
+.staged-summary { font-family: var(--mono); font-size: 12.5px; color: var(--amber); }
+
 /* 底部稀有度操作列 */
 .tagbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
   display: flex; align-items: center; gap: 14px; padding: 12px 18px;

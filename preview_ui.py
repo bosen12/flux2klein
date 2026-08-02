@@ -813,17 +813,23 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"ok": True, "rel": rel, "favorited": now})
                 return
             if u.path == "/api/rename":
-                # 大量套用稀有度：對每個 rel 依 rarity 前綴改檔名。dry=1 只回傳
-                # 「舊名→新名」預覽不實際動檔;dry 關掉才真的改。rarity 空字串=移除標記。
-                rels = data.get("rels") or []
-                rarity_key = data.get("rarity", "") or ""
+                # 依稀有度前綴改檔名。dry=1 只回傳「舊名→新名」預覽不動檔;dry 關掉才真改。
+                # 兩種入參:①renames=[{rel,rarity}] 每筆各自的稀有度(打標頁的「先大量標註、
+                # 再統一改名」用這個,一次可混多種稀有度);②rels+rarity 整批同一稀有度(舊法)。
+                # rarity 空字串=移除標記前綴。
                 dry = bool(data.get("dry"))
-                token = token_for(rarity_key)
-                if rarity_key and not token:
-                    self._send_json({"error": "未知稀有度"}, 400)
-                    return
+                if isinstance(data.get("renames"), list):
+                    pairs = [(it.get("rel") or "", it.get("rarity", "") or "")
+                             for it in data["renames"]]
+                else:
+                    rk = data.get("rarity", "") or ""
+                    pairs = [(rel, rk) for rel in (data.get("rels") or [])]
                 results = []
-                for rel in rels:
+                for rel, rarity_key in pairs:
+                    token = token_for(rarity_key)
+                    if rarity_key and not token:
+                        results.append({"rel": rel, "error": "未知稀有度"})
+                        continue
                     try:
                         py = py_of(rel)
                     except Exception:
@@ -835,8 +841,8 @@ class Handler(BaseHTTPRequestHandler):
                     base = strip_rarity(py.stem)
                     new_stem = (token + base) if token else base
                     new_py = py.with_name(new_stem + ".py")
-                    item = {"rel": rel, "old_name": py.stem, "new_name": new_stem,
-                            "new_rel": rel_of(new_py)}
+                    item = {"rel": rel, "rarity": rarity_key, "old_name": py.stem,
+                            "new_name": new_stem, "new_rel": rel_of(new_py)}
                     if new_stem == py.stem:
                         item["skip"] = True
                         results.append(item)
@@ -855,7 +861,7 @@ class Handler(BaseHTTPRequestHandler):
                 did = sum(1 for r in results if r.get("ok"))
                 if not dry and did:
                     scan_libraries(force=True)   # 重建快取反映新檔名
-                    plog(f"[rename] {rarity_key or '移除標記'} × {did} 筆")
+                    plog(f"[rename] 統一改名 × {did} 筆")
                 self._send_json({"ok": True, "dry": dry, "results": results})
                 return
             if u.path == "/api/steps":
