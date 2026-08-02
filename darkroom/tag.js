@@ -6,7 +6,11 @@ let ALL = [];
 let CUR_FOLDER = null;
 let SEARCH = '';
 let RAIL_SEARCH = '';
-let RAIL_DESC = localStorage.getItem('yz-rail-desc') === '1';
+// 資料夾排序：名稱升／名稱降／未標多優先（找還沒標完的分類）
+const RAIL_SORTS = ['name', 'name-desc', 'untagged'];
+const RAIL_SORT_LABEL = { 'name': '名稱 ↑', 'name-desc': '名稱 ↓', 'untagged': '未標多 ⚑' };
+let RAIL_SORT = localStorage.getItem('yz-tag-railsort') || 'name';
+if (!RAIL_SORTS.includes(RAIL_SORT)) RAIL_SORT = 'name';
 let VISIBLE = [];
 let RARITY_FILTER = 'all';           // all | untagged | common | rare | special | legendary
 const SEL = new Set();               // 目前選取的 rel（跨資料夾保留，準備標註）
@@ -40,7 +44,8 @@ async function loadAll(force = false) {
   $('conn-text').textContent = j.comfy ? 'ComfyUI 就緒' : 'ComfyUI 未連線';
   const total = ALL.length;
   const tagged = ALL.filter(x => x.rarity).length;
-  $('total-tag').textContent = `${tagged}/${total} 已標稀有度`;
+  const pctAll = total ? Math.round(tagged / total * 100) : 0;
+  $('total-tag').textContent = `打標 ${pctAll}% · ${tagged}/${total}`;
   setDataset(j.special_dir);
   if (CUR_FOLDER === null) {
     const folders = folderStats();
@@ -67,7 +72,8 @@ function folderStats() {
     if (nb !== null) return 1;
     return a.name.localeCompare(b.name, 'zh-Hant', { numeric: true });
   });
-  if (RAIL_DESC) arr.reverse();
+  if (RAIL_SORT === 'name-desc') arr.reverse();
+  else if (RAIL_SORT === 'untagged') arr.sort((a, b) => (b.total - b.tagged) - (a.total - a.tagged));  // 未標多的在前
   return arr;
 }
 
@@ -87,6 +93,7 @@ function buildRail() {
   _railSig = sig;
   stats.forEach((s, i) => {
     const pct = s.total ? Math.round(s.tagged / s.total * 100) : 0;
+    const full = s.total > 0 && s.tagged === s.total;   // 這夾全部標完 → 綠色滿格
     const b = document.createElement('button');
     b.className = 'folder' + (s.name === CUR_FOLDER && !SEARCH ? ' active' : '');
     if (animate && i < 22) { b.classList.add('rin'); b.style.animationDelay = (i * 18) + 'ms'; }
@@ -98,7 +105,7 @@ function buildRail() {
         <span class="folder-name"></span>
         <span class="folder-count">${s.tagged}/${s.total}</span>
       </div>
-      <div class="cover"><span style="width:${pct}%"></span></div>`;
+      <div class="cover${full ? ' full' : ''}"><span style="width:${pct}%"></span></div>`;
     b.querySelector('.folder-name').textContent = s.name.replace(/^\d+[_\-\s]*/, '') || s.name;
     b.onclick = () => { CUR_FOLDER = s.name; SEARCH = ''; $('search').value = ''; buildRail(); render(); $('main').scrollTop = 0; };
     frag.appendChild(b);
@@ -237,9 +244,10 @@ function updateTagbar() {
   document.querySelectorAll('.rar-pick').forEach(b => { b.disabled = n === 0; });
   // 暫存摘要（只算真的會改的）
   const changes = stagedChanges();
-  const cnt = { rare: 0, special: 0, legendary: 0, '': 0 };
+  const cnt = { common: 0, rare: 0, special: 0, legendary: 0, '': 0 };
   changes.forEach(([, r]) => { cnt[r]++; });
   const parts = [];
+  if (cnt.common) parts.push(`普通 ${cnt.common}`);
   if (cnt.rare) parts.push(`稀有 ${cnt.rare}`);
   if (cnt.special) parts.push(`特別 ${cnt.special}`);
   if (cnt.legendary) parts.push(`傳奇 ${cnt.legendary}`);
@@ -333,6 +341,7 @@ function toast(msg) {
 const RARITY_KEYS = ['common', 'rare', 'special', 'legendary'];
 const DRAW_N = 15;                      // 一次抽幾張（5 欄 × 3 列）
 let TAROT_FOCUS = -1;                   // 鍵盤焦點卡的索引（方向鍵移動、數字鍵打標）
+const TAROT_HISTORY = [];              // 打標歷史，供 Z 復原：{rel, prev}
 
 function sampleN(arr, n) {
   const a = arr.slice();
@@ -380,6 +389,7 @@ function drawTagTarot() {
   const picks = sampleN(pool, Math.min(DRAW_N, pool.length));
   const wrap = $('tarot-cards');
   wrap.innerHTML = '';
+  TAROT_HISTORY.length = 0;          // 新一批，清掉復原history
   picks.forEach((it, i) => {
     const card = document.createElement('div');
     card.className = 'tarot-card ttag-card';
@@ -415,10 +425,43 @@ function drawTagTarot() {
 
 // 標一張：寫進暫存、亮起該稀有度光環（common 無）、對應按鈕填色
 function assignTarot(rel, card, key) {
+  TAROT_HISTORY.push({ rel, prev: STAGED.has(rel) ? STAGED.get(rel) : null });   // 供 Z 復原
   STAGED.set(rel, key);
   RARITY_KEYS.forEach(k => card.classList.remove('assigned-' + k, 'rar-' + k));
   card.classList.add('assigned-' + key);
   if (key !== 'common') card.classList.add('rar-' + key);   // 普通版不加光環
+  if (key === 'legendary') legendaryBurst(card);            // 傳奇揭牌小特效
+  updateTarotProgress();
+  updateTagbar();
+}
+
+// 傳奇打標的小特效：牌面上一圈彩虹光爆快速擴散淡出（純裝飾層，不動內容不會糊）
+function legendaryBurst(card) {
+  if (REDUCE_MOTION) return;
+  const front = card.querySelector('.tarot-front');
+  if (!front) return;
+  const b = document.createElement('span');
+  b.className = 'ttag-burst';
+  front.appendChild(b);
+  b.animate(
+    [{ opacity: .95, transform: 'scale(.35)' }, { opacity: 0, transform: 'scale(1.15)' }],
+    { duration: 560, easing: 'cubic-bezier(.22,.61,.36,1)' }
+  ).onfinish = () => b.remove();
+}
+
+// Z 復原：撤回上一次打標，焦點回到那張
+function undoTarot() {
+  const last = TAROT_HISTORY.pop();
+  if (!last) { toast('沒有可復原的'); return; }
+  const { rel, prev } = last;
+  if (prev === null) STAGED.delete(rel); else STAGED.set(rel, prev);
+  const cards = tarotCards();
+  const card = cards.find(c => c.dataset.rel === rel);
+  if (card) {
+    RARITY_KEYS.forEach(k => card.classList.remove('assigned-' + k, 'rar-' + k));
+    if (prev) { card.classList.add('assigned-' + prev); if (prev !== 'common') card.classList.add('rar-' + prev); }
+    setTarotFocus(cards.indexOf(card));
+  }
   updateTarotProgress();
   updateTagbar();
 }
@@ -446,9 +489,9 @@ function bind() {
   });
   $('folder-search-clear').onclick = () => { RAIL_SEARCH = ''; $('folder-search').value = ''; $('folder-search-clear').style.display = 'none'; buildRail(); };
   $('rail-sort').onclick = () => {
-    RAIL_DESC = !RAIL_DESC;
-    localStorage.setItem('yz-rail-desc', RAIL_DESC ? '1' : '0');
-    $('rail-sort').textContent = RAIL_DESC ? '降冪 ↓' : '升冪 ↑';
+    RAIL_SORT = RAIL_SORTS[(RAIL_SORTS.indexOf(RAIL_SORT) + 1) % RAIL_SORTS.length];
+    localStorage.setItem('yz-tag-railsort', RAIL_SORT);
+    $('rail-sort').textContent = RAIL_SORT_LABEL[RAIL_SORT];
     _railSig = ''; buildRail();
   };
   $('rescan').onclick = async () => { $('rescan').disabled = true; await loadAll(true); $('rescan').disabled = false; toast('已重掃'); };
@@ -474,6 +517,8 @@ function bind() {
       if (!cards.length) return;
       const cols = tarotCols();
       if (e.key === 'r' || e.key === 'R' || e.key === 'Enter') { e.preventDefault(); drawTagTarot(); return; }
+      if (e.key === 's' || e.key === 'S') { e.preventDefault(); advanceFocus(); return; }        // 跳過不標
+      if (e.key === 'z' || e.key === 'Z') { e.preventDefault(); undoTarot(); return; }            // 復原上一步
       const move = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -cols, ArrowDown: cols };
       if (e.key in move) { e.preventDefault(); setTarotFocus(TAROT_FOCUS + move[e.key]); return; }
       const rar = { '1': 'common', '2': 'rare', '3': 'special', '4': 'legendary' };
@@ -488,7 +533,7 @@ function bind() {
     }
     if (e.key === 'Escape') closeConfirm();
   });
-  $('rail-sort').textContent = RAIL_DESC ? '降冪 ↓' : '升冪 ↑';
+  $('rail-sort').textContent = RAIL_SORT_LABEL[RAIL_SORT];
 }
 
 bind();

@@ -117,6 +117,12 @@ body.tagger .main { padding-bottom: 84px; }
 .ttag-card.assigned-rare      .ttag-rar button[data-r="rare"]      { background:var(--rar-rare); color:#241a00; border-color:var(--rar-rare); }
 .ttag-card.assigned-special   .ttag-rar button[data-r="special"]   { background:var(--rar-special); color:#04203f; border-color:var(--rar-special); }
 .ttag-card.assigned-legendary .ttag-rar button[data-r="legendary"] { background:linear-gradient(90deg,#ff5f6d,#ffb347,#42f5a1,#41b6ff,#b47bff); color:#fff; border-color:transparent; }
+/* 傳奇打標的光爆特效（JS 用 element.animate 縮放淡出，這裡定外觀）。在 .tarot-front
+   內、overflow:hidden，所以用 inset:0＋內陰影，光爆從中心炸開再淡出。 */
+.ttag-burst { position: absolute; inset: 0; z-index: 5; pointer-events: none; border-radius: inherit;
+  background: radial-gradient(circle at 50% 45%, rgba(255,255,255,.6), rgba(180,123,255,.32) 46%, transparent 70%);
+  box-shadow: inset 0 0 0 3px rgba(255,255,255,.75), inset 0 0 30px rgba(180,123,255,.6); }
+
 /* 鍵盤焦點卡（方向鍵移動、數字鍵標到這張）：整張卡外環＋往上抬，翻面前後都看得到。
    不用 scale——transform 縮放會把整張(含文字/圖)當點陣圖放大而糊掉；改用 translateY
    位移＋較粗的琥珀外框，位移與 outline 都不重新取樣內容，所以清晰。抬 z-index 免被鄰卡蓋住。 */
