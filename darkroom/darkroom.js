@@ -1,6 +1,7 @@
 let ALL = [];
 let CUR_FOLDER = null;      // 目前選中的資料夾;null = 尚未選
 let VIEW = 'all';           // all | missing | have
+let RARITY_FILTER = 'all';  // all | untagged | common | rare | special | legendary
 let SEARCH = '';
 let RAIL_SEARCH = '';       // 資料夾側欄搜尋
 let VISIBLE = [];           // 目前 grid 呈現的清單(供 modal 前後導覽)
@@ -103,20 +104,51 @@ function buildRail() {
   list.appendChild(frag);
 }
 
-function currentList() {
-  let list;
+// 只套資料夾／搜尋範圍（不含 view 與稀有度篩選）——稀有度分布數就是算這個
+function baseList() {
   if (SEARCH) {
     const q = SEARCH.toLowerCase();
-    list = ALL.filter(x => x.name.toLowerCase().includes(q) || (x.folder || '').toLowerCase().includes(q));
-  } else {
-    list = ALL.filter(x => (x.folder || '(根目錄)') === CUR_FOLDER);
+    return ALL.filter(x => x.name.toLowerCase().includes(q) || (x.folder || '').toLowerCase().includes(q));
   }
+  return ALL.filter(x => (x.folder || '(根目錄)') === CUR_FOLDER);
+}
+
+function currentList() {
+  let list = baseList();
   if (VIEW === 'missing') list = list.filter(x => !x.has_image);
   else if (VIEW === 'have') list = list.filter(x => x.has_image);
+  if (RARITY_FILTER === 'untagged') list = list.filter(x => !x.rarity);
+  else if (RARITY_FILTER !== 'all') list = list.filter(x => x.rarity === RARITY_FILTER);
   return list;
 }
 
+// 稀有度分布條：算目前資料夾／搜尋範圍各等級數量，點晶片只看該等級
+const RARITY_BAR_DEFS = [
+  ['all', '全部'], ['untagged', '未標'], ['common', '普通'],
+  ['rare', '稀有'], ['special', '特別'], ['legendary', '傳奇'],
+];
+function buildRarityBar() {
+  const bar = $('rarity-bar');
+  if (!bar) return;
+  const base = baseList();
+  const cnt = { all: base.length, untagged: 0, common: 0, rare: 0, special: 0, legendary: 0 };
+  for (const x of base) { if (!x.rarity) cnt.untagged++; else if (cnt[x.rarity] != null) cnt[x.rarity]++; }
+  // 篩選在新範圍內數量為 0 就回到全部
+  if (RARITY_FILTER !== 'all' && !cnt[RARITY_FILTER]) RARITY_FILTER = 'all';
+  bar.innerHTML = '';
+  RARITY_BAR_DEFS.forEach(([key, label]) => {
+    if (key !== 'all' && !cnt[key]) return;                 // 沒有的等級不顯示晶片
+    const b = document.createElement('button');
+    b.className = 'rar-chip rc-' + key + (RARITY_FILTER === key ? ' on' : '');
+    b.innerHTML = `<span class="rc-dot"></span><span class="rc-label"></span><span class="rc-count">${cnt[key]}</span>`;
+    b.querySelector('.rc-label').textContent = label;
+    b.onclick = () => { RARITY_FILTER = key; render(); };
+    bar.appendChild(b);
+  });
+}
+
 function render() {
+  buildRarityBar();          // 先算分布（可能把失效的篩選重置回全部），再取清單
   const list = currentList();
   VISIBLE = list;
   const total = list.length, have = list.filter(x => x.has_image).length;

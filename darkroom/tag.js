@@ -8,6 +8,7 @@ let SEARCH = '';
 let RAIL_SEARCH = '';
 let RAIL_DESC = localStorage.getItem('yz-rail-desc') === '1';
 let VISIBLE = [];
+let RARITY_FILTER = 'all';           // all | untagged | common | rare | special | legendary
 const SEL = new Set();               // 目前選取的 rel（跨資料夾保留，準備標註）
 const STAGED = new Map();            // 暫存標註：rel -> 目標稀有度（先不動檔，最後統一改名）
 let PENDING = null;                   // 待確認的改名清單 [{rel, rarity}]
@@ -105,12 +106,42 @@ function buildRail() {
   list.appendChild(frag);
 }
 
-function currentList() {
+function baseList() {
   if (SEARCH) {
     const q = SEARCH.toLowerCase();
     return ALL.filter(x => x.name.toLowerCase().includes(q) || (x.folder || '').toLowerCase().includes(q));
   }
   return ALL.filter(x => (x.folder || '(根目錄)') === CUR_FOLDER);
+}
+
+function currentList() {
+  let list = baseList();
+  if (RARITY_FILTER === 'untagged') list = list.filter(x => !x.rarity);
+  else if (RARITY_FILTER !== 'all') list = list.filter(x => x.rarity === RARITY_FILTER);
+  return list;
+}
+
+const RARITY_BAR_DEFS = [
+  ['all', '全部'], ['untagged', '未標'], ['common', '普通'],
+  ['rare', '稀有'], ['special', '特別'], ['legendary', '傳奇'],
+];
+function buildRarityBar() {
+  const bar = $('rarity-bar');
+  if (!bar) return;
+  const base = baseList();
+  const cnt = { all: base.length, untagged: 0, common: 0, rare: 0, special: 0, legendary: 0 };
+  for (const x of base) { if (!x.rarity) cnt.untagged++; else if (cnt[x.rarity] != null) cnt[x.rarity]++; }
+  if (RARITY_FILTER !== 'all' && !cnt[RARITY_FILTER]) RARITY_FILTER = 'all';
+  bar.innerHTML = '';
+  RARITY_BAR_DEFS.forEach(([key, label]) => {
+    if (key !== 'all' && !cnt[key]) return;
+    const b = document.createElement('button');
+    b.className = 'rar-chip rc-' + key + (RARITY_FILTER === key ? ' on' : '');
+    b.innerHTML = `<span class="rc-dot"></span><span class="rc-label"></span><span class="rc-count">${cnt[key]}</span>`;
+    b.querySelector('.rc-label').textContent = label;
+    b.onclick = () => { RARITY_FILTER = key; render(); };
+    bar.appendChild(b);
+  });
 }
 
 /* ---- 格線（分頁 + 捲動預載，沿用暗房 PAGE=120） ---- */
@@ -143,6 +174,7 @@ function cardOf(it) {
 }
 
 function render() {
+  buildRarityBar();
   const list = currentList();
   VISIBLE = list;
   const total = list.length, tagged = list.filter(x => x.rarity).length;
