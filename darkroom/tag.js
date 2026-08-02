@@ -296,6 +296,84 @@ function toast(msg) {
   _toastT = setTimeout(() => t.classList.remove('show'), 2600);
 }
 
+/* ---------------- 抽卡打標：一次抽 16 張「有圖且尚未打標」的，逐張標稀有度（暫存） ----------------
+   目的是讓打標隨機散布在各分類。標好的（含普通版）加入暫存＝之後不會再被抽到。 */
+const RARITY_KEYS = ['common', 'rare', 'special', 'legendary'];
+let TAROT_HOVER = null;                 // 滑鼠所在卡，供鍵盤 1-4 打標
+
+function sampleN(arr, n) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[a[i], a[j]] = [a[j], a[i]]; }
+  return a.slice(0, n);
+}
+// 池：有圖、尚未打標（無稀有度前綴）、且本次還沒暫存過
+const tarotPool = () => ALL.filter(x => x.has_image && !x.rarity && !STAGED.has(x.rel));
+
+function drawTagTarot() {
+  const pool = tarotPool();
+  if (!pool.length) { toast('沒有「有圖且尚未打標」的詞庫可抽了'); return; }
+  const picks = sampleN(pool, Math.min(16, pool.length));
+  const wrap = $('tarot-cards');
+  wrap.innerHTML = '';
+  picks.forEach((it, i) => {
+    const card = document.createElement('div');
+    card.className = 'tarot-card ttag-card';
+    card.dataset.rel = it.rel;
+    card.style.animationDelay = REDUCE_MOTION ? '0ms' : (i * 24) + 'ms';   // 發牌 stagger（16 張、快一點）
+    const relEnc = encodeURIComponent(it.rel);
+    card.innerHTML =
+      `<div class="tarot-inner">
+         <div class="tarot-back"><span class="tarot-emblem">✦</span></div>
+         <div class="tarot-front">
+           <img decoding="async" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="">
+           <div class="tarot-name"></div>
+           <div class="ttag-rar">
+             <button data-r="common">普通</button><button data-r="rare">稀有</button>
+             <button data-r="special">特別</button><button data-r="legendary">傳奇</button>
+           </div>
+         </div>
+       </div>`;
+    card.querySelector('.tarot-name').textContent = it.display_name || it.name;
+    card.querySelectorAll('.ttag-rar button').forEach(b =>
+      b.onclick = () => assignTarot(it.rel, card, b.dataset.r));
+    card.addEventListener('mouseenter', () => {
+      if (TAROT_HOVER) TAROT_HOVER.classList.remove('khover');
+      TAROT_HOVER = card; card.classList.add('khover');
+    });
+    card.addEventListener('mouseleave', () => { card.classList.remove('khover'); if (TAROT_HOVER === card) TAROT_HOVER = null; });
+    wrap.appendChild(card);
+  });
+  $('tarot').classList.add('open');
+  updateTarotProgress();
+  const cards = [...wrap.children];
+  if (REDUCE_MOTION) { cards.forEach(c => c.classList.add('revealed')); return; }
+  const dealDone = picks.length * 24 + 170;
+  cards.forEach((c, i) => setTimeout(() => c.classList.add('revealed'), dealDone + i * 32));   // 翻牌 stagger（快一點）
+}
+
+// 標一張：寫進暫存、亮起該稀有度光環（common 無）、對應按鈕填色
+function assignTarot(rel, card, key) {
+  STAGED.set(rel, key);
+  RARITY_KEYS.forEach(k => card.classList.remove('assigned-' + k, 'rar-' + k));
+  card.classList.add('assigned-' + key);
+  if (key !== 'common') card.classList.add('rar-' + key);   // 普通版不加光環
+  updateTarotProgress();
+  updateTagbar();
+}
+
+function updateTarotProgress() {
+  const cards = [...$('tarot-cards').children];
+  const done = cards.filter(c => RARITY_KEYS.some(k => c.classList.contains('assigned-' + k))).length;
+  $('ttag-progress').textContent = `已標 ${done} / ${cards.length}`;
+}
+
+function closeTarot() {
+  $('tarot').classList.remove('open');
+  if (TAROT_HOVER) { TAROT_HOVER.classList.remove('khover'); TAROT_HOVER = null; }
+  render();          // 讓格線反映剛暫存的
+  updateTagbar();
+}
+
 /* ---- 事件綁定 ---- */
 function bind() {
   $('search').addEventListener('input', e => { SEARCH = e.target.value.trim(); buildRail(); render(); });
@@ -322,7 +400,20 @@ function bind() {
   $('confirm-go').onclick = confirmGo;
   $('confirm-cancel').onclick = closeConfirm;
   $('confirm').addEventListener('click', e => { if (e.target === $('confirm')) closeConfirm(); });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeConfirm(); });
+  // 抽卡打標
+  $('draw-cards').onclick = drawTagTarot;
+  $('tarot-redraw').onclick = drawTagTarot;
+  $('tarot-close').onclick = closeTarot;
+  $('tarot').addEventListener('click', e => { if (e.target === $('tarot')) closeTarot(); });
+  document.addEventListener('keydown', e => {
+    if ($('tarot').classList.contains('open')) {
+      if (e.key === 'Escape') { closeTarot(); return; }
+      const map = { '1': 'common', '2': 'rare', '3': 'special', '4': 'legendary' };
+      if (map[e.key] && TAROT_HOVER) { assignTarot(TAROT_HOVER.dataset.rel, TAROT_HOVER, map[e.key]); return; }
+      return;
+    }
+    if (e.key === 'Escape') closeConfirm();
+  });
   $('rail-sort').textContent = RAIL_DESC ? '降冪 ↓' : '升冪 ↑';
 }
 

@@ -255,7 +255,8 @@ def find_image(py: Path) -> Path | None:
 # --- 稀有度：以檔名前綴標註(無分隔)。傳奇 > 特別 > 稀有 ----------------------
 # 前綴放最前面,例如「傳奇版我是白癡.py」。稀有度純由檔名衍生,不另存 JSON;
 # 打標網頁的工作就是改檔名來加/換/移除這個前綴。
-RARITY_TOKENS = (("legendary", "傳奇版"), ("special", "特別版"), ("rare", "稀有版"))
+RARITY_TOKENS = (("legendary", "傳奇版"), ("special", "特別版"),
+                 ("rare", "稀有版"), ("common", "普通版"))
 
 
 def rarity_of(stem: str) -> tuple[str, str]:

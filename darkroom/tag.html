@@ -21,6 +21,7 @@
     <input type="text" id="search" placeholder="跨資料夾搜尋名稱…" autocomplete="off">
   </div>
   <div class="spacer"></div>
+  <button class="ghost" id="draw-cards" title="抽 16 張未打標的來逐張標稀有度">✦ 抽卡打標</button>
   <a class="ghost linklike" href="/" title="回詞庫暗房">← 暗房</a>
   <button class="ghost" id="rescan" title="重新掃描">↻ 重掃</button>
   <div class="conn" id="conn"><span class="led"></span><span id="conn-text">…</span></div>
@@ -82,6 +83,22 @@
       <button id="confirm-cancel">取消</button>
       <button class="primary" id="confirm-go">確認改名</button>
     </div>
+  </div>
+</div>
+
+<!-- 抽卡打標：一次抽 16 張「有圖且尚未打標」的，逐張標稀有度（暫存），最後統一改名 -->
+<div id="tarot" class="tarot-overlay">
+  <div class="tarot-stage ttag-stage">
+    <div class="tarot-head">
+      <span class="tarot-title">✦ 抽卡打標 ✦</span>
+      <span class="ttag-progress" id="ttag-progress">已標 0 / 0</span>
+      <div class="tarot-actions">
+        <button class="primary" id="tarot-redraw">再抽 16 張</button>
+        <button id="tarot-close">關閉 (Esc)</button>
+      </div>
+    </div>
+    <div class="tarot-cards ttag" id="tarot-cards"></div>
+    <div class="tarot-hint">每張下方 4 顆按鈕，或滑到卡上按鍵 1 普通・2 稀有・3 特別・4 傳奇。標好關閉，再按底部「統一改名」。</div>
   </div>
 </div>
 

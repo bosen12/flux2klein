@@ -447,6 +447,7 @@ body.selecting .fav-btn { display: none; }
 .rar-tag { position: absolute; z-index: 3; font-size: 10px; font-weight: 800; letter-spacing: .06em;
   padding: 2px 8px; border-radius: 999px; line-height: 1.5; pointer-events: none;
   box-shadow: 0 2px 8px rgba(0,0,0,.45); }
+.rar-tag.common    { color: #10121a; background: #9aa0ad; }   /* 普通：灰色小角標、無光環 */
 .rar-tag.rare      { color: #241a00; background: var(--rar-rare); }
 .rar-tag.special   { color: #04203f; background: var(--rar-special); }
 .rar-tag.legendary { color: #fff; background: linear-gradient(90deg,#ff5f6d,#ffb347,#42f5a1,#41b6ff,#b47bff); }
