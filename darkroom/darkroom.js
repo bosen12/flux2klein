@@ -632,13 +632,14 @@ function drawTarot() {
 
 // 卡片隨滑鼠 3D 傾斜（參考 Aceternity 3D card）：依游標相對卡片中心算 rotateX/Y，
 // 並讓光澤跟著游標。翻牌後牌面已非鏡像，傾斜方向自然。
+// 不加 scale——縮放會把整張(含文字/圖)當點陣圖放大而糊掉；只留傾斜，內容較清晰。
 function tiltCard(card, e) {
   const r = card.getBoundingClientRect();
   const px = (e.clientX - r.left) / r.width - 0.5;    // -0.5 ~ 0.5
   const py = (e.clientY - r.top) / r.height - 0.5;
   const MAX = 11;
   card.style.transform =
-    `rotateX(${(-py * MAX).toFixed(2)}deg) rotateY(${(px * MAX).toFixed(2)}deg) scale(1.06)`;
+    `rotateX(${(-py * MAX).toFixed(2)}deg) rotateY(${(px * MAX).toFixed(2)}deg)`;
   const g = card.querySelector('.tarot-glare');
   if (g) {
     g.style.setProperty('--gx', ((px + 0.5) * 100).toFixed(1) + '%');
