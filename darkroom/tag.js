@@ -513,6 +513,11 @@ function hideBoot() {
   b.classList.add('hide');
   setTimeout(() => b.remove(), 600);
 }
+// 經由跨文件過渡（暗房↔打標）進來時，pagereveal 直接移除開場遮罩，避免換頁淡入
+// 把載入畫面也淡進來閃一下。
+window.addEventListener('pagereveal', (e) => {
+  if (e.viewTransition) { const b = document.getElementById('boot'); if (b) b.remove(); }
+});
 bind();
 loadAll().finally(hideBoot);
 setTimeout(hideBoot, 20000);   // 保險：萬一載入卡住也別讓載入畫面永遠蓋著
