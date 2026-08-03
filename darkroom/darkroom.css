@@ -321,6 +321,11 @@ input[type=text]::placeholder { color: var(--faint); }
                display: grid; grid-template-columns: minmax(0,1.05fr) minmax(0,1fr); gap: 22px; }
 .modal.open .modal-inner { animation: modalPop var(--d-pop) var(--ease-out) both; }
 .modal-inner img { max-width: 100%; border-radius: 10px; background: #000; display: block; }
+/* 開大圖的 shared-element morph：縮圖平滑放大成這張大圖（見 darkroom.js
+   openModalFromThumb/closeModalWithMorph）。modal 關閉時整個 .modal 是 display:none，
+   不會被 View Transitions 截圖，名字不會與縮圖那端重複。 */
+#modal-image { view-transition-name: hero-img; }
+::view-transition-group(hero-img) { animation-duration: var(--d-pop); animation-timing-function: var(--ease-out); }
 .no-image { aspect-ratio: 1/1; display: flex; align-items: center; justify-content: center;
             color: var(--faint); background: var(--sunk); border-radius: 10px; border: 1px dashed var(--line); }
 .m-title { font-size: 17px; font-weight: 650; word-break: break-all; }

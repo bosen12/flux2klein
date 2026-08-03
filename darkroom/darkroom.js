@@ -283,7 +283,7 @@ function thumbInnerHTML(it) {
 
 function wireThumb(thumb, it) {
   // 選取模式：點縮圖＝標記/取消不優質；平常＝開大圖
-  thumb.onclick = () => { if (SELECTING) toggleFlag(it.rel); else openModal(it.rel); };
+  thumb.onclick = () => { if (SELECTING) toggleFlag(it.rel); else openModalFromThumb(it.rel, thumb.querySelector('img')); };
   thumb.querySelector('.gen-btn').onclick = (e) => { e.stopPropagation(); generate(it.rel); };
   thumb.querySelector('.fav-btn').onclick = (e) => { e.stopPropagation(); toggleFav(it.rel); };
 }
@@ -469,7 +469,7 @@ function openModal(rel, resetNav = true) {
   $('modal-title').textContent = item.display_name || item.name;
   $('modal-folder').textContent = item.folder || '(根目錄)';
   $('modal-gen').onclick = () => generate(rel);
-  $('modal-close').onclick = closeModal;
+  $('modal-close').onclick = closeModalWithMorph;
   $('modal').classList.add('open');
   if (item.job && item.job.status) updateStatusEl($('modal-status'), item.job);
   fetch('/api/prompt?rel=' + relEnc).then(r => r.json()).then(j => {
@@ -493,6 +493,42 @@ function closeModal() {
   $('modal').classList.remove('open');
   const inner = $('modal-inner');
   if (inner) delete inner.dataset.rel;
+}
+
+// 開大圖：縮圖 morph 放大成大圖（shared-element，view-transition-name: hero-img）。
+// 老套路——舊快照在 callback 前截（此時縮圖有名字），callback 裡先清掉縮圖名字再開
+// modal（大圖經 css 帶 hero-img），新快照只有大圖有名字 → 縮圖平滑長成大圖。
+// 守 REDUCE_MOTION 與 visibilityState（窗格隱藏 callback 不結算，CLAUDE.md 老坑）。
+function openModalFromThumb(rel, thumbImg) {
+  const item = ALL.find(x => x.rel === rel);
+  const canMorph = document.startViewTransition && !REDUCE_MOTION
+    && document.visibilityState === 'visible' && item && item.has_image && thumbImg;
+  if (!canMorph) { openModal(rel); return; }
+  thumbImg.style.viewTransitionName = 'hero-img';
+  const clear = () => { thumbImg.style.viewTransitionName = ''; };
+  const t = document.startViewTransition(() => { clear(); openModal(rel); });
+  t.finished.finally(clear);
+  setTimeout(clear, 1200);
+}
+
+// 關大圖：反向 morph——大圖縮回它在格線裡的縮圖。舊快照有大圖（hero-img），callback
+// 裡關掉 modal（大圖隨 .modal display:none 消失、不再被截）並把對應縮圖接手 hero-img，
+// 新快照只有縮圖有名字 → 大圖縮回縮圖位置。找不到縮圖（已捲離/換了資料夾）就直接關。
+function closeModalWithMorph() {
+  const inner = $('modal-inner');
+  const rel = inner && inner.dataset.rel;
+  const modalImg = $('modal-image');
+  const canMorph = document.startViewTransition && !REDUCE_MOTION
+    && document.visibilityState === 'visible' && modalImg && rel;
+  if (!canMorph) { closeModal(); return; }
+  const thumbImg = document.querySelector(`#grid .card[data-rel="${cssAttr(rel)}"] .thumb img`);
+  const clear = () => { if (thumbImg) thumbImg.style.viewTransitionName = ''; };
+  const t = document.startViewTransition(() => {
+    closeModal();
+    if (thumbImg) thumbImg.style.viewTransitionName = 'hero-img';
+  });
+  t.finished.finally(clear);
+  setTimeout(clear, 1200);
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -624,13 +660,13 @@ async function pollBatch() {
   }
 }
 
-$('modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
+$('modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModalWithMorph(); });
 $('m-prev').onclick = () => modalStep(-1);
 $('m-next').onclick = () => modalStep(1);
 window.addEventListener('keydown', e => {
   if ($('tarot').classList.contains('open') && e.key === 'Escape') { closeTarot(); return; }
   if (!$('modal').classList.contains('open')) return;
-  if (e.key === 'Escape') closeModal();
+  if (e.key === 'Escape') closeModalWithMorph();
   else if (e.key === 'ArrowLeft') modalStep(-1);
   else if (e.key === 'ArrowRight') modalStep(1);
 });
