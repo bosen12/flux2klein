@@ -77,36 +77,43 @@ input[type=text] { background: var(--sunk); color: var(--ink); border: 1px solid
 input[type=text]::placeholder { color: var(--faint); }
 
 /* ── 頂欄 ─────────────────────────────────────────────────────── */
-/* 開場載入：暗房安全燈脈動＋擴散光環（大詞庫要幾秒掃描/渲染），載入完淡出。
-   迴圈類動畫維持字面值；reduced-motion 由全域規則關掉、只留靜態燈。 */
-#boot { position: fixed; inset: 0; z-index: 300; display: grid; place-content: center; justify-items: center; gap: 15px;
-  background: radial-gradient(circle at 50% 42%, #211a10, var(--bg) 72%);
+/* 開場載入（大詞庫要幾秒掃描/渲染）：科技感——光圈 logo 自轉＋外圈掃描光弧（重用
+   beam-spin/@property --beam）＋掃描進度條。載入完淡出。迴圈動畫維持字面值，
+   reduced-motion 由全域規則關成靜態。 */
+#boot { position: fixed; inset: 0; z-index: 300; display: grid; place-content: center; justify-items: center; gap: 20px;
+  background: radial-gradient(circle at 50% 40%, #1a1710, var(--bg) 72%);
   transition: opacity .5s var(--ease-out), visibility .5s; }
 #boot.hide { opacity: 0; visibility: hidden; pointer-events: none; }
-.boot-lamp { position: relative; width: 64px; height: 64px; border-radius: 50%;
-  background: radial-gradient(circle at 50% 42%, #ffe0a3, var(--amber) 52%, #6c4712 100%);
-  box-shadow: 0 0 34px rgba(234,173,87,.6), 0 0 80px rgba(234,173,87,.28);
-  animation: bootPulse 1.5s ease-in-out infinite; }
-.boot-lamp::before, .boot-lamp::after { content: ""; position: absolute; inset: -4px; border-radius: 50%;
-  border: 1.5px solid rgba(234,173,87,.5); animation: bootRing 1.9s ease-out infinite; }
-.boot-lamp::after { animation-delay: .95s; }
-.boot-title { font-size: 15px; font-weight: 650; letter-spacing: 3px; color: var(--amber); text-shadow: 0 0 18px rgba(234,173,87,.4); }
-.boot-sub { font-family: var(--mono); font-size: 11px; letter-spacing: 4px; color: var(--faint); animation: bootBlink 1.5s ease-in-out infinite; }
-@keyframes bootPulse { 0%,100% { transform: scale(.9); filter: brightness(.82); } 50% { transform: scale(1.05); filter: brightness(1.15); } }
-@keyframes bootRing  { from { transform: scale(1); opacity: .7; } to { transform: scale(2.3); opacity: 0; } }
-@keyframes bootBlink { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
+.boot-logo { position: relative; width: 104px; height: 104px; display: grid; place-items: center; }
+.boot-ap { width: 50px; height: 50px; color: var(--amber); fill: none;
+  filter: drop-shadow(0 0 10px rgba(234,173,87,.55)); animation: apSpin 9s linear infinite; }
+.boot-ring { position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(from var(--beam), transparent 0 62%, rgba(234,173,87,.14) 70%, var(--amber) 86%, #ffe9b8 93%, transparent 100%);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
+  animation: beam-spin 1.5s linear infinite; }
+.boot-ring.slow { inset: 11px; animation-duration: 2.8s; animation-direction: reverse; opacity: .5; }
+.boot-title { font-size: 17px; font-weight: 700; letter-spacing: 6px; color: var(--ink); text-shadow: 0 0 20px rgba(234,173,87,.35); }
+.boot-bar { width: 132px; height: 2px; border-radius: 2px; background: rgba(234,173,87,.14); overflow: hidden; }
+.boot-bar::after { content: ""; display: block; height: 100%; width: 38%; border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--amber), #ffe9b8, var(--amber), transparent);
+  animation: bootScan 1.15s ease-in-out infinite; }
+.boot-sub { font-family: var(--mono); font-size: 10px; letter-spacing: 5px; color: var(--amber); opacity: .85; }
+@keyframes apSpin  { to { transform: rotate(360deg); } }
+@keyframes bootScan { 0% { transform: translateX(-120%); } 100% { transform: translateX(360%); } }
 
 .topbar { flex: none; display: flex; align-items: center; gap: 14px; padding: 11px 18px;
           background: linear-gradient(180deg, var(--panel), color-mix(in srgb, var(--panel) 92%, #000));
           border-bottom: 1px solid var(--line);
           box-shadow: 0 1px 0 rgba(255,255,255,.02) inset, 0 6px 20px -12px rgba(0,0,0,.6); }
-.brand { display: flex; align-items: baseline; gap: 9px; }
-.brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--amber);
-              transform: translateY(-1px); animation: safelight 3.2s ease-in-out infinite; }
-/* 暗房安全燈：品牌點輕輕呼吸 */
+.brand { display: flex; align-items: center; gap: 9px; }
+/* 品牌 logo：相機光圈（aperture）。琥珀色＋柔光呼吸，hover 轉一格光圈葉片 */
+.brand-logo { width: 22px; height: 22px; color: var(--amber); flex: none;
+  transition: transform .6s var(--ease-out); animation: safelight 3.4s ease-in-out infinite; }
+.brand:hover .brand-logo { transform: rotate(60deg); }
 @keyframes safelight {
-  0%, 100% { box-shadow: 0 0 8px 1px rgba(234,173,87,.45); }
-  50%      { box-shadow: 0 0 15px 3px rgba(234,173,87,.8); }
+  0%, 100% { filter: drop-shadow(0 0 5px rgba(234,173,87,.45)); }
+  50%      { filter: drop-shadow(0 0 9px rgba(234,173,87,.8)); }
 }
 .brand h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: .3px; }
 .brand .sub { font-family: var(--mono); font-size: 11px; color: var(--faint); letter-spacing: .5px; }
