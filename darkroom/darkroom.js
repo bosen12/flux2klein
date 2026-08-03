@@ -664,7 +664,11 @@ $('modal').addEventListener('click', e => { if (e.target.id === 'modal') closeMo
 $('m-prev').onclick = () => modalStep(-1);
 $('m-next').onclick = () => modalStep(1);
 window.addEventListener('keydown', e => {
-  if ($('tarot').classList.contains('open') && e.key === 'Escape') { closeTarot(); return; }
+  if ($('tarot').classList.contains('open')) {
+    if (e.key === 'Escape') { closeTarot(); return; }
+    if (e.key === 'r' || e.key === 'R' || e.key === 'Enter') { e.preventDefault(); drawTarot(); return; }  // R/Enter 重抽一批
+    return;
+  }
   if (!$('modal').classList.contains('open')) return;
   if (e.key === 'Escape') closeModalWithMorph();
   else if (e.key === 'ArrowLeft') modalStep(-1);
