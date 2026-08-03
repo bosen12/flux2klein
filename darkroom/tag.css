@@ -20,24 +20,6 @@ body.tagger .main { padding-bottom: 84px; }
   box-shadow: 0 0 0 2px var(--amber) inset, 0 10px 26px -12px rgba(0,0,0,.6) !important; }
 .tcard.selected .thumb img { transform: scale(1.03); }
 
-/* 暫存標註（尚未改名）：虛線外框 + 左下「→ 稀有/特別/傳奇/無」角標，
-   跟「已是稀有度」的實線光暈區隔。點角標可取消該筆暫存。 */
-.tcard.staged { border-style: dashed !important; }
-.tcard.stage-rare      { border-color: var(--rar-rare) !important;    box-shadow: 0 0 0 1px var(--rar-rare) inset,    0 0 14px -4px var(--rar-rare) !important; }
-.tcard.stage-special   { border-color: var(--rar-special) !important; box-shadow: 0 0 0 1px var(--rar-special) inset, 0 0 14px -4px var(--rar-special) !important; }
-.tcard.stage-legendary { border-color: #b47bff !important;            box-shadow: 0 0 0 1px #b47bff inset,            0 0 14px -4px #b47bff !important; }
-.tcard.stage-none      { border-color: var(--faint) !important;       box-shadow: 0 0 0 1px var(--faint) inset !important; }
-.stage-tag { position: absolute; left: 8px; bottom: 8px; z-index: 4; cursor: pointer;
-  font-size: 10px; font-weight: 800; letter-spacing: .04em; padding: 3px 8px; border-radius: 999px;
-  box-shadow: 0 2px 8px rgba(0,0,0,.45); border: 1px solid rgba(0,0,0,.25);
-  transition: filter var(--d-micro) var(--ease-out); }
-.stage-tag.stage-rare      { background: var(--rar-rare); color: #241a00; }
-.stage-tag.stage-special   { background: var(--rar-special); color: #04203f; }
-.stage-tag.stage-legendary { background: linear-gradient(90deg,#ff5f6d,#ffb347,#42f5a1,#41b6ff,#b47bff); color: #fff; }
-.stage-tag.stage-none      { background: var(--dim); color: #10121a; }
-.stage-tag:hover { filter: brightness(1.12); }
-.staged-summary { font-family: var(--mono); font-size: 12.5px; color: var(--amber); }
-
 /* 底部稀有度操作列 */
 .tagbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
   display: flex; align-items: center; gap: 14px; padding: 12px 18px;
@@ -60,27 +42,6 @@ body.tagger .main { padding-bottom: 84px; }
 .rar-pick.legendary { border-color: transparent; color: #fff;
   background: linear-gradient(100deg,#ff5f6d,#ffb347,#42f5a1,#41b6ff,#b47bff); }
 .rar-pick.none { color: var(--dim); }
-.tagbar .spacer { flex: 1; }
-
-/* 確認改名 modal（重用 .modal 的置中/遮罩） */
-.confirm-inner { max-width: 720px; width: 100%; max-height: 88vh; overflow: auto;
-  background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius);
-  padding: 20px 22px; box-shadow: var(--shadow); }
-.confirm-inner h3 { font-size: 18px; margin-bottom: 4px; }
-.confirm-sub { color: var(--dim); font-size: 13px; margin-bottom: 14px; }
-.confirm-list { display: flex; flex-direction: column; gap: 4px; max-height: 52vh; overflow: auto;
-  border: 1px solid var(--line); border-radius: 9px; padding: 8px; background: var(--sunk); }
-.crow { display: flex; align-items: center; gap: 10px; padding: 5px 8px; border-radius: 6px; font-size: 13px; }
-.crow .cn { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.crow .cn.old { color: var(--dim); flex: 1; text-align: right; }
-.crow .cn.new { color: var(--ink); flex: 1; }
-.crow .ar { color: var(--amber); flex: 0 0 auto; }
-.crow.skip { opacity: .55; }
-.crow.skip .ar { color: var(--faint); }
-.crow.err { background: color-mix(in srgb, var(--err) 12%, transparent); }
-.crow.err .cn { color: var(--err); flex: 1; text-align: left; }
-.crow.err .ar { color: var(--err); }
-.confirm-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
 
 /* toast */
 .toast { position: fixed; left: 50%; bottom: 92px; transform: translate(-50%, 12px);
@@ -91,7 +52,6 @@ body.tagger .main { padding-bottom: 84px; }
 
 @media (max-width: 720px) {
   .tagbar { flex-wrap: wrap; gap: 10px; }
-  .crow .cn.old, .crow .cn.new { flex: 1 1 100%; text-align: left; }
 }
 
 /* ── 抽卡打標：一次 16 張較小的卡（4×4），每張牌面下方 4 顆稀有度按鈕 ──

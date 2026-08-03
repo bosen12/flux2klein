@@ -363,14 +363,6 @@ def strip_rarity(stem: str) -> str:
     return stem[len(tok):] if tok else stem
 
 
-def token_for(key: str) -> str:
-    """由 key 取前綴字;未知或空回傳 ""。"""
-    for k, tok in RARITY_TOKENS:
-        if k == key:
-            return tok
-    return ""
-
-
 # --- 縮圖快取 -------------------------------------------------------------
 THUMB_MAX = 360           # 縮圖最長邊(px);格子 ~180px @2x DPR 剛好
 THUMB_QUALITY = 72
@@ -481,29 +473,6 @@ def py_of(rel: str) -> Path:
     if p != base and base not in p.parents:
         raise ValueError("path outside special_prompts")
     return p
-
-
-def do_rename(py: Path, new_py: Path):
-    """把詞庫 .py 連同旁邊的預覽圖(.webp/.png)一起改名,並把旗標/收藏的 key
-    從舊 rel 遷到新 rel(否則改名後這兩者會指向不存在的舊 rel)。"""
-    old_rel = rel_of(py)
-    py.rename(new_py)                       # 先改 .py(它才是詞庫的身分)
-    for ext in IMG_EXTS:                    # 再連同同名預覽圖一起改
-        oi = py.with_suffix(ext)
-        if oi.is_file():
-            try:
-                oi.rename(new_py.with_suffix(ext))
-            except OSError as e:
-                plog(f"[rename] 預覽圖改名失敗 {oi.name}: {e}")
-    new_rel = rel_of(new_py)
-    with _flags_lock:
-        if old_rel in _flags:
-            _flags[new_rel] = _flags.pop(old_rel)
-            _save_flags_locked()
-    with _favs_lock:
-        if old_rel in _favs:
-            _favs[new_rel] = _favs.pop(old_rel)
-            _save_favs_locked()
 
 
 def set_job(rel: str, status: str, message: str = ""):
@@ -926,58 +895,6 @@ class Handler(BaseHTTPRequestHandler):
                 now = set_rarity(rel, key, bool(rarity_of(py.stem)[0]))
                 plog(f"[rarity] {rel} → {now or '(清除)'}")
                 self._send_json({"ok": True, "rel": rel, "rarity": now})
-                return
-            if u.path == "/api/rename":
-                # 依稀有度前綴改檔名。dry=1 只回傳「舊名→新名」預覽不動檔;dry 關掉才真改。
-                # 兩種入參:①renames=[{rel,rarity}] 每筆各自的稀有度(打標頁的「先大量標註、
-                # 再統一改名」用這個,一次可混多種稀有度);②rels+rarity 整批同一稀有度(舊法)。
-                # rarity 空字串=移除標記前綴。
-                dry = bool(data.get("dry"))
-                if isinstance(data.get("renames"), list):
-                    pairs = [(it.get("rel") or "", it.get("rarity", "") or "")
-                             for it in data["renames"]]
-                else:
-                    rk = data.get("rarity", "") or ""
-                    pairs = [(rel, rk) for rel in (data.get("rels") or [])]
-                results = []
-                for rel, rarity_key in pairs:
-                    token = token_for(rarity_key)
-                    if rarity_key and not token:
-                        results.append({"rel": rel, "error": "未知稀有度"})
-                        continue
-                    try:
-                        py = py_of(rel)
-                    except Exception:
-                        results.append({"rel": rel, "error": "路徑不合法"})
-                        continue
-                    if not py.is_file():
-                        results.append({"rel": rel, "error": "詞庫不存在"})
-                        continue
-                    base = strip_rarity(py.stem)
-                    new_stem = (token + base) if token else base
-                    new_py = py.with_name(new_stem + ".py")
-                    item = {"rel": rel, "rarity": rarity_key, "old_name": py.stem,
-                            "new_name": new_stem, "new_rel": rel_of(new_py)}
-                    if new_stem == py.stem:
-                        item["skip"] = True
-                        results.append(item)
-                        continue
-                    if new_py.exists():
-                        item["error"] = "目標檔名已存在"
-                        results.append(item)
-                        continue
-                    if not dry:
-                        try:
-                            do_rename(py, new_py)
-                            item["ok"] = True
-                        except Exception as e:
-                            item["error"] = f"{type(e).__name__}: {e}"
-                    results.append(item)
-                did = sum(1 for r in results if r.get("ok"))
-                if not dry and did:
-                    scan_libraries(force=True)   # 重建快取反映新檔名
-                    plog(f"[rename] 統一改名 × {did} 筆")
-                self._send_json({"ok": True, "dry": dry, "results": results})
                 return
             if u.path == "/api/steps":
                 try:
