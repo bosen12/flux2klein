@@ -69,12 +69,12 @@ button.danger { color: #ffd9d3; border-color: #5a2e2a; background: #2a1a18; }
   border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--line)); border-radius: 6px; padding: 2px 8px; }
 .dataset::before { content: "📁 "; }
 .dataset:empty { display: none; }
-/* 頂列「打標」連結：長得像 ghost 按鈕（button 樣式是 element 選擇器，錨點吃不到，這裡補上） */
-a.taglink { display: inline-flex; align-items: center; gap: 4px; text-decoration: none; cursor: pointer;
-  background: transparent; color: var(--dim); border: 1px solid var(--line);
-  padding: 7px 12px; border-radius: 8px; font-size: 13px; line-height: 1;
-  transition: background .12s, border-color .12s, color .12s; }
-a.taglink:hover { background: #2a2d38; border-color: #3a3d49; color: var(--ink); }
+/* ── 模式（瀏覽/生成 ↔ 打標）：合併成一頁，用 body[data-mode] 顯隱各自的控制項，
+   切模式瞬間生效、不換頁。.browse-only 只在瀏覽模式顯示、.tag-only 只在打標模式。 */
+body[data-mode="tag"] .browse-only { display: none !important; }
+body[data-mode="browse"] .tag-only { display: none !important; }
+.mode-seg { flex: 0 0 auto; }
+.mode-seg button { padding: 6px 12px; font-size: 13px; white-space: nowrap; }
 input[type=text] { background: var(--sunk); color: var(--ink); border: 1px solid var(--line);
                    padding: 8px 12px 8px 30px; border-radius: 8px; font-size: 13px; }
 input[type=text]::placeholder { color: var(--faint); }

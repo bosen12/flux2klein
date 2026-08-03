@@ -555,6 +555,36 @@ function moveSegPill() {
 moveSegPill();
 addEventListener('resize', moveSegPill);
 
+/* ── 模式：瀏覽/生成 ↔ 打標（合併成一頁，切模式只設 body[data-mode]，不換頁） ──
+   初始模式：網址 /tag 或 ?mode=tag → 打標；否則沿用上次（localStorage）。 */
+function initialMode() {
+  if (location.pathname === '/tag' || new URLSearchParams(location.search).get('mode') === 'tag') return 'tag';
+  return localStorage.getItem('yz-mode') === 'tag' ? 'tag' : 'browse';
+}
+let MODE = initialMode();
+function moveModePill() {
+  const seg = $('mode-seg'), pill = $('mode-pill');
+  const active = seg && seg.querySelector('button.on');
+  if (!active || !pill) return;
+  pill.style.width = active.offsetWidth + 'px';
+  pill.style.transform = `translateX(${active.offsetLeft}px)`;
+}
+function applyMode(mode) {
+  MODE = (mode === 'tag') ? 'tag' : 'browse';
+  document.body.dataset.mode = MODE;
+  localStorage.setItem('yz-mode', MODE);
+  $('mode-seg').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.mode === MODE));
+  const h1 = document.querySelector('.brand h1');
+  if (h1) h1.textContent = MODE === 'tag' ? '詞庫打標' : '詞庫暗房';
+  moveModePill();
+}
+$('mode-seg').addEventListener('click', e => {
+  const btn = e.target.closest('button'); if (!btn) return;
+  if (btn.dataset.mode !== MODE) { applyMode(btn.dataset.mode); render(); }
+});
+applyMode(MODE);
+addEventListener('resize', moveModePill);
+
 let searchTimer;
 $('search').oninput = e => {
   clearTimeout(searchTimer);

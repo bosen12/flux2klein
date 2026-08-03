@@ -30,14 +30,20 @@
     <input type="text" id="search" placeholder="跨資料夾搜尋名稱…" autocomplete="off">
   </div>
   <div class="spacer"></div>
-  <label class="steps-field" title="生成步數（套用到之後的生成）">
+  <!-- 模式切換：瀏覽/生成 ↔ 打標。切換只設 body[data-mode]（CSS 顯隱對應控制項），
+       不換頁、瞬間生效，所以沒有換頁過渡的位移問題。 -->
+  <div class="seg mode-seg" id="mode-seg" role="group" aria-label="模式">
+    <span class="seg-pill" id="mode-pill" aria-hidden="true"></span>
+    <button data-mode="browse" class="on" title="瀏覽與生成預覽圖">✦ 瀏覽</button>
+    <button data-mode="tag" title="大量標稀有度">🏷 打標</button>
+  </div>
+  <label class="steps-field browse-only" title="生成步數（套用到之後的生成）">
     <span>步數</span>
     <input type="number" id="steps-input" min="1" max="150" step="1" value="25" inputmode="numeric">
   </label>
-  <button class="ghost" id="draw-cards" title="從全部隨機抽卡（塔羅）">✦ 抽卡</button>
-  <button class="ghost" id="review-btn" title="進入選取模式：點卡片標記不優質（紅叉）">🚩 篩選<span id="flag-count" class="flag-count"></span></button>
+  <button class="ghost" id="draw-cards" title="隨機抽卡（塔羅）">✦ 抽卡</button>
+  <button class="ghost browse-only" id="review-btn" title="進入選取模式：點卡片標記不優質（紅叉）">🚩 篩選<span id="flag-count" class="flag-count"></span></button>
   <button class="ghost" id="rescan" title="重新掃描">↻ 重掃</button>
-  <a class="ghost taglink" href="/tag" title="開啟稀有度打標頁（大量標稀有/特別/傳奇並改檔名）">🏷 打標</a>
   <div class="conn" id="conn"><span class="led"></span><span id="conn-text">…</span></div>
 </div>
 
@@ -63,27 +69,30 @@
         <div class="main-sub" id="mt-sub"></div>
       </div>
       <div class="head-actions">
-        <div class="seg" id="view-seg" role="group" aria-label="篩選">
+        <div class="seg browse-only" id="view-seg" role="group" aria-label="篩選">
           <span class="seg-pill" id="seg-pill" aria-hidden="true"></span>
           <button data-v="all" class="on">全部</button>
           <button data-v="missing">缺圖</button>
           <button data-v="have">已有</button>
         </div>
-        <div class="gen-group">
+        <div class="gen-group browse-only">
           <span class="gen-label">本頁</span>
           <button class="primary" id="gen-page-missing">補缺少</button>
           <button class="ghost" id="gen-page-all">全部重生</button>
         </div>
-        <div class="gen-group">
+        <div class="gen-group browse-only">
           <span class="gen-label">全部</span>
           <button class="primary" id="gen-all-missing">補缺少</button>
           <button class="ghost" id="gen-all-regen">全部重生</button>
         </div>
-        <button class="danger" id="batch-stop" style="display:none;">停止</button>
-        <span class="conn" id="batch-progress" style="font-family:var(--mono);"></span>
+        <button class="danger browse-only" id="batch-stop" style="display:none;">停止</button>
+        <span class="conn browse-only" id="batch-progress" style="font-family:var(--mono);"></span>
+        <!-- 打標模式的主區操作（全選/清除選取）；Stage 2 會接上邏輯 -->
+        <button class="ghost tag-only" id="sel-all">全選本資料夾</button>
+        <button class="ghost tag-only" id="sel-clear">清除選取</button>
       </div>
     </div>
-    <div class="coverbar" id="coverbar"><span style="width:0"></span></div>
+    <div class="coverbar browse-only" id="coverbar"><span style="width:0"></span></div>
     <div class="rarity-bar" id="rarity-bar" aria-label="稀有度篩選"></div>
     <div id="grid" class="grid"></div>
   </main>
