@@ -183,8 +183,17 @@ function render() {
     $('mt-num').textContent = idx ? idx[0] : '';
     $('mt-name').textContent = (CUR_FOLDER || '').replace(/^\d+[_\-\s]*/, '') || CUR_FOLDER || '—';
   }
-  $('mt-sub').textContent = `${total} 個詞庫 · 已生成 ${have} · 缺 ${total - have} · 覆蓋率 ${pct}%`;
-  $('coverbar').firstElementChild.style.width = pct + '%';
+  // 覆蓋率條在兩模式都顯示（避免切模式時它消失導致下方格線上下跳）：瀏覽=已生成比例、
+  // 打標=已標稀有度比例。摘要文字同步。
+  if (MODE === 'tag') {
+    const tagged = list.filter(x => x.rarity).length;
+    const pctT = total ? Math.round(tagged / total * 100) : 0;
+    $('mt-sub').textContent = `${total} 個詞庫 · 已標稀有度 ${tagged} · 打標 ${pctT}%`;
+    $('coverbar').firstElementChild.style.width = pctT + '%';
+  } else {
+    $('mt-sub').textContent = `${total} 個詞庫 · 已生成 ${have} · 缺 ${total - have} · 覆蓋率 ${pct}%`;
+    $('coverbar').firstElementChild.style.width = pct + '%';
+  }
 
   const grid = $('grid');
   grid.innerHTML = '';
@@ -580,7 +589,8 @@ function applyMode(mode) {
 }
 $('mode-seg').addEventListener('click', e => {
   const btn = e.target.closest('button'); if (!btn) return;
-  if (btn.dataset.mode !== MODE) { applyMode(btn.dataset.mode); render(); }
+  // 切模式用 withTransition：消失/出現的控制項柔和交叉淡入，共用按鈕因靠右錨定不位移。
+  if (btn.dataset.mode !== MODE) withTransition(() => { applyMode(btn.dataset.mode); render(); });
 });
 applyMode(MODE);
 addEventListener('resize', moveModePill);

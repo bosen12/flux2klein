@@ -29,20 +29,21 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
     <input type="text" id="search" placeholder="跨資料夾搜尋名稱…" autocomplete="off">
   </div>
+  <!-- 瀏覽專屬控制項放在 spacer 之前：切模式時它們出現/消失只改變 spacer 寬度，
+       不會推動 spacer 之後靠右錨定的共用群組（模式切換/抽卡/重掃/連線），共用按鈕位置不動。 -->
+  <label class="steps-field browse-only" title="生成步數（套用到之後的生成）">
+    <span>步數</span>
+    <input type="number" id="steps-input" min="1" max="150" step="1" value="25" inputmode="numeric">
+  </label>
+  <button class="ghost browse-only" id="review-btn" title="進入選取模式：點卡片標記不優質（紅叉）">🚩 篩選<span id="flag-count" class="flag-count"></span></button>
   <div class="spacer"></div>
-  <!-- 模式切換：瀏覽/生成 ↔ 打標。切換只設 body[data-mode]（CSS 顯隱對應控制項），
-       不換頁、瞬間生效，所以沒有換頁過渡的位移問題。 -->
+  <!-- 以下為兩模式共用、位置固定：切模式時寬度不變、不位移 -->
   <div class="seg mode-seg" id="mode-seg" role="group" aria-label="模式">
     <span class="seg-pill" id="mode-pill" aria-hidden="true"></span>
     <button data-mode="browse" class="on" title="瀏覽與生成預覽圖">✦ 瀏覽</button>
     <button data-mode="tag" title="大量標稀有度">🏷 打標</button>
   </div>
-  <label class="steps-field browse-only" title="生成步數（套用到之後的生成）">
-    <span>步數</span>
-    <input type="number" id="steps-input" min="1" max="150" step="1" value="25" inputmode="numeric">
-  </label>
-  <button class="ghost" id="draw-cards" title="隨機抽卡（塔羅）">✦ 抽卡</button>
-  <button class="ghost browse-only" id="review-btn" title="進入選取模式：點卡片標記不優質（紅叉）">🚩 篩選<span id="flag-count" class="flag-count"></span></button>
+  <button class="ghost" id="draw-cards" title="隨機抽卡（瀏覽=看圖；打標=逐張標稀有度）">✦ 抽卡</button>
   <button class="ghost" id="rescan" title="重新掃描">↻ 重掃</button>
   <div class="conn" id="conn"><span class="led"></span><span id="conn-text">…</span></div>
 </div>
@@ -92,7 +93,7 @@
         <button class="ghost tag-only" id="sel-clear">清除選取</button>
       </div>
     </div>
-    <div class="coverbar browse-only" id="coverbar"><span style="width:0"></span></div>
+    <div class="coverbar" id="coverbar"><span style="width:0"></span></div>
     <div class="rarity-bar" id="rarity-bar" aria-label="稀有度篩選"></div>
     <div id="grid" class="grid"></div>
   </main>
