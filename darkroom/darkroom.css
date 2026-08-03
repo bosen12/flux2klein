@@ -77,6 +77,25 @@ input[type=text] { background: var(--sunk); color: var(--ink); border: 1px solid
 input[type=text]::placeholder { color: var(--faint); }
 
 /* ── 頂欄 ─────────────────────────────────────────────────────── */
+/* 開場載入：暗房安全燈脈動＋擴散光環（大詞庫要幾秒掃描/渲染），載入完淡出。
+   迴圈類動畫維持字面值；reduced-motion 由全域規則關掉、只留靜態燈。 */
+#boot { position: fixed; inset: 0; z-index: 300; display: grid; place-content: center; justify-items: center; gap: 15px;
+  background: radial-gradient(circle at 50% 42%, #211a10, var(--bg) 72%);
+  transition: opacity .5s var(--ease-out), visibility .5s; }
+#boot.hide { opacity: 0; visibility: hidden; pointer-events: none; }
+.boot-lamp { position: relative; width: 64px; height: 64px; border-radius: 50%;
+  background: radial-gradient(circle at 50% 42%, #ffe0a3, var(--amber) 52%, #6c4712 100%);
+  box-shadow: 0 0 34px rgba(234,173,87,.6), 0 0 80px rgba(234,173,87,.28);
+  animation: bootPulse 1.5s ease-in-out infinite; }
+.boot-lamp::before, .boot-lamp::after { content: ""; position: absolute; inset: -4px; border-radius: 50%;
+  border: 1.5px solid rgba(234,173,87,.5); animation: bootRing 1.9s ease-out infinite; }
+.boot-lamp::after { animation-delay: .95s; }
+.boot-title { font-size: 15px; font-weight: 650; letter-spacing: 3px; color: var(--amber); text-shadow: 0 0 18px rgba(234,173,87,.4); }
+.boot-sub { font-family: var(--mono); font-size: 11px; letter-spacing: 4px; color: var(--faint); animation: bootBlink 1.5s ease-in-out infinite; }
+@keyframes bootPulse { 0%,100% { transform: scale(.9); filter: brightness(.82); } 50% { transform: scale(1.05); filter: brightness(1.15); } }
+@keyframes bootRing  { from { transform: scale(1); opacity: .7; } to { transform: scale(2.3); opacity: 0; } }
+@keyframes bootBlink { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
+
 .topbar { flex: none; display: flex; align-items: center; gap: 14px; padding: 11px 18px;
           background: linear-gradient(180deg, var(--panel), color-mix(in srgb, var(--panel) 92%, #000));
           border-bottom: 1px solid var(--line);

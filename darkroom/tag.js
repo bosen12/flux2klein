@@ -536,5 +536,12 @@ function bind() {
   $('rail-sort').textContent = RAIL_SORT_LABEL[RAIL_SORT];
 }
 
+function hideBoot() {
+  const b = document.getElementById('boot');
+  if (!b || b.classList.contains('hide')) return;
+  b.classList.add('hide');
+  setTimeout(() => b.remove(), 600);
+}
 bind();
-loadAll();
+loadAll().finally(hideBoot);
+setTimeout(hideBoot, 20000);   // 保險：萬一載入卡住也別讓載入畫面永遠蓋著
