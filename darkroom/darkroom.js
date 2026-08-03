@@ -770,5 +770,10 @@ function hideBoot() {
   b.classList.add('hide');
   setTimeout(() => b.remove(), 600);
 }
-loadAll().then(() => pollBatch()).finally(hideBoot);
-setTimeout(hideBoot, 20000);   // 保險：萬一載入卡住也別讓載入畫面永遠蓋著
+// boot 只等「資料到＋首屏渲染完」就關。pollBatch 是常駐背景輪詢——批次執行中它
+// 的 while(true) 永不 resolve，所以**不能**把 hideBoot 鏈在它後面（`() => pollBatch()`
+// 會回傳那個永不結算的 promise），否則只要背景有批次在跑，boot 就會一直等到下面
+// 的 20s 保險逾時才關＝每次刷新都卡整整 20 秒。改成 loadAll 完成後「不 return」地
+// 啟動 pollBatch，讓 finally(hideBoot) 立刻收尾、pollBatch 自行在背景跑。
+loadAll().then(() => { pollBatch(); }).finally(hideBoot);
+setTimeout(hideBoot, 20000);   // 保險：萬一 loadAll 本身卡住也別讓載入畫面永遠蓋著
