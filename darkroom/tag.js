@@ -34,8 +34,15 @@ function setDataset(dir) {
 }
 
 const ICON_EMPTY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="m21 15-5-5L5 21"/></svg>';
-const RARITY_LABEL = { rare: '稀有', special: '特別', legendary: '傳奇' };
-const RARITY_FULL = { rare: '稀有版', special: '特別版', legendary: '傳奇版', '': '移除標記' };
+const RARITY_LABEL = { common: '普通', rare: '稀有', special: '特別', legendary: '傳奇' };
+const RARITY_FULL = { common: '普通版', rare: '稀有版', special: '特別版', legendary: '傳奇版', '': '移除標記' };
+// 傳奇卡的閃爍火花層（Aceternity Sparkles 的 vanilla 版）
+function sparklesHTML(n = 7) {
+  let s = '';
+  for (let i = 0; i < n; i++)
+    s += `<i style="left:${(Math.random() * 92 + 4).toFixed(1)}%;top:${(Math.random() * 92 + 4).toFixed(1)}%;--sz:${(2 + Math.random() * 2).toFixed(1)}px;animation-delay:${(Math.random() * 2.4).toFixed(2)}s"></i>`;
+  return `<span class="sparkles" aria-hidden="true">${s}</span>`;
+}
 
 async function loadAll(force = false) {
   const j = await fetch('/api/libs' + (force ? '?force=1' : '')).then(r => r.json());
@@ -170,7 +177,7 @@ function cardOf(it) {
   const stageTag = stagedChange
     ? `<span class="stage-tag stage-${stagedKey || 'none'}" title="點此取消暫存">→ ${stagedKey ? RARITY_LABEL[stagedKey] : '無'}</span>` : '';
   el.innerHTML = `
-    <div class="thumb">${media}${it.rarity ? `<span class="rar-tag ${it.rarity}">${RARITY_LABEL[it.rarity]}</span>` : ''}${stageTag}<span class="sel-box" aria-hidden="true">✓</span></div>
+    <div class="thumb">${media}${it.rarity === 'legendary' ? sparklesHTML() : ''}${it.rarity ? `<span class="rar-tag ${it.rarity}">${RARITY_LABEL[it.rarity]}</span>` : ''}${stageTag}<span class="sel-box" aria-hidden="true">✓</span></div>
     <div class="card-body"><div class="card-name"></div>${SEARCH ? '<div class="card-folder"></div>' : ''}</div>`;
   el.querySelector('.card-name').textContent = it.display_name || it.name;
   if (SEARCH) el.querySelector('.card-folder').textContent = it.folder || '(根目錄)';
@@ -430,7 +437,13 @@ function assignTarot(rel, card, key) {
   RARITY_KEYS.forEach(k => card.classList.remove('assigned-' + k, 'rar-' + k));
   card.classList.add('assigned-' + key);
   if (key !== 'common') card.classList.add('rar-' + key);   // 普通版不加光環
-  if (key === 'legendary') legendaryBurst(card);            // 傳奇揭牌小特效
+  const front = card.querySelector('.tarot-front');
+  const oldSpark = front && front.querySelector('.sparkles');
+  if (oldSpark) oldSpark.remove();                          // 重標時先清掉舊火花
+  if (key === 'legendary') {                                // 傳奇：光爆＋常駐火花
+    legendaryBurst(card);
+    if (front) front.insertAdjacentHTML('beforeend', sparklesHTML(9));
+  }
   updateTarotProgress();
   updateTagbar();
 }
@@ -496,6 +509,13 @@ function bind() {
   };
   $('rescan').onclick = async () => { $('rescan').disabled = true; await loadAll(true); $('rescan').disabled = false; toast('已重掃'); };
   $('menu-btn').onclick = () => $('rail').classList.toggle('open');
+  $('grid').addEventListener('pointermove', e => {          // 卡片聚光：游標追蹤
+    const thumb = e.target.closest('.thumb');
+    if (!thumb) return;
+    const r = thumb.getBoundingClientRect();
+    thumb.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+    thumb.style.setProperty('--my', (e.clientY - r.top) + 'px');
+  });
   $('sel-all').onclick = () => { VISIBLE.forEach(x => SEL.add(x.rel)); render(); updateTagbar(); };
   $('sel-clear').onclick = () => { SEL.clear(); render(); updateTagbar(); };
   document.querySelectorAll('.rar-pick').forEach(b =>

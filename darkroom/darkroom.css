@@ -262,6 +262,17 @@ input[type=text]::placeholder { color: var(--faint); }
 .thumb img.ld { animation: thumbFade var(--d-ui) var(--ease-out); }
 @keyframes thumbFade { from { opacity: 0; } to { opacity: 1; } }
 .card:hover .thumb img { transform: scale(1.04); }
+/* 卡片聚光（Aceternity Card Spotlight 的 vanilla 版）：hover 時縮圖上一圈跟著游標的
+   琥珀柔光。--mx/--my 由 JS 在 pointermove 設定；screen 混色＝提亮不擋圖。 */
+.thumb::after { content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none; mix-blend-mode: screen;
+  opacity: 0; transition: opacity var(--d-ui) var(--ease-out);
+  background: radial-gradient(150px circle at var(--mx, 50%) var(--my, 50%), rgba(234,173,87,.28), transparent 62%); }
+.card:hover .thumb::after { opacity: 1; }
+.sparkles { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
+.sparkles i { position: absolute; width: var(--sz, 3px); height: var(--sz, 3px); border-radius: 50%; background: #fff;
+  box-shadow: 0 0 6px 1px rgba(255,255,255,.9), 0 0 11px 2px rgba(180,123,255,.6);
+  opacity: 0; animation: sparkTwinkle 2.4s ease-in-out infinite; }
+@keyframes sparkTwinkle { 0%,100% { opacity: 0; transform: scale(.4); } 45% { opacity: 1; transform: scale(1); } }
 .thumb .empty { display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--faint); font-size: 12px; }
 .thumb .empty svg { width: 26px; height: 26px; opacity: .5; }
 .card-body { padding: 9px 11px 10px; }

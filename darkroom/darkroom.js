@@ -236,6 +236,13 @@ const ICON_EMPTY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 const ICON_STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.1l2.63 5.33 5.88.85-4.25 4.15 1 5.86L12 16.79 6.74 19.6l1-5.86L3.49 9.28l5.88-.85z"/></svg>';
 const RARITY_LABEL = { common: '普通', rare: '稀有', special: '特別', legendary: '傳奇' };
 const rarTag = (r) => r ? `<span class="rar-tag ${r}">${RARITY_LABEL[r] || ''}</span>` : '';
+// 傳奇卡的閃爍火花層（Aceternity Sparkles 的 vanilla 版）：隨機位置＋延遲的小星點
+function sparklesHTML(n = 7) {
+  let s = '';
+  for (let i = 0; i < n; i++)
+    s += `<i style="left:${(Math.random() * 92 + 4).toFixed(1)}%;top:${(Math.random() * 92 + 4).toFixed(1)}%;--sz:${(2 + Math.random() * 2).toFixed(1)}px;animation-delay:${(Math.random() * 2.4).toFixed(2)}s"></i>`;
+  return `<span class="sparkles" aria-hidden="true">${s}</span>`;
+}
 
 // 縮圖內部標記：星號、選取框、紅叉、生成鈕全部就地重建（reloadThumb 會覆寫
 // thumb.innerHTML，所以這些覆蓋層要有單一來源，避免生成後星號/生成鈕被清掉）。
@@ -245,6 +252,7 @@ function thumbInnerHTML(it) {
     ? `<img loading="lazy" decoding="async" width="360" height="360" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="" onload="this.classList.add('ld')" onerror="this.classList.add('ld')">`
     : `<div class="empty">${ICON_EMPTY}<span>尚無圖片</span></div>`;
   return `${media}` +
+    (it.rarity === 'legendary' ? sparklesHTML() : '') +
     rarTag(it.rarity) +
     `<button class="fav-btn" type="button" aria-label="收藏" aria-pressed="${it.favorited ? 'true' : 'false'}">${ICON_STAR}</button>` +
     `<span class="pick-box" aria-hidden="true"></span>` +
@@ -497,6 +505,14 @@ $('search').oninput = e => {
 };
 $('rescan').onclick = () => loadAll(true);
 $('menu-btn').onclick = () => $('rail').classList.toggle('open');
+// 卡片聚光：游標在縮圖上移動時更新 --mx/--my（委派在 grid 上，只有 hover 的縮圖會算）
+$('grid').addEventListener('pointermove', e => {
+  const thumb = e.target.closest('.thumb');
+  if (!thumb) return;
+  const r = thumb.getBoundingClientRect();
+  thumb.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+  thumb.style.setProperty('--my', (e.clientY - r.top) + 'px');
+});
 // 資料夾排序方向切換（升冪 ↑ / 降冪 ↓），記住選擇
 function updateRailSortLabel() {
   const b = $('rail-sort'); if (b) b.textContent = RAIL_DESC ? '降冪 ↓' : '升冪 ↑';
@@ -637,7 +653,7 @@ function drawTarot() {
     card.innerHTML =
       `<div class="tarot-inner">
          <div class="tarot-back"><span class="tarot-emblem">✦</span></div>
-         <div class="tarot-front${it.has_image ? ' loading' : ''}">${face}${rarTag(it.rarity)}<div class="tarot-name"></div><div class="tarot-folder"></div><div class="tarot-glare"></div></div>
+         <div class="tarot-front${it.has_image ? ' loading' : ''}">${face}${it.rarity === 'legendary' ? sparklesHTML(9) : ''}${rarTag(it.rarity)}<div class="tarot-name"></div><div class="tarot-folder"></div><div class="tarot-glare"></div></div>
        </div>`;
     card.querySelector('.tarot-name').textContent = it.display_name || it.name;
     card.querySelector('.tarot-folder').textContent = it.folder || '(根目錄)';
