@@ -114,7 +114,7 @@ function buildRail() {
       </div>
       <div class="cover${full ? ' full' : ''}"><span style="width:${pct}%"></span></div>`;
     b.querySelector('.folder-name').textContent = s.name.replace(/^\d+[_\-\s]*/, '') || s.name;
-    b.onclick = () => { CUR_FOLDER = s.name; SEARCH = ''; $('search').value = ''; buildRail(); render(); $('main').scrollTop = 0; };
+    b.onclick = () => withTransition(() => { CUR_FOLDER = s.name; SEARCH = ''; $('search').value = ''; buildRail(); render(); $('main').scrollTop = 0; });
     frag.appendChild(b);
   });
   list.appendChild(frag);
@@ -153,7 +153,7 @@ function buildRarityBar() {
     b.className = 'rar-chip rc-' + key + (RARITY_FILTER === key ? ' on' : '');
     b.innerHTML = `<span class="rc-dot"></span><span class="rc-label"></span><span class="rc-count">${cnt[key]}</span>`;
     b.querySelector('.rc-label').textContent = label;
-    b.onclick = () => { RARITY_FILTER = key; render(); };
+    b.onclick = () => withTransition(() => { RARITY_FILTER = key; render(); });
     bar.appendChild(b);
   });
 }
@@ -185,6 +185,17 @@ function cardOf(it) {
   const st = el.querySelector('.stage-tag');
   if (st) st.onclick = (e) => { e.stopPropagation(); STAGED.delete(it.rel); render(); updateTagbar(); };
   return el;
+}
+
+// 切資料夾／篩選／搜尋時用同文件 View Transitions 讓格線交叉淡入（見 darkroom.css
+// 的 dr-grid）。守 REDUCE_MOTION 與 visibilityState——窗格隱藏時 callback 不結算
+// （CLAUDE.md 老坑），退化成直接更新。
+function withTransition(update) {
+  if (document.startViewTransition && !REDUCE_MOTION && document.visibilityState === 'visible') {
+    document.startViewTransition(update);
+  } else {
+    update();
+  }
 }
 
 function render() {
@@ -494,7 +505,7 @@ function closeTarot() {
 
 /* ---- 事件綁定 ---- */
 function bind() {
-  $('search').addEventListener('input', e => { SEARCH = e.target.value.trim(); buildRail(); render(); });
+  $('search').addEventListener('input', e => withTransition(() => { SEARCH = e.target.value.trim(); buildRail(); render(); }));
   $('folder-search').addEventListener('input', e => {
     RAIL_SEARCH = e.target.value.trim();
     $('folder-search-clear').style.display = RAIL_SEARCH ? '' : 'none';

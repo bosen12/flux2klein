@@ -345,6 +345,14 @@ input[type=text]::placeholder { color: var(--faint); }
 ::view-transition-old(root),
 ::view-transition-new(root) { animation-duration: var(--d-slow); animation-timing-function: var(--ease-out); }
 
+/* 格線獨立成一個過渡群組：切資料夾／篩選／搜尋時只讓「格線」交叉淡入（較快、
+   --d-ui），頂列、左欄、篩選膠囊各自維持，不被整體 root 淡影響。
+   換頁（跨文件）時它同樣是一個群組、grid 內容交叉淡，與上面的殼過渡並存。 */
+#grid { view-transition-name: dr-grid; }
+::view-transition-group(dr-grid) { animation-duration: var(--d-ui); }
+::view-transition-old(dr-grid),
+::view-transition-new(dr-grid) { animation-timing-function: var(--ease-out); }
+
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
   @view-transition { navigation: none; }   /* 換頁不做過渡，直接切 */

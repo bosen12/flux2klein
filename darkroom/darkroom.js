@@ -98,7 +98,7 @@ function buildRail() {
       </div>
       <div class="cover${full ? ' full' : ''}"><span style="width:${pct}%"></span></div>`;
     b.querySelector('.folder-name').textContent = s.name.replace(/^\d+[_\-\s]*/, '') || s.name;
-    b.onclick = () => { CUR_FOLDER = s.name; SEARCH = ''; $('search').value = ''; buildRail(); render(); $('main').scrollTop = 0; };
+    b.onclick = () => withTransition(() => { CUR_FOLDER = s.name; SEARCH = ''; $('search').value = ''; buildRail(); render(); $('main').scrollTop = 0; });
     frag.appendChild(b);
   });
   list.appendChild(frag);
@@ -142,9 +142,25 @@ function buildRarityBar() {
     b.className = 'rar-chip rc-' + key + (RARITY_FILTER === key ? ' on' : '');
     b.innerHTML = `<span class="rc-dot"></span><span class="rc-label"></span><span class="rc-count">${cnt[key]}</span>`;
     b.querySelector('.rc-label').textContent = label;
-    b.onclick = () => { RARITY_FILTER = key; render(); };
+    b.onclick = () => withTransition(() => { RARITY_FILTER = key; render(); });
     bar.appendChild(b);
   });
+}
+
+// 切資料夾／篩選／搜尋時，用同文件 View Transitions 讓格線交叉淡入（見 css 的
+// dr-grid）。守 REDUCE_MOTION 與 visibilityState——窗格隱藏時 startViewTransition
+// 的 callback 不結算（CLAUDE.md 老坑），退化成直接更新。_switching 期間 appendPage
+// 不套 reveal，讓 VT 截到的新內容是「已可見」而非 opacity:0 的空白。
+let _switching = false;
+function withTransition(update) {
+  if (document.startViewTransition && !REDUCE_MOTION && document.visibilityState === 'visible') {
+    _switching = true;
+    const t = document.startViewTransition(update);
+    t.finished.finally(() => { _switching = false; });
+    setTimeout(() => { _switching = false; }, 1200);   // 保險：VT 未結算也不卡住後續分頁進場
+  } else {
+    update();
+  }
 }
 
 function render() {
@@ -214,7 +230,7 @@ function appendPage() {
     const card = cardOf(it);
     // 入場動畫改走 reveal-on-scroll：每張捲進視野時才淡入上升（見 _revealIO），
     // 這樣所有卡片都會依序animate，不再只有前 14 張。
-    if (!REDUCE_MOTION) { card.classList.add('reveal'); fresh.push(card); }
+    if (!REDUCE_MOTION && !_switching) { card.classList.add('reveal'); fresh.push(card); }
     frag.appendChild(card);
   });
   const sentinel = $('scroll-sentinel');
@@ -483,8 +499,8 @@ $('view-seg').addEventListener('click', e => {
   const btn = e.target.closest('button'); if (!btn) return;
   VIEW = btn.dataset.v;
   $('view-seg').querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn));
-  moveSegPill();
-  render();
+  moveSegPill();          // 膠囊自己的滑動保持在過渡外（不被格線淡入影響）
+  withTransition(render);
 });
 
 // 篩選段的滑動膠囊：量目前 .on 按鈕的位置/寬度，讓膠囊滑過去（比照主面板分頁）
@@ -501,7 +517,7 @@ addEventListener('resize', moveSegPill);
 let searchTimer;
 $('search').oninput = e => {
   clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => { SEARCH = e.target.value.trim(); buildRail(); render(); }, 180);
+  searchTimer = setTimeout(() => withTransition(() => { SEARCH = e.target.value.trim(); buildRail(); render(); }), 180);
 };
 $('rescan').onclick = () => loadAll(true);
 $('menu-btn').onclick = () => $('rail').classList.toggle('open');
