@@ -293,17 +293,17 @@ function cardOf(it) {
   el.className = 'card' + (it.has_image ? '' : ' missing') + (it.flagged ? ' flagged' : '')
     + (it.favorited ? ' favorited' : '') + (it.rarity ? ' rar-' + it.rarity : '');
   el.dataset.rel = it.rel;
+  // 卡片不顯示每張的生成狀態小標（完成/排隊/生成中/失敗）——批次時每張都冒出來太吵。
+  // 整體進度看頂部的「批次 X/Y」，完成靠縮圖自己更新。生成狀態仍會顯示在點開的大圖裡。
   el.innerHTML = `
     <div class="thumb">${thumbInnerHTML(it)}</div>
     <div class="card-body">
       <div class="card-name"></div>
       ${SEARCH ? '<div class="card-folder"></div>' : ''}
-    </div>
-    <div class="status"></div>`;
+    </div>`;
   el.querySelector('.card-name').textContent = it.display_name || it.name;
   if (SEARCH) el.querySelector('.card-folder').textContent = it.folder || '(根目錄)';
   wireThumb(el.querySelector('.thumb'), it);
-  if (it.job && it.job.status) updateStatusEl(el.querySelector('.status'), it.job);
   return el;
 }
 
