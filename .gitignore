@@ -42,3 +42,6 @@ flags.json
 
 # 詞庫收藏（個人判斷，不進版控）
 favorites.json
+
+# 依 dataset 分檔的側檔 metadata（旗標／收藏／稀有度），個人判斷不進版控
+.darkroom_meta/

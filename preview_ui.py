@@ -27,6 +27,7 @@ import io
 import json
 import os
 import random
+import shutil
 import socket
 import subprocess
 import sys
@@ -95,21 +96,64 @@ def plog(msg: str):
 
 
 # ---------------------------------------------------------------------------
-# 詞庫品質旗標（黑名單）——AI 寫的詞庫少數不理想，使用者可標記。存後端 JSON 讓
-# 手機/桌面共享。寫入走鎖 + 原子替換（temp → os.replace），多端同時標不會寫壞。
-# 只記錄，不影響抽卡/顯示（依需求）。key 是詞庫的 rel（資料夾/檔名.py）。
+# 側檔 metadata（旗標／收藏／稀有度）——**依 special_dir 分檔**。兩個 bat 指向不同
+# 的 special_prompts（C:\projects\special_prompts 與 animebot\special_prompts），
+# 若共用一份 JSON、key 又是相對路徑，兩份同名結構的詞庫就會互相污染。所以每個
+# dataset 各存一份，檔名帶該路徑的短雜湊，放在 .darkroom_meta/ 底下（gitignore）。
+# 舊版是共用一份 flags.json / favorites.json——首次啟動時若本 dataset 專屬檔還不
+# 存在、而舊共用檔在，就複製過來當起點（兩個 dataset 各複製一份、之後獨立），舊檔
+# 保留不刪、絕不遺失資料。
 # ---------------------------------------------------------------------------
-FLAGS_PATH = Path(__file__).resolve().parent / "flags.json"
+META_DIR = Path(__file__).resolve().parent / ".darkroom_meta"
+
+
+def _dataset_tag() -> str:
+    """目前 special_dir 的短雜湊，用來把各 dataset 的 metadata 分檔。用解析後的絕對
+    路徑並轉小寫，避免同一個資料夾因大小寫/相對寫法算出不同值。"""
+    key = str(SPECIAL_DIR.resolve()).lower()
+    return hashlib.sha1(key.encode("utf-8")).hexdigest()[:8]
+
+
+def _meta_path(kind: str) -> Path:
+    """kind ∈ {flags, favorites, rarities}。回傳本 dataset 專屬的 json 路徑。"""
+    return META_DIR / f"{kind}.{_dataset_tag()}.json"
+
+
+def _migrate_shared(kind: str, old_path: Path):
+    """一次性遷移：本 dataset 專屬檔不存在、舊共用檔存在時，複製過去當起點。"""
+    new_path = _meta_path(kind)
+    if not new_path.exists() and old_path.is_file():
+        try:
+            META_DIR.mkdir(exist_ok=True)
+            shutil.copy2(old_path, new_path)
+            plog(f"[meta] {kind}：從舊共用檔遷移到本 dataset（{new_path.name}）")
+        except Exception as e:
+            plog(f"[meta] {kind} 遷移失敗（改從空白開始）：{e}")
+
+
+def _atomic_write_json(path: Path, obj):
+    """原子寫：temp → replace。呼叫端負責鎖。"""
+    META_DIR.mkdir(exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
+# --- 詞庫品質旗標（黑名單）：只記錄，不影響抽卡/顯示。key 是詞庫的 rel。 ---------
+FLAGS_OLD_PATH = Path(__file__).resolve().parent / "flags.json"   # 舊共用檔（遷移用）
 _flags: dict = {}                 # rel -> {"at": ts}
 _flags_lock = threading.Lock()
 
 
 def _load_flags():
     global _flags
-    if not FLAGS_PATH.is_file():
+    _migrate_shared("flags", FLAGS_OLD_PATH)
+    path = _meta_path("flags")
+    if not path.is_file():
         return
     try:
-        with open(FLAGS_PATH, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             d = json.load(f)
         fl = d.get("flagged") if isinstance(d, dict) else None
         if isinstance(fl, dict):
@@ -123,10 +167,7 @@ def _load_flags():
 
 def _save_flags_locked():
     """呼叫端須已持有 _flags_lock。原子寫：temp → replace。"""
-    tmp = FLAGS_PATH.with_suffix(".json.tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"flagged": _flags}, f, ensure_ascii=False)
-    os.replace(tmp, FLAGS_PATH)
+    _atomic_write_json(_meta_path("flags"), {"flagged": _flags})
 
 
 def set_flag(rel: str, flagged: bool) -> bool:
@@ -148,17 +189,19 @@ def flagged_set() -> set:
 # 收藏（我的最愛）：結構同品質旗標，另存一份 favorites.json。只記錄，不影響
 # 抽卡/顯示。key 是詞庫的 rel。
 # ---------------------------------------------------------------------------
-FAVS_PATH = Path(__file__).resolve().parent / "favorites.json"
+FAVS_OLD_PATH = Path(__file__).resolve().parent / "favorites.json"   # 舊共用檔（遷移用）
 _favs: dict = {}                  # rel -> {"at": ts}
 _favs_lock = threading.Lock()
 
 
 def _load_favs():
     global _favs
-    if not FAVS_PATH.is_file():
+    _migrate_shared("favorites", FAVS_OLD_PATH)
+    path = _meta_path("favorites")
+    if not path.is_file():
         return
     try:
-        with open(FAVS_PATH, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             d = json.load(f)
         fv = d.get("favorited") if isinstance(d, dict) else None
         if isinstance(fv, dict):
@@ -172,10 +215,7 @@ def _load_favs():
 
 def _save_favs_locked():
     """呼叫端須已持有 _favs_lock。原子寫：temp → replace。"""
-    tmp = FAVS_PATH.with_suffix(".json.tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"favorited": _favs}, f, ensure_ascii=False)
-    os.replace(tmp, FAVS_PATH)
+    _atomic_write_json(_meta_path("favorites"), {"favorited": _favs})
 
 
 def set_fav(rel: str, favorited: bool) -> bool:
@@ -191,6 +231,56 @@ def set_fav(rel: str, favorited: bool) -> bool:
 def fav_set() -> set:
     with _favs_lock:
         return set(_favs.keys())
+
+
+# ---------------------------------------------------------------------------
+# 稀有度：改存側檔（rarities.<dataset>.json），**不再寫進檔名**。key 是詞庫 rel，
+# value 是稀有度 key（common/rare/special/legendary）；空字串 "" 表示「明確清除」，
+# 用來蓋掉舊檔名前綴衍生的稀有度（見 scan 疊加）。舊版把稀有度寫在檔名前綴
+# （傳奇版xxx.py），那些檔的檔名不動、由 scan 以檔名衍生當 fallback，等於自動沿用。
+# ---------------------------------------------------------------------------
+RARITY_KEYS = ("common", "rare", "special", "legendary")
+_rarities: dict = {}              # rel -> key（"" = 明確清除）
+_rarities_lock = threading.Lock()
+
+
+def _load_rarities():
+    global _rarities
+    path = _meta_path("rarities")
+    if not path.is_file():
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        r = d.get("rarities") if isinstance(d, dict) else None
+        if isinstance(r, dict):
+            _rarities = r
+        plog(f"[rarity] 載入 {len(_rarities)} 筆稀有度")
+    except Exception as e:
+        plog(f"[rarity] 讀取失敗，從空白開始：{e}")
+
+
+def _save_rarities_locked():
+    _atomic_write_json(_meta_path("rarities"), {"rarities": _rarities})
+
+
+def set_rarity(rel: str, key: str, name_has_prefix: bool = False) -> str:
+    """設定/清除稀有度。key ∈ RARITY_KEYS 為設定；"" 為清除。清除時若該檔名本身帶
+    舊前綴，存明確 "" 以蓋掉 scan 的檔名衍生值；否則直接移除保持側檔精簡。回傳最終值。"""
+    with _rarities_lock:
+        if key:
+            _rarities[rel] = key
+        elif name_has_prefix:
+            _rarities[rel] = ""
+        else:
+            _rarities.pop(rel, None)
+        _save_rarities_locked()
+        return _rarities.get(rel, "")
+
+
+def rarity_map() -> dict:
+    with _rarities_lock:
+        return dict(_rarities)
 
 
 # ---------------------------------------------------------------------------
@@ -499,16 +589,20 @@ def scan_libraries(force: bool = False) -> list[dict]:
         with _scan_lock:
             _scan["items"] = cached
             _scan["at"] = time.time()
-    # 疊上即時 job 狀態與品質旗標（快取只存檔案系統那一半，這兩者會變、不進快取）
+    # 疊上會變、不進快取的部分：job 狀態、品質旗標、收藏、稀有度。稀有度以側檔為準，
+    # 側檔沒有該筆才用 _scan_fs 由檔名衍生的值（舊前綴檔自動沿用）；側檔存 "" 代表
+    # 明確清除，會蓋掉檔名衍生值。
     with STATE["jobs_lock"]:
         jobs = dict(STATE["jobs"])
     fl = flagged_set()
     fv = fav_set()
+    rmap = rarity_map()
     return [
         dict(it,
              job=dict(jobs.get(it["rel"]) or {}),
              flagged=(it["rel"] in fl),
-             favorited=(it["rel"] in fv))
+             favorited=(it["rel"] in fv),
+             rarity=(rmap[it["rel"]] if it["rel"] in rmap else it["rarity"]))
         for it in cached
     ]
 
@@ -813,6 +907,26 @@ class Handler(BaseHTTPRequestHandler):
                 plog(f"[fav] {'收藏' if now else '取消收藏'} {rel}")
                 self._send_json({"ok": True, "rel": rel, "favorited": now})
                 return
+            if u.path == "/api/rarity":
+                # 稀有度存側檔（不改檔名）。rarity ∈ common/rare/special/legendary 設定，
+                # ""（或省略）清除。即時反映（scan 回應時疊加），不必重掃。
+                rel = data.get("rel") or ""
+                key = data.get("rarity", "") or ""
+                if key and key not in RARITY_KEYS:
+                    self._send_json({"error": "未知稀有度"}, 400)
+                    return
+                try:
+                    py = py_of(rel)
+                except Exception:
+                    self._send_json({"error": "路徑不合法"}, 400)
+                    return
+                if not py.is_file():
+                    self._send_json({"error": "詞庫不存在"}, 404)
+                    return
+                now = set_rarity(rel, key, bool(rarity_of(py.stem)[0]))
+                plog(f"[rarity] {rel} → {now or '(清除)'}")
+                self._send_json({"ok": True, "rel": rel, "rarity": now})
+                return
             if u.path == "/api/rename":
                 # 依稀有度前綴改檔名。dry=1 只回傳「舊名→新名」預覽不動檔;dry 關掉才真改。
                 # 兩種入參:①renames=[{rel,rarity}] 每筆各自的稀有度(打標頁的「先大量標註、
@@ -1018,8 +1132,9 @@ def main():
         print(f"[serve   ] {open_url}")
     print("[serve   ] 若手機連不上:Windows 防火牆首次可能跳出提示,請允許 Python 存取")
 
-    _load_flags()                 # 載入品質旗標黑名單
-    _load_favs()                  # 載入收藏清單
+    _load_flags()                 # 載入品質旗標黑名單（依 dataset 分檔）
+    _load_favs()                  # 載入收藏清單（依 dataset 分檔）
+    _load_rarities()              # 載入稀有度側檔（依 dataset 分檔）
     srv = ThreadingHTTPServer((bind_host, port), Handler)
     # 開機就先在背景把詞庫掃一遍暖快取，第一次開頁的 /api/libs 才不用等 ~1s 掃描
     threading.Thread(target=lambda: scan_libraries(), daemon=True).start()
