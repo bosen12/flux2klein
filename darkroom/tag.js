@@ -192,7 +192,12 @@ function cardOf(it) {
 // （CLAUDE.md 老坑），退化成直接更新。
 function withTransition(update) {
   if (document.startViewTransition && !REDUCE_MOTION && document.visibilityState === 'visible') {
-    document.startViewTransition(update);
+    const grid = $('grid');
+    grid.style.viewTransitionName = 'dr-grid-live';   // 同文件切換才交叉淡入；換頁維持不動（CSS 的 dr-grid）
+    const t = document.startViewTransition(update);
+    const restore = () => { grid.style.viewTransitionName = ''; };
+    t.finished.finally(restore);
+    setTimeout(restore, 1200);
   } else {
     update();
   }

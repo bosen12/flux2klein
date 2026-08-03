@@ -345,13 +345,20 @@ input[type=text]::placeholder { color: var(--faint); }
 ::view-transition-old(root),
 ::view-transition-new(root) { animation-duration: var(--d-slow); animation-timing-function: var(--ease-out); }
 
-/* 格線獨立成一個過渡群組：切資料夾／篩選／搜尋時只讓「格線」交叉淡入（較快、
-   --d-ui），頂列、左欄、篩選膠囊各自維持，不被整體 root 淡影響。
-   換頁（跨文件）時它同樣是一個群組、grid 內容交叉淡，與上面的殼過渡並存。 */
+/* 格線的過渡分兩種情境，用兩個名字區分：
+   ① 換頁（暗房↔打標，跨文件）：格線命名為 dr-grid 但**不給動畫**——兩頁其實是
+      同一批圖，morph/淡入都是多餘的，反而因兩頁卡片高度不同而縮放位移。動畫設 none
+      讓新格線直接出現、舊的直接消失＝畫面上圖片「維持不動」，只有頂列/左欄/其餘
+      主內容柔和切換。
+   ② 切資料夾／篩選／搜尋（同文件）：withTransition 會把名字暫時改成 dr-grid-live，
+      這時才交叉淡入（--d-ui），因為換的是不同內容、淡入才有意義。 */
 #grid { view-transition-name: dr-grid; }
-::view-transition-group(dr-grid) { animation-duration: var(--d-ui); }
+::view-transition-group(dr-grid),
 ::view-transition-old(dr-grid),
-::view-transition-new(dr-grid) { animation-timing-function: var(--ease-out); }
+::view-transition-new(dr-grid) { animation: none; }
+::view-transition-group(dr-grid-live) { animation-duration: var(--d-ui); }
+::view-transition-old(dr-grid-live),
+::view-transition-new(dr-grid-live) { animation-timing-function: var(--ease-out); }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }

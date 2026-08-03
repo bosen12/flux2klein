@@ -154,10 +154,15 @@ function buildRarityBar() {
 let _switching = false;
 function withTransition(update) {
   if (document.startViewTransition && !REDUCE_MOTION && document.visibilityState === 'visible') {
+    const grid = $('grid');
+    // 同文件切換：把格線名字暫改成會交叉淡入的 dr-grid-live（CSS 預設的 dr-grid 是
+    // 給換頁用的靜止版）。結束後還原成 CSS 名字，換頁時才會維持不動。
+    grid.style.viewTransitionName = 'dr-grid-live';
+    const restore = () => { _switching = false; grid.style.viewTransitionName = ''; };
     _switching = true;
     const t = document.startViewTransition(update);
-    t.finished.finally(() => { _switching = false; });
-    setTimeout(() => { _switching = false; }, 1200);   // 保險：VT 未結算也不卡住後續分頁進場
+    t.finished.finally(restore);
+    setTimeout(restore, 1200);   // 保險：VT 未結算也不卡住後續分頁進場、且還原名字
   } else {
     update();
   }
