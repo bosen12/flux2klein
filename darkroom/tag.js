@@ -14,12 +14,29 @@ if (!RAIL_SORTS.includes(RAIL_SORT)) RAIL_SORT = 'name';
 let VISIBLE = [];
 let RARITY_FILTER = 'all';           // all | untagged | common | rare | special | legendary
 const SEL = new Set();               // 目前選取的 rel（跨資料夾保留，準備標註）
-const STAGED = new Map();            // 暫存標註：rel -> 目標稀有度（先不動檔，最後統一改名）
-let PENDING = null;                   // 待確認的改名清單 [{rel, rarity}]
 
-const rarityOf = rel => { const it = ALL.find(x => x.rel === rel); return it ? (it.rarity || '') : ''; };
-// 暫存中「真的會改」的（目標稀有度 ≠ 目前稀有度）。no-op 不算，數字才誠實。
-const stagedChanges = () => [...STAGED].filter(([rel, r]) => r !== rarityOf(rel));
+// 即時把某詞庫的稀有度寫進側檔（POST /api/rarity，不改檔名、隨標隨生效）。樂觀更新
+// 本地 ALL[].rarity、失敗回退＋toast。key ∈ common/rare/special/legendary 為設定、
+// "" 為清除。取代舊的「暫存 → 統一改名」流程。
+async function applyRarity(rel, key) {
+  const it = ALL.find(x => x.rel === rel);
+  const prev = it ? (it.rarity || '') : '';
+  if (key === prev) return true;              // 沒變就不打擾伺服器
+  if (it) it.rarity = key;                    // 樂觀更新
+  try {
+    const r = await fetch('/api/rarity', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rel, rarity: key }),
+    }).then(r => r.json());
+    if (r.error) throw new Error(r.error);
+    if (it) it.rarity = r.rarity;             // 以伺服器回傳為準
+    return true;
+  } catch (e) {
+    if (it) it.rarity = prev;                 // 失敗回退
+    toast('標記失敗：' + e.message);
+    return false;
+  }
+}
 const REDUCE_MOTION = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -164,26 +181,19 @@ let _rendered = 0, _io = null;
 
 function cardOf(it) {
   const el = document.createElement('div');
-  const stagedKey = STAGED.has(it.rel) ? STAGED.get(it.rel) : null;
-  const stagedChange = stagedKey !== null && stagedKey !== (it.rarity || '');   // 只有真的會改才顯示暫存標
   el.className = 'card tcard' + (it.has_image ? '' : ' missing')
-    + (it.rarity ? ' rar-' + it.rarity : '') + (SEL.has(it.rel) ? ' selected' : '')
-    + (stagedChange ? ' staged stage-' + (stagedKey || 'none') : '');
+    + (it.rarity ? ' rar-' + it.rarity : '') + (SEL.has(it.rel) ? ' selected' : '');
   el.dataset.rel = it.rel;
   const relEnc = encodeURIComponent(it.rel);
   const media = it.has_image
     ? `<img loading="lazy" decoding="async" width="360" height="360" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="" onload="this.classList.add('ld')" onerror="this.classList.add('ld')">`
     : `<div class="empty">${ICON_EMPTY}<span>尚無圖片</span></div>`;
-  const stageTag = stagedChange
-    ? `<span class="stage-tag stage-${stagedKey || 'none'}" title="點此取消暫存">→ ${stagedKey ? RARITY_LABEL[stagedKey] : '無'}</span>` : '';
   el.innerHTML = `
-    <div class="thumb">${media}${it.rarity === 'legendary' ? sparklesHTML() : ''}${it.rarity ? `<span class="rar-tag ${it.rarity}">${RARITY_LABEL[it.rarity]}</span>` : ''}${stageTag}<span class="sel-box" aria-hidden="true">✓</span></div>
+    <div class="thumb">${media}${it.rarity === 'legendary' ? sparklesHTML() : ''}${it.rarity ? `<span class="rar-tag ${it.rarity}">${RARITY_LABEL[it.rarity]}</span>` : ''}<span class="sel-box" aria-hidden="true">✓</span></div>
     <div class="card-body"><div class="card-name"></div>${SEARCH ? '<div class="card-folder"></div>' : ''}</div>`;
   el.querySelector('.card-name').textContent = it.display_name || it.name;
   if (SEARCH) el.querySelector('.card-folder').textContent = it.folder || '(根目錄)';
   el.querySelector('.thumb').onclick = () => toggleSel(it.rel, el);
-  const st = el.querySelector('.stage-tag');
-  if (st) st.onclick = (e) => { e.stopPropagation(); STAGED.delete(it.rel); render(); updateTagbar(); };
   return el;
 }
 
@@ -265,89 +275,19 @@ function updateTagbar() {
   c.textContent = `已選 ${n}`;
   c.classList.toggle('has', n > 0);
   document.querySelectorAll('.rar-pick').forEach(b => { b.disabled = n === 0; });
-  // 暫存摘要（只算真的會改的）
-  const changes = stagedChanges();
-  const cnt = { common: 0, rare: 0, special: 0, legendary: 0, '': 0 };
-  changes.forEach(([, r]) => { cnt[r]++; });
-  const parts = [];
-  if (cnt.common) parts.push(`普通 ${cnt.common}`);
-  if (cnt.rare) parts.push(`稀有 ${cnt.rare}`);
-  if (cnt.special) parts.push(`特別 ${cnt.special}`);
-  if (cnt.legendary) parts.push(`傳奇 ${cnt.legendary}`);
-  if (cnt['']) parts.push(`移除 ${cnt['']}`);
-  const m = changes.length;
-  $('staged-summary').textContent = m ? `暫存 ${m}（${parts.join('・')}）` : '';
-  $('stage-clear').disabled = STAGED.size === 0;
-  const apply = $('apply-all');
-  apply.disabled = m === 0;
-  apply.textContent = m ? `統一改名 (${m})` : '統一改名';
 }
 
-/* ---- ①標註：把選取的 rel 暫存成某稀有度（先不動檔），清空選取繼續下一批 ---- */
-function stageSelected(rarity) {
+/* ---- 標註：把選取的詞庫即時標成某稀有度（隨標隨寫側檔），清空選取繼續下一批 ---- */
+async function tagSelected(key) {
   if (!SEL.size) return;
-  SEL.forEach(rel => STAGED.set(rel, rarity));
+  const rels = [...SEL];
   SEL.clear();
-  render();
   updateTagbar();
-  toast(`已暫存標註「${RARITY_FULL[rarity]}」`);
-}
-
-/* ---- ②統一改名：把所有暫存的一次 dry 預覽 → 確認 → 真改 ---- */
-async function applyAll() {
-  const changes = stagedChanges();
-  if (!changes.length) return;
-  const renames = changes.map(([rel, rarity]) => ({ rel, rarity }));
-  let j;
-  try {
-    j = await fetch('/api/rename', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ renames, dry: true }),
-    }).then(r => r.json());
-  } catch (e) { toast('預覽失敗：' + e.message); return; }
-  if (j.error) { toast(j.error); return; }
-  showConfirm(j.results);
-}
-
-function showConfirm(results) {
-  const willChange = results.filter(r => !r.skip && !r.error);
-  const skipped = results.filter(r => r.skip);
-  const errored = results.filter(r => r.error);
-  PENDING = willChange.map(r => ({ rel: r.rel, rarity: r.rarity }));
-  $('confirm-title').textContent = '確認統一改名';
-  $('confirm-sub').textContent =
-    `將改名 ${willChange.length} 筆`
-    + (skipped.length ? ` · 略過 ${skipped.length}（已是此狀態）` : '')
-    + (errored.length ? ` · 衝突/錯誤 ${errored.length}` : '');
-  const order = [...willChange, ...skipped, ...errored];
-  $('confirm-list').innerHTML = order.map(r => {
-    if (r.error) return `<div class="crow err"><span class="cn">${esc(r.old_name)}</span><span class="ar">✕ ${esc(r.error)}</span></div>`;
-    if (r.skip) return `<div class="crow skip"><span class="cn old">${esc(r.old_name)}</span><span class="ar">—</span><span class="cn new">無變化</span></div>`;
-    return `<div class="crow"><span class="cn old">${esc(r.old_name)}</span><span class="ar">→</span><span class="cn new">${esc(r.new_name)}</span></div>`;
-  }).join('');
-  $('confirm-go').disabled = willChange.length === 0;
-  $('confirm').classList.add('open');
-}
-
-function closeConfirm() { $('confirm').classList.remove('open'); PENDING = null; }
-
-async function confirmGo() {
-  if (!PENDING || !PENDING.length) return;
-  $('confirm-go').disabled = true;
-  let j;
-  try {
-    j = await fetch('/api/rename', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ renames: PENDING, dry: false }),
-    }).then(r => r.json());
-  } catch (e) { toast('改名失敗：' + e.message); $('confirm-go').disabled = false; return; }
-  const ok = j.results.filter(x => x.ok).length;
-  const bad = j.results.filter(x => x.error).length;
-  closeConfirm();
-  SEL.clear();
-  STAGED.clear();
-  await loadAll();
-  toast(`已統一改名 ${ok} 筆` + (bad ? ` · ${bad} 筆失敗` : ''));
+  let ok = 0;
+  for (const rel of rels) { if (await applyRarity(rel, key)) ok++; }
+  withTransition(render);          // 重繪反映新稀有度（格線交叉淡入）
+  buildRarityBar();
+  toast(`已標「${RARITY_FULL[key]}」${ok} 筆`);
 }
 
 let _toastT = null;
@@ -371,8 +311,8 @@ function sampleN(arr, n) {
   for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[a[i], a[j]] = [a[j], a[i]]; }
   return a.slice(0, n);
 }
-// 池：有圖、尚未打標（無稀有度前綴）、且本次還沒暫存過
-const tarotPool = () => ALL.filter(x => x.has_image && !x.rarity && !STAGED.has(x.rel));
+// 池：有圖、尚未打標（無稀有度）。標了即時生效，標過的下次自然不會再被抽到
+const tarotPool = () => ALL.filter(x => x.has_image && !x.rarity);
 
 const tarotCards = () => [...$('tarot-cards').children];
 const isAssigned = c => RARITY_KEYS.some(k => c.classList.contains('assigned-' + k));
@@ -446,10 +386,11 @@ function drawTagTarot() {
   cards.forEach((c, i) => setTimeout(() => c.classList.add('revealed'), dealDone + i * 32));   // 翻牌 stagger（快一點）
 }
 
-// 標一張：寫進暫存、亮起該稀有度光環（common 無）、對應按鈕填色
+// 標一張：即時寫側檔、亮起該稀有度光環（common 無）、對應按鈕填色
 function assignTarot(rel, card, key) {
-  TAROT_HISTORY.push({ rel, prev: STAGED.has(rel) ? STAGED.get(rel) : null });   // 供 Z 復原
-  STAGED.set(rel, key);
+  const it = ALL.find(x => x.rel === rel);
+  TAROT_HISTORY.push({ rel, prev: it ? (it.rarity || '') : '' });   // 供 Z 復原（記標之前的值）
+  applyRarity(rel, key);                                            // 即時寫側檔（樂觀，失敗會 toast＋回退）
   RARITY_KEYS.forEach(k => card.classList.remove('assigned-' + k, 'rar-' + k));
   card.classList.add('assigned-' + key);
   if (key !== 'common') card.classList.add('rar-' + key);   // 普通版不加光環
@@ -478,12 +419,12 @@ function legendaryBurst(card) {
   ).onfinish = () => b.remove();
 }
 
-// Z 復原：撤回上一次打標，焦點回到那張
+// Z 復原：撤回上一次打標（即時還原成標之前的值），焦點回到那張
 function undoTarot() {
   const last = TAROT_HISTORY.pop();
   if (!last) { toast('沒有可復原的'); return; }
   const { rel, prev } = last;
-  if (prev === null) STAGED.delete(rel); else STAGED.set(rel, prev);
+  applyRarity(rel, prev);            // 即時還原（prev 為 "" 代表回到未標）
   const cards = tarotCards();
   const card = cards.find(c => c.dataset.rel === rel);
   if (card) {
@@ -535,12 +476,7 @@ function bind() {
   $('sel-all').onclick = () => { VISIBLE.forEach(x => SEL.add(x.rel)); render(); updateTagbar(); };
   $('sel-clear').onclick = () => { SEL.clear(); render(); updateTagbar(); };
   document.querySelectorAll('.rar-pick').forEach(b =>
-    b.addEventListener('click', () => { if (!b.disabled) stageSelected(b.dataset.r); }));
-  $('apply-all').onclick = applyAll;
-  $('stage-clear').onclick = () => { STAGED.clear(); render(); updateTagbar(); };
-  $('confirm-go').onclick = confirmGo;
-  $('confirm-cancel').onclick = closeConfirm;
-  $('confirm').addEventListener('click', e => { if (e.target === $('confirm')) closeConfirm(); });
+    b.addEventListener('click', () => { if (!b.disabled) tagSelected(b.dataset.r); }));
   // 抽卡打標
   $('draw-cards').onclick = drawTagTarot;
   $('tarot-redraw').onclick = drawTagTarot;
@@ -567,7 +503,6 @@ function bind() {
       }
       return;
     }
-    if (e.key === 'Escape') closeConfirm();
   });
   $('rail-sort').textContent = RAIL_SORT_LABEL[RAIL_SORT];
 }

@@ -69,8 +69,7 @@
   </main>
 </div>
 
-<!-- 底部：①選取詞庫 → 點稀有度「暫存標註」（可分批標不同稀有度，先不動檔）
-     ②最後按「統一改名」一次把所有暫存的改名 -->
+<!-- 底部：選取詞庫 → 點稀有度即時標註（隨標隨寫側檔、不改檔名，隨時可改可清） -->
 <div class="tagbar" id="tagbar">
   <span class="tagbar-count" id="tagbar-count">已選 0</span>
   <div class="rar-picker" id="rar-picker" role="group" aria-label="標註稀有度到選取">
@@ -79,26 +78,9 @@
     <button data-r="legendary" class="rar-pick legendary" disabled>傳奇版</button>
     <button data-r="" class="rar-pick none" disabled>移除標記</button>
   </div>
-  <div class="spacer"></div>
-  <span class="staged-summary" id="staged-summary"></span>
-  <button class="ghost" id="stage-clear" disabled>清空暫存</button>
-  <button class="primary" id="apply-all" disabled>統一改名</button>
 </div>
 
-<!-- 確認預覽 -->
-<div id="confirm" class="modal">
-  <div class="confirm-inner">
-    <h3 id="confirm-title">確認改名</h3>
-    <div id="confirm-sub" class="confirm-sub"></div>
-    <div id="confirm-list" class="confirm-list"></div>
-    <div class="confirm-actions">
-      <button id="confirm-cancel">取消</button>
-      <button class="primary" id="confirm-go">確認改名</button>
-    </div>
-  </div>
-</div>
-
-<!-- 抽卡打標：一次抽 16 張「有圖且尚未打標」的，逐張標稀有度（暫存），最後統一改名 -->
+<!-- 抽卡打標：一次抽 15 張「有圖且尚未打標」的，逐張即時標稀有度 -->
 <div id="tarot" class="tarot-overlay">
   <div class="tarot-stage ttag-stage">
     <div class="tarot-head">
@@ -110,7 +92,7 @@
       </div>
     </div>
     <div class="tarot-cards ttag" id="tarot-cards"></div>
-    <div class="tarot-hint">方向鍵移動焦點，1 普通・2 稀有・3 特別・4 傳奇打標（自動跳下一張），S 跳過・Z 復原・R 重抽；也可直接點卡片按鈕。標好關閉，再按底部「統一改名」。</div>
+    <div class="tarot-hint">方向鍵移動焦點，1 普通・2 稀有・3 特別・4 傳奇打標（自動跳下一張），S 跳過・Z 復原・R 重抽；也可直接點卡片按鈕。隨標即時生效，標好關閉即可。</div>
   </div>
 </div>
 
