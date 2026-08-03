@@ -291,8 +291,12 @@ function thumbInnerHTML(it) {
 }
 
 function wireThumb(thumb, it) {
-  // 選取模式：點縮圖＝標記/取消不優質；平常＝開大圖
-  thumb.onclick = () => { if (SELECTING) toggleFlag(it.rel); else openModalFromThumb(it.rel, thumb.querySelector('img')); };
+  // 點縮圖：打標模式＝選取；瀏覽的篩選模式＝標記紅叉；瀏覽平常＝開大圖。
+  thumb.onclick = () => {
+    if (MODE === 'tag') toggleSel(it.rel, thumb.closest('.card'));
+    else if (SELECTING) toggleFlag(it.rel);
+    else openModalFromThumb(it.rel, thumb.querySelector('img'));
+  };
   thumb.querySelector('.gen-btn').onclick = (e) => { e.stopPropagation(); generate(it.rel); };
   thumb.querySelector('.fav-btn').onclick = (e) => { e.stopPropagation(); toggleFav(it.rel); };
 }
@@ -300,7 +304,8 @@ function wireThumb(thumb, it) {
 function cardOf(it) {
   const el = document.createElement('div');
   el.className = 'card' + (it.has_image ? '' : ' missing') + (it.flagged ? ' flagged' : '')
-    + (it.favorited ? ' favorited' : '') + (it.rarity ? ' rar-' + it.rarity : '');
+    + (it.favorited ? ' favorited' : '') + (it.rarity ? ' rar-' + it.rarity : '')
+    + (SEL.has(it.rel) ? ' selected' : '');
   el.dataset.rel = it.rel;
   // 卡片不顯示每張的生成狀態小標（完成/排隊/生成中/失敗）——批次時每張都冒出來太吵。
   // 整體進度看頂部的「批次 X/Y」，完成靠縮圖自己更新。生成狀態仍會顯示在點開的大圖裡。
@@ -590,7 +595,8 @@ function applyMode(mode) {
 $('mode-seg').addEventListener('click', e => {
   const btn = e.target.closest('button'); if (!btn) return;
   // 切模式用 withTransition：消失/出現的控制項柔和交叉淡入，共用按鈕因靠右錨定不位移。
-  if (btn.dataset.mode !== MODE) withTransition(() => { applyMode(btn.dataset.mode); render(); });
+  // 換模式時清掉打標選取（避免殘留），並重置底部稀有度列狀態。
+  if (btn.dataset.mode !== MODE) withTransition(() => { SEL.clear(); applyMode(btn.dataset.mode); render(); updateTagbar(); });
 });
 applyMode(MODE);
 addEventListener('resize', moveModePill);
@@ -848,6 +854,71 @@ $('review-btn').onclick = () => setSelecting(!SELECTING);
 window.addEventListener('keydown', e => {
   if (e.key === 'Escape' && SELECTING) setSelecting(false);
 });
+
+/* ── 打標模式：選取詞庫 → 點稀有度即時寫側檔（POST /api/rarity，不改檔名）。 ── */
+const RARITY_FULL = { common: '普通版', rare: '稀有版', special: '特別版', legendary: '傳奇版' };
+const SEL = new Set();                 // 打標模式選取的 rel
+
+let _toastT = null;
+function toast(msg) {
+  const t = $('toast'); if (!t) return;
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(_toastT);
+  _toastT = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+function toggleSel(rel, cardEl) {
+  if (SEL.has(rel)) SEL.delete(rel); else SEL.add(rel);
+  if (cardEl) cardEl.classList.toggle('selected', SEL.has(rel));
+  updateTagbar();
+}
+function clearSel() {
+  SEL.clear();
+  document.querySelectorAll('#grid .card.selected').forEach(c => c.classList.remove('selected'));
+  updateTagbar();
+}
+function updateTagbar() {
+  const n = SEL.size, c = $('tagbar-count');
+  if (c) { c.textContent = `已選 ${n}`; c.classList.toggle('has', n > 0); }
+  document.querySelectorAll('.rar-pick').forEach(b => { b.disabled = n === 0; });
+}
+
+// 即時把某詞庫的稀有度寫進側檔（樂觀更新本地 ALL[].rarity、失敗回退＋toast）。
+async function applyRarity(rel, key) {
+  const it = ALL.find(x => x.rel === rel);
+  const prev = it ? (it.rarity || '') : '';
+  if (key === prev) return true;
+  if (it) it.rarity = key;
+  try {
+    const r = await fetch('/api/rarity', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rel, rarity: key }),
+    }).then(r => r.json());
+    if (r.error) throw new Error(r.error);
+    if (it) it.rarity = r.rarity;
+    return true;
+  } catch (e) {
+    if (it) it.rarity = prev;
+    toast('標記失敗：' + e.message);
+    return false;
+  }
+}
+
+// 把選取的詞庫即時標成某稀有度（隨標隨寫），清空選取、重繪反映。
+async function tagSelected(key) {
+  if (!SEL.size) return;
+  const rels = [...SEL];
+  clearSel();
+  let ok = 0;
+  for (const rel of rels) { if (await applyRarity(rel, key)) ok++; }
+  withTransition(render);
+  toast(`已標「${RARITY_FULL[key] || '移除'}」${ok} 筆`);
+}
+
+$('sel-all').onclick = () => { VISIBLE.forEach(x => SEL.add(x.rel)); withTransition(render); updateTagbar(); };
+$('sel-clear').onclick = () => { clearSel(); withTransition(render); };
+document.querySelectorAll('.rar-pick').forEach(b =>
+  b.addEventListener('click', () => { if (!b.disabled) tagSelected(b.dataset.r); }));
 
 function hideBoot() {
   const b = document.getElementById('boot');

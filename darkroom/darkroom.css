@@ -528,6 +528,44 @@ body.selecting .fav-btn { display: none; }
 .card.flagged { border-color: var(--err); box-shadow: 0 0 0 2px var(--err) inset; }
 .card.flagged .card-name { color: var(--err); }
 
+/* ── 打標模式：卡片可選取（沿用 pick-box 右上勾選框），選取＝琥珀勾＋外框。
+   打標模式隱藏生成鈕/收藏星（那是瀏覽模式的動作）。 */
+body[data-mode="tag"] .pick-box { opacity: 1; transform: none; }
+body[data-mode="tag"] .thumb, body[data-mode="tag"] .card { cursor: pointer; }
+body[data-mode="tag"] .fav-btn, body[data-mode="tag"] .gen-btn { display: none; }
+.card.selected .pick-box { background: var(--amber); border-color: var(--amber); }
+.card.selected .pick-box::after { content: "✓"; position: absolute; inset: 0; display: grid;
+  place-items: center; color: #241a08; font-weight: 800; font-size: 14px; }
+.card.selected { border-color: var(--amber); box-shadow: 0 0 0 2px var(--amber) inset; }
+
+/* 打標底部稀有度列（tag-only、固定在底部）＋ toast */
+.tagbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+  display: flex; align-items: center; gap: 14px; padding: 12px 18px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border-top: 1px solid var(--line); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  box-shadow: 0 -8px 24px -12px rgba(0,0,0,.5); }
+.tagbar-count { font-family: var(--mono); font-size: 13px; color: var(--dim); min-width: 74px; }
+.tagbar-count.has { color: var(--ink); font-weight: 700; }
+.rar-picker { display: flex; gap: 8px; flex-wrap: wrap; }
+.rar-pick { border: 1px solid var(--line-2); background: var(--sunk); color: var(--ink);
+  padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer;
+  transition: transform var(--d-micro) var(--ease-out), box-shadow var(--d-micro) var(--ease-out),
+              border-color var(--d-micro) var(--ease-out), opacity var(--d-micro) var(--ease-out); }
+.rar-pick:not(:disabled):hover { transform: translateY(-2px); }
+.rar-pick:disabled { opacity: .4; cursor: not-allowed; }
+.rar-pick.rare      { border-color: var(--rar-rare);    box-shadow: 0 0 0 1px var(--rar-rare) inset,    0 0 14px -5px var(--rar-rare); }
+.rar-pick.special   { border-color: var(--rar-special); box-shadow: 0 0 0 1px var(--rar-special) inset, 0 0 14px -5px var(--rar-special); }
+.rar-pick.legendary { border-color: transparent; color: #fff;
+  background: linear-gradient(100deg,#ff5f6d,#ffb347,#42f5a1,#41b6ff,#b47bff); }
+.rar-pick.none { color: var(--dim); }
+/* 打標模式底部有固定的 tagbar，格線多留空間免被蓋住 */
+body[data-mode="tag"] #grid { padding-bottom: 72px; }
+.toast { position: fixed; left: 50%; bottom: 92px; transform: translate(-50%, 12px);
+  background: var(--panel); border: 1px solid var(--line-2); color: var(--ink);
+  padding: 10px 18px; border-radius: 10px; font-size: 13.5px; box-shadow: var(--shadow);
+  opacity: 0; pointer-events: none; z-index: 40; transition: opacity var(--d-ui) var(--ease-out), transform var(--d-ui) var(--ease-out); }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
 /* ── 稀有度：檔名前綴標註（稀有=黃／特別=藍／傳奇=彩色），格線＋抽卡都顯示 ──
    光暈一律用 box-shadow（不受卡片 overflow:hidden 裁切）。傳奇用 @property 讓
    邊框/光暈的「色相」連續轉，只動 border/shadow 不動縮圖本身。角標見 .rar-tag。 */

@@ -99,6 +99,18 @@
   </main>
 </div>
 
+<!-- 打標模式底部：選取詞庫 → 點稀有度即時標註（隨標隨寫側檔、不改檔名） -->
+<div class="tagbar tag-only" id="tagbar">
+  <span class="tagbar-count" id="tagbar-count">已選 0</span>
+  <div class="rar-picker" id="rar-picker" role="group" aria-label="標註稀有度到選取">
+    <button data-r="rare" class="rar-pick rare" disabled>稀有版</button>
+    <button data-r="special" class="rar-pick special" disabled>特別版</button>
+    <button data-r="legendary" class="rar-pick legendary" disabled>傳奇版</button>
+    <button data-r="" class="rar-pick none" disabled>移除標記</button>
+  </div>
+</div>
+<div id="toast" class="toast"></div>
+
 <div id="modal" class="modal">
   <button class="m-nav prev" id="m-prev" aria-label="上一個">‹</button>
   <div class="modal-inner" id="modal-inner"></div>
