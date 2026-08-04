@@ -31,6 +31,9 @@ import shutil
 import subprocess
 
 BASE = os.path.dirname(os.path.abspath(__file__))
+# 有些 Python 的 mimetypes 不認 .webp（guess_type 回 None）→ 預覽圖會被當 image/png
+# 送。明確註冊，讓 LoRA／詞庫的 .webp 預覽 Content-Type 正確。
+mimetypes.add_type("image/webp", ".webp")
 CERT_FILE = os.path.join(BASE, "cert.pem")
 KEY_FILE = os.path.join(BASE, "key.pem")
 
@@ -336,7 +339,10 @@ def serve_lora_list(client):
                 except Exception:
                     pass
             preview = None
-            for ext in (".preview.png", ".preview.jpeg", ".preview.jpg", ".png", ".jpg"):
+            # 預覽圖不限 .png——ComfyUI/civitai 常見 .webp、也可能 jpeg。先找明確的
+            # .preview.* ，再找同名 stem.* 。副檔名順序＝優先序（先命中先用）。
+            for ext in (".preview.png", ".preview.jpeg", ".preview.jpg", ".preview.webp",
+                        ".png", ".jpg", ".jpeg", ".webp"):
                 if os.path.isfile(os.path.join(d, stem + ext)):
                     preview = stem + ext
                     break
