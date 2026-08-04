@@ -25,6 +25,7 @@ import gzip
 import hashlib
 import io
 import json
+import mimetypes
 import os
 import random
 import shutil
@@ -281,6 +282,65 @@ def set_rarity(rel: str, key: str, name_has_prefix: bool = False) -> str:
 def rarity_map() -> dict:
     with _rarities_lock:
         return dict(_rarities)
+
+
+# ---------------------------------------------------------------------------
+# LoRA（給「生圖」模式用）：讀 ComfyUI 的 loras 資料夾，列出每個 .safetensors 的觸發詞
+# 與預覽圖。沿用主面板 serve.py 的做法與路徑（可用環境變數 LORA_ROOT 覆寫）。這些檔在
+# ComfyUI 磁碟上、不透過 ComfyUI API，直接讀資料夾。
+# ---------------------------------------------------------------------------
+LORA_ROOT = Path(os.environ.get(
+    "LORA_ROOT",
+    r"C:\ComfyUI\ComfyUI_windows_portable_nvidia\ComfyUI_windows_portable\ComfyUI\models\loras",
+))
+LORA_FOLDERS = ["style", "Character", "HENTAI", "illus"]
+LORA_PREVIEW_EXTS = (".preview.png", ".preview.jpeg", ".preview.jpg", ".preview.webp",
+                     ".png", ".jpg", ".jpeg", ".webp")
+mimetypes.add_type("image/webp", ".webp")   # 有些 Python 的 mimetypes 不認 webp
+
+
+def list_loras() -> dict:
+    """列出各分類夾內每個 LoRA 的觸發詞與預覽圖檔名。trainedWords 保留為「多組」陣列。"""
+    items, counts = [], {}
+    for folder in LORA_FOLDERS:
+        d = LORA_ROOT / folder
+        try:
+            names = sorted(p.name for p in d.iterdir())
+        except OSError:
+            counts[folder] = 0
+            continue
+        n = 0
+        for fn in names:
+            if not fn.lower().endswith(".safetensors"):
+                continue
+            stem = fn[: -len(".safetensors")]
+            words, title = [], stem
+            meta = d / (stem + ".metadata.json")
+            if meta.is_file():
+                try:
+                    md = json.loads(meta.read_text(encoding="utf-8"))
+                    words = (md.get("civitai") or {}).get("trainedWords") or []
+                    title = md.get("model_name") or stem
+                except Exception:
+                    pass
+            preview = None
+            for ext in LORA_PREVIEW_EXTS:
+                if (d / (stem + ext)).is_file():
+                    preview = stem + ext
+                    break
+            items.append({"folder": folder, "file": fn, "name": stem,
+                          "title": title, "trainedWords": words, "preview": preview})
+            n += 1
+        counts[folder] = n
+    return {"items": items, "counts": counts, "folders": LORA_FOLDERS}
+
+
+def lora_preview_path(folder: str, fn: str):
+    """回傳 LoRA 預覽圖的實體路徑；folder 須在白名單、fn 純檔名（擋目錄穿越）。"""
+    if folder not in LORA_FOLDERS or not fn or "/" in fn or "\\" in fn or ".." in fn:
+        return None
+    p = LORA_ROOT / folder / fn
+    return p if p.is_file() else None
 
 
 # ---------------------------------------------------------------------------
@@ -832,6 +892,19 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if u.path == "/api/batch_status":
                 self._send_json(get_batch())
+                return
+            if u.path == "/api/loras":
+                self._send_json(list_loras())
+                return
+            if u.path == "/api/lora-preview":
+                p = lora_preview_path(qs.get("folder", [""])[0], qs.get("file", [""])[0])
+                if p is None:
+                    self._send_bytes(b"not found", "text/plain", 404)
+                    return
+                ctype = mimetypes.guess_type(str(p))[0] or "image/png"
+                st = p.stat()
+                etag = hashlib.sha1(f"{p}|{int(st.st_mtime)}|{st.st_size}".encode("utf-8")).hexdigest()
+                self._send_cacheable(p.read_bytes(), ctype, etag)
                 return
             self._send_bytes(b"not found", "text/plain", 404)
         except Exception as e:
