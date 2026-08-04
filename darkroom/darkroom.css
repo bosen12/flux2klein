@@ -637,3 +637,20 @@ body[data-mode="tag"] #grid { padding-bottom: 72px; }
 .tarot-card.rar-legendary.revealed .tarot-front::after {
   background: conic-gradient(from var(--beam), #ff5f6d, #ffb347, #42f5a1, #41b6ff, #b47bff, #ff5f6d);
 }
+
+/* 抽特殊卡（稀有以上）翻開後的「魔法光環」：卡片後方一圈旋轉的漸層柔光（參考
+   CodePen「Magic Card」by gayane-gasparyan）。用 @property --mrot 讓 linear-gradient
+   角度連續轉，filter:blur 成大片柔光、擺在卡片後方（z-index:-1、inset 負值往外擴），
+   與上面的細亮弧邊框並存。只在翻開(.revealed)且稀有以上時出現；普通版不加。 */
+@property --mrot { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@keyframes magic-spin { to { --mrot: 360deg; } }
+.tarot-card.rar-rare.revealed::after,
+.tarot-card.rar-special.revealed::after,
+.tarot-card.rar-legendary.revealed::after {
+  content: ""; position: absolute; inset: -8%; z-index: -1; border-radius: 22px;
+  filter: blur(22px); opacity: .8; pointer-events: none;
+  animation: magic-spin 3s linear infinite;
+}
+.tarot-card.rar-rare.revealed::after      { background: linear-gradient(var(--mrot), #ffe487, #ffb43c 43%, #ff7a18); }
+.tarot-card.rar-special.revealed::after   { background: linear-gradient(var(--mrot), #5ddcff, #3c67e3 43%, #4e00c2); }
+.tarot-card.rar-legendary.revealed::after { background: linear-gradient(var(--mrot), #ff5f6d, #ffb347, #42f5a1, #41b6ff, #b47bff, #ff5f6d); }
