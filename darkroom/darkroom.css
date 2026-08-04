@@ -566,6 +566,32 @@ body[data-mode="tag"] #grid { padding-bottom: 72px; }
   opacity: 0; pointer-events: none; z-index: 40; transition: opacity var(--d-ui) var(--ease-out), transform var(--d-ui) var(--ease-out); }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+/* ── 抽卡打標（打標模式）：15 張（5×3），每張牌面下方 4 顆稀有度按鈕。發牌/翻牌/
+   光環沿用上方 .tarot-* ，這裡只調尺寸與加打標按鈕。 */
+.ttag-stage { max-width: 1240px; }
+.ttag-progress { font-family: var(--mono); font-size: 12.5px; color: var(--amber); white-space: nowrap; }
+.tarot-cards.ttag { grid-template-columns: repeat(5, auto); gap: 14px; }
+.tarot-cards.ttag .tarot-card { width: clamp(150px, 14.5vw, 200px); cursor: default; }
+@media (max-width: 1120px) { .tarot-cards.ttag { grid-template-columns: repeat(4, auto); } }
+@media (max-width: 900px)  { .tarot-cards.ttag { grid-template-columns: repeat(3, auto); } }
+@media (max-width: 620px)  { .tarot-cards.ttag { grid-template-columns: repeat(2, auto); } }
+.ttag .tarot-name { font-size: 11.5px; padding: 6px 8px 2px; }
+.ttag-rar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 6px 7px 8px; }
+.ttag-rar button { padding: 5px 0; font-size: 11px; font-weight: 700; border-radius: 6px;
+  border: 1px solid var(--line-2); background: var(--sunk); color: var(--dim); cursor: pointer;
+  transition: transform var(--d-micro) var(--ease-out), color var(--d-micro) var(--ease-out),
+              background var(--d-micro) var(--ease-out), border-color var(--d-micro) var(--ease-out); }
+.ttag-rar button:hover { transform: translateY(-1px); color: var(--ink); border-color: var(--line-2); }
+.ttag-card.assigned-common    .ttag-rar button[data-r="common"]    { background:#9aa0ad; color:#10121a; border-color:#9aa0ad; }
+.ttag-card.assigned-rare      .ttag-rar button[data-r="rare"]      { background:var(--rar-rare); color:#241a00; border-color:var(--rar-rare); }
+.ttag-card.assigned-special   .ttag-rar button[data-r="special"]   { background:var(--rar-special); color:#04203f; border-color:var(--rar-special); }
+.ttag-card.assigned-legendary .ttag-rar button[data-r="legendary"] { background:linear-gradient(90deg,#ff5f6d,#ffb347,#42f5a1,#41b6ff,#b47bff); color:#fff; border-color:transparent; }
+.ttag-burst { position: absolute; inset: 0; z-index: 5; pointer-events: none; border-radius: inherit;
+  background: radial-gradient(circle at 50% 45%, rgba(255,255,255,.6), rgba(180,123,255,.32) 46%, transparent 70%);
+  box-shadow: inset 0 0 0 3px rgba(255,255,255,.75), inset 0 0 30px rgba(180,123,255,.6); }
+.ttag-card.focused { outline: 3px solid var(--amber); outline-offset: 3px;
+  border-radius: 15px; transform: translateY(-6px); z-index: 6; }
+
 /* ── 稀有度：檔名前綴標註（稀有=黃／特別=藍／傳奇=彩色），格線＋抽卡都顯示 ──
    光暈一律用 box-shadow（不受卡片 overflow:hidden 裁切）。傳奇用 @property 讓
    邊框/光暈的「色相」連續轉，只動 border/shadow 不動縮圖本身。角標見 .rar-tag。 */

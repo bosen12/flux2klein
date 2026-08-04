@@ -712,7 +712,26 @@ $('m-next').onclick = () => modalStep(1);
 window.addEventListener('keydown', e => {
   if ($('tarot').classList.contains('open')) {
     if (e.key === 'Escape') { closeTarot(); return; }
-    if (e.key === 'r' || e.key === 'R' || e.key === 'Enter') { e.preventDefault(); drawTarot(); return; }  // R/Enter 重抽一批
+    if (MODE === 'tag') {                                  // 抽卡打標：全鍵盤逐張標
+      const cards = tarotCards();
+      if (e.key === 'r' || e.key === 'R' || e.key === 'Enter') { e.preventDefault(); drawTagTarot(); return; }
+      if (!cards.length) return;
+      if (e.key === 's' || e.key === 'S') { e.preventDefault(); advanceFocus(); return; }   // 跳過
+      if (e.key === 'z' || e.key === 'Z') { e.preventDefault(); undoTarot(); return; }       // 復原
+      const cols = tarotCols();
+      const move = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -cols, ArrowDown: cols };
+      if (e.key in move) { e.preventDefault(); setTarotFocus(TAROT_FOCUS + move[e.key]); return; }
+      const rar = { '1': 'common', '2': 'rare', '3': 'special', '4': 'legendary' };
+      if (rar[e.key]) {
+        e.preventDefault();
+        const card = cards[TAROT_FOCUS] || cards[0];
+        assignTarot(card.dataset.rel, card, rar[e.key]);
+        advanceFocus();
+        return;
+      }
+      return;
+    }
+    if (e.key === 'r' || e.key === 'R' || e.key === 'Enter') { e.preventDefault(); drawTarot(); return; }  // 瀏覽：R 重抽
     return;
   }
   if (!$('modal').classList.contains('open')) return;
@@ -746,6 +765,9 @@ function drawTarot() {
   const title = document.querySelector('.tarot-title');
   if (title) title.textContent = `✦ 抽選${CN_NUM[n] || n}張 ✦`;
   const wrap = $('tarot-cards');
+  wrap.classList.remove('ttag');                          // 瀏覽抽卡：清掉打標抽卡的 5×3 排版
+  $('tarot-stage').classList.remove('ttag-stage');
+  $('tarot-hint').textContent = '點任一張看大圖與提示詞；R 重抽一批、Esc 關閉';
   wrap.innerHTML = '';
   picks.forEach((it, i) => {
     const card = document.createElement('div');
@@ -802,10 +824,133 @@ function tiltCard(card, e) {
   }
 }
 
-function closeTarot() { $('tarot').classList.remove('open'); }
+function closeTarot() {
+  $('tarot').classList.remove('open');
+  TAROT_FOCUS = -1;
+  if (MODE === 'tag') { render(); updateTagbar(); }   // 反映剛標的
+}
 
-$('draw-cards').onclick = drawTarot;
-$('tarot-redraw').onclick = drawTarot;
+/* ── 抽卡打標（打標模式）：抽 15 張「有圖且尚未打標」的，逐張鍵盤/點按標稀有度，
+   即時寫側檔。與瀏覽抽卡共用同一個 #tarot 覆蓋層，靠 .ttag class 切排版與卡片內容。 */
+const RARITY_KEYS = ['common', 'rare', 'special', 'legendary'];
+const DRAW_N = 15;
+let TAROT_FOCUS = -1;
+const TAROT_HISTORY = [];
+const tarotPool = () => ALL.filter(x => x.has_image && !x.rarity);   // 有圖、尚未打標
+const tarotCards = () => [...$('tarot-cards').children];
+const isAssigned = c => RARITY_KEYS.some(k => c.classList.contains('assigned-' + k));
+
+function setTarotFocus(i) {
+  const cards = tarotCards();
+  if (!cards.length) return;
+  TAROT_FOCUS = Math.max(0, Math.min(i, cards.length - 1));
+  cards.forEach((c, idx) => c.classList.toggle('focused', idx === TAROT_FOCUS));
+  cards[TAROT_FOCUS].scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+function tarotCols() {
+  const cards = tarotCards();
+  if (cards.length < 2) return 1;
+  const top0 = cards[0].offsetTop;
+  let n = 1;
+  while (n < cards.length && cards[n].offsetTop === top0) n++;
+  return n;
+}
+function advanceFocus() {
+  const cards = tarotCards(), n = cards.length;
+  for (let step = 1; step <= n; step++) {
+    const idx = (TAROT_FOCUS + step) % n;
+    if (!isAssigned(cards[idx])) { setTarotFocus(idx); return; }
+  }
+}
+function drawTagTarot() {
+  const pool = tarotPool();
+  if (!pool.length) { toast('沒有「有圖且尚未打標」的詞庫可抽了'); return; }
+  const picks = sampleN(pool, Math.min(DRAW_N, pool.length));
+  const wrap = $('tarot-cards');
+  wrap.classList.add('ttag');
+  $('tarot-stage').classList.add('ttag-stage');
+  const title = document.querySelector('.tarot-title');
+  if (title) title.textContent = '✦ 抽卡打標 ✦';
+  $('tarot-hint').textContent = '方向鍵移動焦點，1 普通・2 稀有・3 特別・4 傳奇打標（自動跳下一張），S 跳過・Z 復原・R 重抽；也可直接點卡片按鈕。隨標即時生效。';
+  wrap.innerHTML = '';
+  TAROT_HISTORY.length = 0;
+  picks.forEach((it, i) => {
+    const card = document.createElement('div');
+    card.className = 'tarot-card ttag-card' + (it.rarity ? ' rar-' + it.rarity : '');
+    card.dataset.rel = it.rel;
+    card.style.animationDelay = REDUCE_MOTION ? '0ms' : (i * 24) + 'ms';
+    const relEnc = encodeURIComponent(it.rel);
+    card.innerHTML =
+      `<div class="tarot-inner">
+         <div class="tarot-back"><span class="tarot-emblem">✦</span></div>
+         <div class="tarot-front">
+           <img decoding="async" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="">
+           <div class="tarot-name"></div>
+           <div class="ttag-rar">
+             <button data-r="common">普通</button><button data-r="rare">稀有</button>
+             <button data-r="special">特別</button><button data-r="legendary">傳奇</button>
+           </div>
+         </div>
+       </div>`;
+    card.querySelector('.tarot-name').textContent = it.display_name || it.name;
+    card.querySelectorAll('.ttag-rar button').forEach(b =>
+      b.onclick = () => { setTarotFocus(i); assignTarot(it.rel, card, b.dataset.r); });
+    card.addEventListener('mouseenter', () => setTarotFocus(i));
+    wrap.appendChild(card);
+  });
+  $('tarot').classList.add('open');
+  setTarotFocus(0);
+  updateTarotProgress();
+  const cards = [...wrap.children];
+  if (REDUCE_MOTION) { cards.forEach(c => c.classList.add('revealed')); return; }
+  const dealDone = picks.length * 24 + 170;
+  cards.forEach((c, i) => setTimeout(() => c.classList.add('revealed'), dealDone + i * 32));
+}
+function assignTarot(rel, card, key) {
+  const it = ALL.find(x => x.rel === rel);
+  TAROT_HISTORY.push({ rel, prev: it ? (it.rarity || '') : '' });   // 供 Z 復原
+  applyRarity(rel, key);                                            // 即時寫側檔
+  RARITY_KEYS.forEach(k => card.classList.remove('assigned-' + k, 'rar-' + k));
+  card.classList.add('assigned-' + key);
+  if (key !== 'common') card.classList.add('rar-' + key);
+  const front = card.querySelector('.tarot-front');
+  const oldSpark = front && front.querySelector('.sparkles');
+  if (oldSpark) oldSpark.remove();
+  if (key === 'legendary') { legendaryBurst(card); if (front) front.insertAdjacentHTML('beforeend', sparklesHTML(9)); }
+  updateTarotProgress();
+  updateTagbar();
+}
+function legendaryBurst(card) {
+  if (REDUCE_MOTION) return;
+  const front = card.querySelector('.tarot-front'); if (!front) return;
+  const b = document.createElement('span'); b.className = 'ttag-burst'; front.appendChild(b);
+  b.animate([{ opacity: .95, transform: 'scale(.35)' }, { opacity: 0, transform: 'scale(1.15)' }],
+    { duration: 560, easing: 'cubic-bezier(.22,.61,.36,1)' }).onfinish = () => b.remove();
+}
+function undoTarot() {
+  const last = TAROT_HISTORY.pop();
+  if (!last) { toast('沒有可復原的'); return; }
+  const { rel, prev } = last;
+  applyRarity(rel, prev);
+  const cards = tarotCards();
+  const card = cards.find(c => c.dataset.rel === rel);
+  if (card) {
+    RARITY_KEYS.forEach(k => card.classList.remove('assigned-' + k, 'rar-' + k));
+    if (prev) { card.classList.add('assigned-' + prev); if (prev !== 'common') card.classList.add('rar-' + prev); }
+    setTarotFocus(cards.indexOf(card));
+  }
+  updateTarotProgress();
+  updateTagbar();
+}
+function updateTarotProgress() {
+  const cards = tarotCards();
+  const done = cards.filter(isAssigned).length;
+  const el = $('ttag-progress'); if (el) el.textContent = `已標 ${done} / ${cards.length}`;
+}
+
+const drawDispatch = () => (MODE === 'tag' ? drawTagTarot() : drawTarot());
+$('draw-cards').onclick = drawDispatch;
+$('tarot-redraw').onclick = drawDispatch;
 $('tarot-close').onclick = closeTarot;
 $('tarot').addEventListener('click', e => { if (e.target.id === 'tarot') closeTarot(); });
 

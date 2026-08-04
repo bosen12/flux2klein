@@ -119,16 +119,17 @@
 
 <!-- 抽卡：從全部隨機抽 5 張，塔羅式發牌 + 翻牌呈現 -->
 <div id="tarot" class="tarot-overlay">
-  <div class="tarot-stage">
+  <div class="tarot-stage" id="tarot-stage">
     <div class="tarot-head">
-      <span class="tarot-title">✦ 抽選八張 ✦</span>
+      <span class="tarot-title" id="tarot-title">✦ 抽選八張 ✦</span>
+      <span class="ttag-progress tag-only" id="ttag-progress"></span>
       <div class="tarot-actions">
         <button class="primary" id="tarot-redraw">再抽一次 (R)</button>
         <button id="tarot-close">關閉 (Esc)</button>
       </div>
     </div>
     <div class="tarot-cards" id="tarot-cards"></div>
-    <div class="tarot-hint">點任一張看大圖與提示詞；R 重抽一批、Esc 關閉</div>
+    <div class="tarot-hint" id="tarot-hint">點任一張看大圖與提示詞；R 重抽一批、Esc 關閉</div>
   </div>
 </div>
 <script src="/darkroom.js" defer></script>
