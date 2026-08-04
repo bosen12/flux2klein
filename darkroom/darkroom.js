@@ -833,7 +833,7 @@ function closeTarot() {
 /* ── 抽卡打標（打標模式）：抽 15 張「有圖且尚未打標」的，逐張鍵盤/點按標稀有度，
    即時寫側檔。與瀏覽抽卡共用同一個 #tarot 覆蓋層，靠 .ttag class 切排版與卡片內容。 */
 const RARITY_KEYS = ['common', 'rare', 'special', 'legendary'];
-const DRAW_N = 15;
+const DRAW_N = 10;   // 打標抽卡一次 10 張（5 欄 × 2 列）
 let TAROT_FOCUS = -1;
 const TAROT_HISTORY = [];
 const tarotPool = () => ALL.filter(x => x.has_image && !x.rarity);   // 有圖、尚未打標
@@ -886,6 +886,7 @@ function drawTagTarot() {
          <div class="tarot-front">
            <img decoding="async" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="">
            <div class="tarot-name"></div>
+           <div class="tarot-folder"></div>
            <div class="ttag-rar">
              <button data-r="common">普通</button><button data-r="rare">稀有</button>
              <button data-r="special">特別</button><button data-r="legendary">傳奇</button>
@@ -893,6 +894,7 @@ function drawTagTarot() {
          </div>
        </div>`;
     card.querySelector('.tarot-name').textContent = it.display_name || it.name;
+    card.querySelector('.tarot-folder').textContent = it.folder || '(根目錄)';
     card.querySelectorAll('.ttag-rar button').forEach(b =>
       b.onclick = () => { setTarotFocus(i); assignTarot(it.rel, card, b.dataset.r); });
     card.addEventListener('mouseenter', () => setTarotFocus(i));

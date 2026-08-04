@@ -193,7 +193,13 @@ input[type=text]::placeholder { color: var(--faint); }
 /* 內容區 */
 .main { flex: 1; min-width: 0; overflow-y: auto; }
 .main-head { position: sticky; top: 0; z-index: 5; background: linear-gradient(180deg, var(--bg) 82%, transparent);
-             padding: 16px 20px 12px; display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+             padding: 16px 20px 12px; display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+             /* 命名為持久群組：切模式/切資料夾的 View Transition 中，這塊維持在原位、只讓
+                內容（分類名稱、右側動作鈕）柔和交叉淡，不會因為它是 sticky 而在捲動時閃掉。 */
+             view-transition-name: dr-mainhead; }
+::view-transition-group(dr-mainhead) { animation-duration: var(--d-ui); }
+::view-transition-old(dr-mainhead),
+::view-transition-new(dr-mainhead) { animation-timing-function: var(--ease-out); }
 .main-title { display: flex; align-items: baseline; gap: 10px; }
 .main-title .num { font-family: var(--mono); font-size: 13px; color: var(--amber); }
 .main-title h2 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: .2px; }
@@ -561,12 +567,13 @@ body[data-mode="tag"] #grid { padding-bottom: 72px; }
    光環沿用上方 .tarot-* ，這裡只調尺寸與加打標按鈕。 */
 .ttag-stage { max-width: 1240px; }
 .ttag-progress { font-family: var(--mono); font-size: 12.5px; color: var(--amber); white-space: nowrap; }
-.tarot-cards.ttag { grid-template-columns: repeat(5, auto); gap: 14px; }
-.tarot-cards.ttag .tarot-card { width: clamp(150px, 14.5vw, 200px); cursor: default; }
-@media (max-width: 1120px) { .tarot-cards.ttag { grid-template-columns: repeat(4, auto); } }
-@media (max-width: 900px)  { .tarot-cards.ttag { grid-template-columns: repeat(3, auto); } }
-@media (max-width: 620px)  { .tarot-cards.ttag { grid-template-columns: repeat(2, auto); } }
-.ttag .tarot-name { font-size: 11.5px; padding: 6px 8px 2px; }
+.tarot-cards.ttag { grid-template-columns: repeat(5, auto); gap: 16px; }   /* 5 欄 × 2 列 = 10 張 */
+.tarot-cards.ttag .tarot-card { width: clamp(168px, 17vw, 230px); cursor: default; }
+@media (max-width: 1180px) { .tarot-cards.ttag { grid-template-columns: repeat(4, auto); } }
+@media (max-width: 940px)  { .tarot-cards.ttag { grid-template-columns: repeat(3, auto); } }
+@media (max-width: 660px)  { .tarot-cards.ttag { grid-template-columns: repeat(2, auto); } }
+.ttag .tarot-name { font-size: 12px; padding: 6px 8px 1px; }
+.ttag .tarot-folder { font-size: 10px; padding: 0 8px 5px; }
 .ttag-rar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 6px 7px 8px; }
 .ttag-rar button { padding: 5px 0; font-size: 11px; font-weight: 700; border-radius: 6px;
   border: 1px solid var(--line-2); background: var(--sunk); color: var(--dim); cursor: pointer;
