@@ -299,8 +299,15 @@ LORA_PREVIEW_EXTS = (".preview.png", ".preview.jpeg", ".preview.jpg", ".preview.
 mimetypes.add_type("image/webp", ".webp")   # 有些 Python 的 mimetypes 不認 webp
 
 
+_lora_cache = {"data": None, "at": 0.0}
+_LORA_TTL = 300.0   # LoRA 很少變動，快取 5 分鐘（每次要讀數百個 metadata.json，約 5 秒）
+
+
 def list_loras() -> dict:
-    """列出各分類夾內每個 LoRA 的觸發詞與預覽圖檔名。trainedWords 保留為「多組」陣列。"""
+    """列出各分類夾內每個 LoRA 的觸發詞與預覽圖檔名。trainedWords 保留為「多組」陣列。
+    讀數百個 metadata.json 很慢（約 5s），用 TTL 快取。"""
+    if _lora_cache["data"] is not None and (time.time() - _lora_cache["at"]) < _LORA_TTL:
+        return _lora_cache["data"]
     items, counts = [], {}
     for folder in LORA_FOLDERS:
         d = LORA_ROOT / folder
@@ -332,7 +339,10 @@ def list_loras() -> dict:
                           "title": title, "trainedWords": words, "preview": preview})
             n += 1
         counts[folder] = n
-    return {"items": items, "counts": counts, "folders": LORA_FOLDERS}
+    data = {"items": items, "counts": counts, "folders": LORA_FOLDERS}
+    _lora_cache["data"] = data
+    _lora_cache["at"] = time.time()
+    return data
 
 
 def lora_preview_path(folder: str, fn: str):

@@ -69,10 +69,14 @@ button.danger { color: #ffd9d3; border-color: #5a2e2a; background: #2a1a18; }
   border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--line)); border-radius: 6px; padding: 2px 8px; }
 .dataset::before { content: "📁 "; }
 .dataset:empty { display: none; }
-/* ── 模式（瀏覽/生成 ↔ 打標）：合併成一頁，用 body[data-mode] 顯隱各自的控制項，
-   切模式瞬間生效、不換頁。.browse-only 只在瀏覽模式顯示、.tag-only 只在打標模式。 */
-body[data-mode="tag"] .browse-only { display: none !important; }
-body[data-mode="browse"] .tag-only { display: none !important; }
+/* ── 模式（瀏覽 / 打標 / 生圖）：合併成一頁，用 body[data-mode] 顯隱各自的控制項，
+   切模式瞬間生效、不換頁。.browse-only/.tag-only/.gen-only 只在對應模式顯示——
+   作法是「非該模式時 display:none」。 */
+:is(body[data-mode="tag"], body[data-mode="gen"]) .browse-only,
+:is(body[data-mode="browse"], body[data-mode="gen"]) .tag-only,
+:is(body[data-mode="browse"], body[data-mode="tag"]) .gen-only { display: none !important; }
+/* .select-only：打標與生圖都要（全選/清除選取），只在瀏覽模式隱藏 */
+body[data-mode="browse"] .select-only { display: none !important; }
 .mode-seg { flex: 0 0 auto; }
 .mode-seg button { padding: 6px 12px; font-size: 13px; white-space: nowrap; }
 input[type=text] { background: var(--sunk); color: var(--ink); border: 1px solid var(--line);
@@ -514,11 +518,13 @@ body.selecting .fav-btn { display: none; }
 .card.flagged { border-color: var(--err); box-shadow: 0 0 0 2px var(--err) inset; }
 .card.flagged .card-name { color: var(--err); }
 
-/* ── 打標模式：卡片可選取（沿用 pick-box 右上勾選框），選取＝琥珀勾＋外框。
-   打標模式隱藏生成鈕/收藏星（那是瀏覽模式的動作）。 */
-body[data-mode="tag"] .pick-box { opacity: 1; transform: none; }
-body[data-mode="tag"] .thumb, body[data-mode="tag"] .card { cursor: pointer; }
-body[data-mode="tag"] .fav-btn, body[data-mode="tag"] .gen-btn { display: none; }
+/* ── 打標／生圖模式：卡片可選取（沿用 pick-box 右上勾選框），選取＝琥珀勾＋外框。
+   這兩個模式都隱藏生成鈕/收藏星（那是瀏覽模式的動作）。 */
+:is(body[data-mode="tag"], body[data-mode="gen"]) .pick-box { opacity: 1; transform: none; }
+:is(body[data-mode="tag"], body[data-mode="gen"]) .thumb,
+:is(body[data-mode="tag"], body[data-mode="gen"]) .card { cursor: pointer; }
+:is(body[data-mode="tag"], body[data-mode="gen"]) .fav-btn,
+:is(body[data-mode="tag"], body[data-mode="gen"]) .gen-btn { display: none; }
 .card.selected .pick-box { background: var(--amber); border-color: var(--amber); }
 .card.selected .pick-box::after { content: "✓"; position: absolute; inset: 0; display: grid;
   place-items: center; color: #241a08; font-weight: 800; font-size: 14px; }
@@ -535,7 +541,9 @@ body[data-mode="tag"] .fav-btn, body[data-mode="tag"] .gen-btn { display: none; 
   box-shadow: 0 -8px 24px -12px rgba(0,0,0,.5);
   transform: translateY(105%); pointer-events: none;
   transition: transform var(--d-pop) var(--ease-out); }
-body[data-mode="tag"] .tagbar { transform: none; pointer-events: auto; }
+/* 兩條底部列共用 .tagbar 基底（固定底部、預設滑到畫面外）；各自靠 id＋模式滑入。 */
+body[data-mode="tag"] #tagbar,
+body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 .tagbar-count { font-family: var(--mono); font-size: 13px; color: var(--dim); min-width: 74px; }
 .tagbar-count.has { color: var(--ink); font-weight: 700; }
 .rar-picker { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -550,8 +558,48 @@ body[data-mode="tag"] .tagbar { transform: none; pointer-events: auto; }
 .rar-pick.legendary { border-color: transparent; color: #fff;
   background: linear-gradient(100deg,#ff5f6d,#ffb347,#42f5a1,#41b6ff,#b47bff); }
 .rar-pick.none { color: var(--dim); }
-/* 打標模式底部有固定的 tagbar，格線多留空間免被蓋住 */
-body[data-mode="tag"] #grid { padding-bottom: 72px; }
+/* 打標／生圖模式底部有固定的操作列，格線多留空間免被蓋住 */
+:is(body[data-mode="tag"], body[data-mode="gen"]) #grid { padding-bottom: 72px; }
+
+/* ── 生圖底部列：LoRA 挑選器（彈出清單＋hover 預覽）＋強度＋觸發詞晶片＋生圖鈕 ── */
+.lora-pick { position: relative; }
+#lora-pick-btn { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#lora-pick-btn.has { border-color: var(--amber); color: var(--ink); }
+.lora-pop { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 40;
+  width: 340px; max-width: 78vw; background: var(--panel); border: 1px solid var(--line-2);
+  border-radius: 12px; box-shadow: var(--shadow); padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.lora-pop input { width: 100%; }
+.lora-list { max-height: 44vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.lora-row { display: flex; align-items: center; gap: 9px; padding: 6px 8px; border-radius: 8px;
+  cursor: pointer; text-align: left; border: 0; background: transparent; color: var(--ink); }
+.lora-row:hover, .lora-row.on { background: var(--amber-soft); }
+.lora-row img, .lora-row .ph { width: 34px; height: 34px; border-radius: 6px; object-fit: cover; flex: none; background: var(--sunk); }
+.lora-row .rn { flex: 1; min-width: 0; }
+.lora-row .rt { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lora-row .rf { font-size: 10px; color: var(--faint); font-family: var(--mono); }
+.lora-cat-head { font-size: 10.5px; color: var(--faint); font-family: var(--mono); padding: 6px 8px 2px; letter-spacing: .5px; }
+.lora-empty { color: var(--faint); font-size: 12.5px; padding: 10px; text-align: center; }
+.gen-strength { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--dim); }
+.gen-strength input[type=range] { width: 96px; }
+.gen-strength output { font-family: var(--mono); min-width: 34px; }
+.gen-tw { display: flex; gap: 6px; flex-wrap: wrap; max-width: 40vw; overflow: hidden; }
+.gen-tw .tw-chip { border: 1px solid var(--line-2); background: var(--sunk); color: var(--dim);
+  padding: 3px 9px; border-radius: 999px; font-size: 11px; cursor: pointer; white-space: nowrap;
+  max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.gen-tw .tw-chip.on { border-color: var(--amber); background: var(--amber-soft); color: var(--ink); }
+
+/* 生圖結果區：固定在 genbar 上方，累加（新的在前）。預設收合、點「結果」展開。 */
+.gen-results { position: fixed; left: 0; right: 0; bottom: 60px; z-index: 25; display: none;
+  max-height: 46vh; overflow-y: auto; padding: 14px 18px;
+  background: color-mix(in srgb, var(--bg) 96%, transparent); border-top: 1px solid var(--line);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.gen-results.open { display: grid; }
+.gen-results .gr-card { display: flex; flex-direction: column; gap: 4px; }
+.gen-results .gr-card img { width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius: 10px; background: var(--sunk); cursor: pointer; }
+.gen-results .gr-name { font-size: 11px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gen-results .gr-card.pending img { animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: .5; } 50% { opacity: .9; } }
 .toast { position: fixed; left: 50%; bottom: 92px; transform: translate(-50%, 12px);
   background: var(--panel); border: 1px solid var(--line-2); color: var(--ink);
   padding: 10px 18px; border-radius: 10px; font-size: 13.5px; box-shadow: var(--shadow);

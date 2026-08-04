@@ -283,7 +283,7 @@ function thumbInnerHTML(it) {
 function wireThumb(thumb, it) {
   // 點縮圖：打標模式＝選取；瀏覽的篩選模式＝標記紅叉；瀏覽平常＝開大圖。
   thumb.onclick = () => {
-    if (MODE === 'tag') toggleSel(it.rel, thumb.closest('.card'));
+    if (MODE === 'tag' || MODE === 'gen') toggleSel(it.rel, thumb.closest('.card'));
     else if (SELECTING) toggleFlag(it.rel);
     else openModalFromThumb(it.rel, thumb.querySelector('img'));
   };
@@ -559,11 +559,15 @@ function moveSegPill() {
 moveSegPill();
 addEventListener('resize', moveSegPill);
 
-/* ── 模式：瀏覽/生成 ↔ 打標（合併成一頁，切模式只設 body[data-mode]，不換頁） ──
-   初始模式：網址 /tag 或 ?mode=tag → 打標；否則沿用上次（localStorage）。 */
+/* ── 模式：瀏覽 / 打標 / 生圖（合併成一頁，切模式只設 body[data-mode]，不換頁） ──
+   初始模式：網址 /tag 或 ?mode=xxx → 指定；否則沿用上次（localStorage）。 */
+const MODES = ['browse', 'tag', 'gen'];
 function initialMode() {
-  if (location.pathname === '/tag' || new URLSearchParams(location.search).get('mode') === 'tag') return 'tag';
-  return localStorage.getItem('yz-mode') === 'tag' ? 'tag' : 'browse';
+  if (location.pathname === '/tag') return 'tag';
+  const q = new URLSearchParams(location.search).get('mode');
+  if (MODES.includes(q)) return q;
+  const saved = localStorage.getItem('yz-mode');
+  return MODES.includes(saved) ? saved : 'browse';
 }
 let MODE = initialMode();
 function moveModePill() {
@@ -573,19 +577,20 @@ function moveModePill() {
   pill.style.width = active.offsetWidth + 'px';
   pill.style.transform = `translateX(${active.offsetLeft}px)`;
 }
+const MODE_TITLE = { browse: '詞庫暗房', tag: '詞庫打標', gen: '詞庫生圖' };
 function applyMode(mode) {
-  MODE = (mode === 'tag') ? 'tag' : 'browse';
+  MODE = MODES.includes(mode) ? mode : 'browse';
   document.body.dataset.mode = MODE;
   localStorage.setItem('yz-mode', MODE);
   $('mode-seg').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.mode === MODE));
   const h1 = document.querySelector('.brand h1');
-  if (h1) h1.textContent = MODE === 'tag' ? '詞庫打標' : '詞庫暗房';
+  if (h1) h1.textContent = MODE_TITLE[MODE] || '詞庫暗房';
   moveModePill();
 }
 $('mode-seg').addEventListener('click', e => {
   const btn = e.target.closest('button'); if (!btn) return;
   if (btn.dataset.mode === MODE) return;
-  // 切模式**不重建格線、不走 VT**：瀏覽/打標的卡片 DOM 相同（只差 CSS 顯隱與點擊行為，
+  // 切模式**不重建格線、不走 VT**：各模式的卡片 DOM 相同（只差 CSS 顯隱與點擊行為，
   // 由 body[data-mode] 控制），所以只要切 body[data-mode]＋更新標頭統計＋清選取即可。
   // 不動格線 = 不重建 <img> = 圖片不會重繪暗一下；不碰 VT = 不會閃。
   document.querySelectorAll('#grid .card.selected').forEach(c => c.classList.remove('selected'));
@@ -593,6 +598,7 @@ $('mode-seg').addEventListener('click', e => {
   applyMode(btn.dataset.mode);
   updateStats();
   updateTagbar();
+  updateGenbar();
 });
 applyMode(MODE);
 addEventListener('resize', moveModePill);
@@ -1014,11 +1020,13 @@ function toggleSel(rel, cardEl) {
   if (SEL.has(rel)) SEL.delete(rel); else SEL.add(rel);
   if (cardEl) cardEl.classList.toggle('selected', SEL.has(rel));
   updateTagbar();
+  updateGenbar();
 }
 function clearSel() {
   SEL.clear();
   document.querySelectorAll('#grid .card.selected').forEach(c => c.classList.remove('selected'));
   updateTagbar();
+  updateGenbar();
 }
 function updateTagbar() {
   const n = SEL.size, c = $('tagbar-count');
@@ -1058,10 +1066,130 @@ async function tagSelected(key) {
   toast(`已標「${RARITY_FULL[key] || '移除'}」${ok} 筆`);
 }
 
-$('sel-all').onclick = () => { VISIBLE.forEach(x => SEL.add(x.rel)); withTransition(render); updateTagbar(); };
+$('sel-all').onclick = () => { VISIBLE.forEach(x => SEL.add(x.rel)); withTransition(render); updateTagbar(); updateGenbar(); };
 $('sel-clear').onclick = () => { clearSel(); withTransition(render); };
 document.querySelectorAll('.rar-pick').forEach(b =>
   b.addEventListener('click', () => { if (!b.disabled) tagSelected(b.dataset.r); }));
+
+/* ── 生圖模式：多選詞庫 + 選一個 LoRA（可預覽）+ 強度 + 觸發詞（多組可選）→ 生圖。 ── */
+let GEN_LORAS = null;                 // /api/loras 的 items（快取）
+let GEN_LORA = null;                  // 選中的 LoRA
+let GEN_STRENGTH = 0.8;
+const GEN_TW_PICKS = new Set();       // 選中的觸發詞組索引
+
+async function fetchGenLoras() {
+  if (GEN_LORAS) return GEN_LORAS;
+  try { GEN_LORAS = (await fetch('/api/loras').then(r => r.json())).items || []; }
+  catch (e) { GEN_LORAS = []; toast('LoRA 清單載入失敗：' + e.message); }
+  return GEN_LORAS;
+}
+
+function updateGenbar() {
+  const c = $('gen-count'); if (!c) return;
+  const n = SEL.size;
+  c.textContent = `已選 ${n}`; c.classList.toggle('has', n > 0);
+  const run = $('gen-run'); if (run) run.disabled = n === 0;
+}
+
+function renderGenLoraList(filter) {
+  const box = $('lora-list'); if (!box) return;
+  const q = (filter || '').toLowerCase().trim();
+  const items = (GEN_LORAS || []).filter(l =>
+    !q || l.name.toLowerCase().includes(q) || (l.title || '').toLowerCase().includes(q)
+    || (l.trainedWords || []).join(' ').toLowerCase().includes(q));
+  box.innerHTML = '';
+  if (!items.length) { box.innerHTML = '<div class="lora-empty">找不到 LoRA</div>'; return; }
+  const CAP = 80;                        // 一次最多渲染 80 列（總數上百，全渲染會卡）
+  const shown = items.slice(0, CAP);
+  let curFolder = '';
+  for (const l of shown) {
+    if (l.folder !== curFolder) {
+      curFolder = l.folder;
+      const h = document.createElement('div'); h.className = 'lora-cat-head'; h.textContent = curFolder;
+      box.appendChild(h);
+    }
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'lora-row' + (GEN_LORA && GEN_LORA.folder === l.folder && GEN_LORA.file === l.file ? ' on' : '');
+    if (l.preview) {
+      const im = document.createElement('img'); im.loading = 'lazy';
+      im.src = `/api/lora-preview?folder=${encodeURIComponent(l.folder)}&file=${encodeURIComponent(l.preview)}`;
+      row.appendChild(im);
+    } else { const ph = document.createElement('span'); ph.className = 'ph'; row.appendChild(ph); }
+    const rn = document.createElement('span'); rn.className = 'rn';
+    const rt = document.createElement('span'); rt.className = 'rt'; rt.textContent = l.title || l.name;
+    const rf = document.createElement('span'); rf.className = 'rf'; rf.textContent = l.folder;
+    rn.append(rt, rf); row.appendChild(rn);
+    row.addEventListener('click', () => selectGenLora(l));
+    box.appendChild(row);
+  }
+  if (items.length > shown.length) {
+    const more = document.createElement('div'); more.className = 'lora-empty';
+    more.textContent = `還有 ${items.length - shown.length} 個——打字搜尋縮小範圍`;
+    box.appendChild(more);
+  }
+}
+
+function selectGenLora(l) {
+  GEN_LORA = l;
+  const tw = l.trainedWords || [];
+  GEN_TW_PICKS.clear();
+  if (tw.length) GEN_TW_PICKS.add(0);   // 預設選第一組觸發詞
+  $('lora-pop').style.display = 'none';
+  renderGenCurrent();
+}
+
+function renderGenCurrent() {
+  const btn = $('lora-pick-btn');
+  if (btn) { btn.textContent = GEN_LORA ? `🎨 ${GEN_LORA.title || GEN_LORA.name}` : '🎨 選 LoRA'; btn.classList.toggle('has', !!GEN_LORA); }
+  $('gen-strength-wrap').style.display = GEN_LORA ? '' : 'none';
+  const wrap = $('gen-tw'); if (!wrap) return;
+  wrap.innerHTML = '';
+  const tw = GEN_LORA ? (GEN_LORA.trainedWords || []) : [];
+  if (tw.length > 1) {
+    tw.forEach((w, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tw-chip' + (GEN_TW_PICKS.has(i) ? ' on' : '');
+      b.title = w;
+      b.textContent = `${i + 1}. ${w.length > 22 ? w.slice(0, 20) + '…' : w}`;
+      b.addEventListener('click', () => {
+        if (GEN_TW_PICKS.has(i)) GEN_TW_PICKS.delete(i); else GEN_TW_PICKS.add(i);
+        b.classList.toggle('on');
+      });
+      wrap.appendChild(b);
+    });
+  }
+}
+
+// 目前選的 LoRA 觸發詞（依 GEN_TW_PICKS 組合，供 Stage 3 生成時注入正向）
+function genTriggerText() {
+  if (!GEN_LORA) return '';
+  const tw = GEN_LORA.trainedWords || [];
+  if (tw.length <= 1) return tw[0] || '';
+  return [...GEN_TW_PICKS].sort((a, b) => a - b).map(i => tw[i]).filter(Boolean).join(', ');
+}
+
+$('lora-pick-btn').onclick = async () => {
+  const pop = $('lora-pop');
+  if (pop.style.display !== 'none') { pop.style.display = 'none'; return; }
+  pop.style.display = '';                                  // 先開，避免第一次 await 5s 像凍住
+  if (!GEN_LORAS) $('lora-list').innerHTML = '<div class="lora-empty">載入中…</div>';
+  $('lora-search').focus();
+  await fetchGenLoras();
+  renderGenLoraList($('lora-search').value);
+};
+$('lora-search').addEventListener('input', () => renderGenLoraList($('lora-search').value));
+document.addEventListener('pointerdown', (e) => {
+  if ($('lora-pop').style.display !== 'none' && !$('lora-pick').contains(e.target)) $('lora-pop').style.display = 'none';
+});
+$('gen-strength').addEventListener('input', (e) => {
+  GEN_STRENGTH = parseFloat(e.target.value);
+  $('gen-strength-out').textContent = GEN_STRENGTH.toFixed(2);
+});
+$('gen-results-btn').onclick = () => $('gen-results').classList.toggle('open');
+$('gen-run').onclick = () => runGen();
+function runGen() { toast('生圖生成建置中（Stage 3）'); }   // Stage 3 會接上實際生成
 
 function hideBoot() {
   const b = document.getElementById('boot');

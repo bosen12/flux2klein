@@ -42,8 +42,9 @@
     <span class="seg-pill" id="mode-pill" aria-hidden="true"></span>
     <button data-mode="browse" class="on" title="瀏覽與生成預覽圖">✦ 瀏覽</button>
     <button data-mode="tag" title="大量標稀有度">🏷 打標</button>
+    <button data-mode="gen" title="選詞庫＋LoRA 生圖">🎨 生圖</button>
   </div>
-  <button class="ghost" id="draw-cards" title="隨機抽卡（瀏覽=看圖；打標=逐張標稀有度）">✦ 抽卡</button>
+  <button class="ghost" id="draw-cards" title="隨機抽卡（瀏覽=看圖；打標=逐張標稀有度；生圖=隨機生圖）">✦ 抽卡</button>
   <button class="ghost" id="rescan" title="重新掃描">↻ 重掃</button>
   <div class="conn" id="conn"><span class="led"></span><span id="conn-text">…</span></div>
 </div>
@@ -89,8 +90,8 @@
         <button class="danger browse-only" id="batch-stop" style="display:none;">停止</button>
         <span class="conn browse-only" id="batch-progress" style="font-family:var(--mono);"></span>
         <!-- 打標模式的主區操作（全選/清除選取）；Stage 2 會接上邏輯 -->
-        <button class="ghost tag-only" id="sel-all">全選本資料夾</button>
-        <button class="ghost tag-only" id="sel-clear">清除選取</button>
+        <button class="ghost select-only" id="sel-all">全選本資料夾</button>
+        <button class="ghost select-only" id="sel-clear">清除選取</button>
       </div>
     </div>
     <div class="coverbar" id="coverbar"><span style="width:0"></span></div>
@@ -109,6 +110,28 @@
     <button data-r="" class="rar-pick none" disabled>移除標記</button>
   </div>
 </div>
+<!-- 生圖模式底部：選取詞庫 → 選 LoRA（可預覽）＋強度＋觸發詞 → 生圖（結果進結果區） -->
+<div class="tagbar" id="genbar">
+  <span class="tagbar-count" id="gen-count">已選 0</span>
+  <div class="lora-pick" id="lora-pick">
+    <button class="ghost" id="lora-pick-btn" title="選一個 LoRA 套用">🎨 選 LoRA</button>
+    <div class="lora-pop" id="lora-pop" style="display:none">
+      <input type="text" id="lora-search" placeholder="搜尋 LoRA…" autocomplete="off">
+      <div class="lora-list" id="lora-list"></div>
+    </div>
+  </div>
+  <label class="gen-strength" id="gen-strength-wrap" style="display:none">
+    <span>強度</span>
+    <input type="range" id="gen-strength" min="0" max="1" step="0.05" value="0.8">
+    <output id="gen-strength-out">0.80</output>
+  </label>
+  <div class="gen-tw" id="gen-tw"></div>
+  <div class="spacer"></div>
+  <button class="ghost" id="gen-results-btn" title="看/收合生成結果">結果 <span id="gen-results-n"></span></button>
+  <button class="primary" id="gen-run" disabled>🎨 生圖</button>
+</div>
+<!-- 生圖結果區（累加，新的在前）：Stage 3 生成後填入 -->
+<div class="gen-results" id="gen-results" aria-label="生圖結果"></div>
 <div id="toast" class="toast"></div>
 
 <div id="modal" class="modal">
