@@ -100,7 +100,7 @@ LORA_ROOT = os.environ.get(
     r"C:\ComfyUI\ComfyUI_windows_portable_nvidia\ComfyUI_windows_portable\ComfyUI\models\loras",
 )
 LORA_FOLDERS = ["style", "Character", "HENTAI", "illus"]
-# Illustrious 的「詞庫」來源：animebot 的 special_prompts，底下是數十個分類子夾，
+# Illustrious 的「詞庫」來源：special_prompts（C:\projects\special_prompts），底下是數十個分類子夾，
 # 每個 .py 是一組情境提示詞（REQUIRED_POSITIVE / POSITIVE / NEGATIVE 三個 list），
 # 旁邊可能有同名 .webp 預覽圖。面板用 ast 安全解析（只取那三個 list，不 import／不執行）。
 # 路徑來源優先序：環境變數 PROMPTS_ROOT > preview_config.json 的 special_dir >
@@ -117,7 +117,7 @@ def _prompts_root_default():
                 return sd
         except Exception:
             pass
-    return r"C:\projects\animebot\special_prompts"
+    return r"C:\projects\special_prompts"
 
 
 PROMPTS_ROOT = os.environ.get("PROMPTS_ROOT") or _prompts_root_default()
