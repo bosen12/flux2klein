@@ -108,7 +108,14 @@ input[type=text]::placeholder { color: var(--faint); }
 .topbar { flex: none; display: flex; align-items: center; gap: 14px; padding: 11px 18px;
           background: linear-gradient(180deg, var(--panel), color-mix(in srgb, var(--panel) 92%, #000));
           border-bottom: 1px solid var(--line);
-          box-shadow: 0 1px 0 rgba(255,255,255,.02) inset, 0 6px 20px -12px rgba(0,0,0,.6); }
+          box-shadow: 0 1px 0 rgba(255,255,255,.02) inset, 0 6px 20px -12px rgba(0,0,0,.6);
+          /* 命名為持久群組：切模式的 View Transition 中，頂列維持在原位、只讓自身控制項
+             （步數/篩選）交叉淡，不會被整體 root 交叉淡而「消失又出現」。 */
+          view-transition-name: dr-topbar; }
+/* 頂列與底部操作列在過渡時要壓在最上層（z-index 高），才不會被格線的過渡蓋住／閃掉 */
+::view-transition-group(dr-topbar) { z-index: 100; animation-duration: var(--d-ui); }
+::view-transition-group(dr-tagbar) { z-index: 100; animation-duration: var(--d-ui); }
+::view-transition-group(dr-mainhead) { z-index: 50; }
 .brand { display: flex; align-items: center; gap: 9px; }
 /* 品牌 logo：相機光圈（aperture）。琥珀色＋柔光呼吸，hover 轉一格光圈葉片 */
 .brand-logo { width: 22px; height: 22px; color: var(--amber); flex: none;
@@ -540,7 +547,9 @@ body[data-mode="tag"] .fav-btn, body[data-mode="tag"] .gen-btn { display: none; 
   display: flex; align-items: center; gap: 14px; padding: 12px 18px;
   background: color-mix(in srgb, var(--panel) 92%, transparent);
   border-top: 1px solid var(--line); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-  box-shadow: 0 -8px 24px -12px rgba(0,0,0,.5); }
+  box-shadow: 0 -8px 24px -12px rgba(0,0,0,.5);
+  /* 命名為持久群組（見 dr-topbar）：切模式時底部操作列維持在最上層、不被 root 淡掉。 */
+  view-transition-name: dr-tagbar; }
 .tagbar-count { font-family: var(--mono); font-size: 13px; color: var(--dim); min-width: 74px; }
 .tagbar-count.has { color: var(--ink); font-weight: 700; }
 .rar-picker { display: flex; gap: 8px; flex-wrap: wrap; }
