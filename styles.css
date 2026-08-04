@@ -1193,11 +1193,21 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .cat-caret { flex: none; color: var(--text-faint); transition: transform var(--dur-2) var(--ease-out); }
 .cat-summary.open .cat-caret { transform: rotate(180deg); }
 .cat-grid {
-  display: flex; flex-wrap: wrap; gap: 6px; overflow: hidden;
+  display: flex; flex-direction: column; gap: 8px; overflow: hidden;
   max-height: 0; padding-top: 0;
   transition: max-height var(--dur-3) var(--ease-entrance), padding-top var(--dur-3) var(--ease-entrance);
 }
 .cat-summary.open + .cat-grid { padding-top: 8px; }
+/* 展開後的分類搜尋框：分類多時打字即時篩晶片 */
+.cat-filter {
+  width: 100%; box-sizing: border-box; border: 1px solid var(--border);
+  background: var(--panel-2); color: var(--text); border-radius: 8px;
+  padding: 6px 10px; font-size: var(--fs-xs); font-family: inherit;
+  transition: border-color var(--dur-1);
+}
+.cat-filter:focus { outline: none; border-color: var(--accent); }
+.cat-filter::placeholder { color: var(--text-faint); }
+.cat-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 @media (prefers-reduced-motion: reduce) { .cat-grid { transition: none; } }
 .lora-cat {
   display: inline-flex; align-items: center; gap: 6px;

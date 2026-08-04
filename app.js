@@ -632,17 +632,36 @@
     summary.innerHTML = `<span class="cat-summary-label">分類：${esc(cur[1])}<span class="lora-cat-n">${cur[2]}</span></span><span class="cat-caret" aria-hidden="true">▾</span>`;
     const grid = document.createElement('div');
     grid.className = 'cat-grid';
+    // 分類搜尋：分類多（如詞庫數十個）時打字即時篩晶片，不用在一堆晶片裡找。
+    // 展開就自動聚焦、可直接打字；點輸入框不觸發 summary 收合。
+    const filter = document.createElement('input');
+    filter.type = 'text'; filter.className = 'cat-filter';
+    filter.placeholder = '搜尋分類…'; filter.autocomplete = 'off';
+    filter.addEventListener('click', (e) => e.stopPropagation());
+    const chipsWrap = document.createElement('div');
+    chipsWrap.className = 'cat-chips';
+    const chipEls = [];
     for (const [key, label, n] of cats) {
       const b = chip(key, label, n);
       b.addEventListener('click', () => pick(key));   // 選完 → onPick + 重繪（收合、換摘要）
-      grid.appendChild(b);
+      b._flabel = String(label).toLowerCase();
+      chipsWrap.appendChild(b);
+      chipEls.push(b);
     }
+    grid.appendChild(filter);
+    grid.appendChild(chipsWrap);
     let open = false;
     const setOpen = (v) => {
       open = v;
       summary.classList.toggle('open', v);
       grid.style.maxHeight = v ? grid.scrollHeight + 'px' : '0px';
+      if (v) setTimeout(() => filter.focus(), 80);
     };
+    filter.addEventListener('input', () => {
+      const q = filter.value.toLowerCase().trim();
+      for (const b of chipEls) b.style.display = (!q || b._flabel.includes(q)) ? '' : 'none';
+      if (open) grid.style.maxHeight = grid.scrollHeight + 'px';   // 篩完更新展開高度
+    });
     summary.addEventListener('click', () => setOpen(!open));
     box.appendChild(summary);
     box.appendChild(grid);
