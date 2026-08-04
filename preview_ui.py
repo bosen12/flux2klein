@@ -292,11 +292,9 @@ STATIC_FILES = {
     "/index.html": ("index.html", "text/html; charset=utf-8"),
     "/darkroom.css": ("darkroom.css", "text/css; charset=utf-8"),
     "/darkroom.js": ("darkroom.js", "application/javascript; charset=utf-8"),
-    # 稀有度打標:獨立頁面(共用同一個伺服器與 /api/*、darkroom.css 的樣式底)
-    "/tag": ("tag.html", "text/html; charset=utf-8"),
-    "/tag.html": ("tag.html", "text/html; charset=utf-8"),
-    "/tag.css": ("tag.css", "text/css; charset=utf-8"),
-    "/tag.js": ("tag.js", "application/javascript; charset=utf-8"),
+    # 打標已併進同一頁（瀏覽/打標用頂列模式切換）。舊網址 /tag 保留：回同一個
+    # index.html，前端依 location.pathname === '/tag' 自動進打標模式。
+    "/tag": ("index.html", "text/html; charset=utf-8"),
 }
 
 # ---------------------------------------------------------------------------

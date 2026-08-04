@@ -339,28 +339,19 @@ input[type=text]::placeholder { color: var(--faint); }
          font-size: 20px; color: var(--ink); }
 .m-nav.prev { left: 10px; } .m-nav.next { right: 10px; }
 
-/* ── 換頁過渡：暗房 ↔ 打標（跨文件 View Transitions，同源才有效） ──────────
-   **純 root 交叉淡入，不命名任何持久元素**。原本把 topbar/rail/grid 命名成持久
-   群組讓它們「維持在原位」，但兩頁的 topbar 按鈕數不同（暗房有步數/篩選，打標沒有）
-   → 不同視窗寬度下 wrap 行數不同、topbar 高度差可達 20px+，grid 卡片高度也不同，
-   morph 這些群組就會**動到幾何 → 整個版面抖動**（實測 topbar 103↔124px）。
-   改成整頁只做一次 opacity 交叉淡入：零幾何動畫＝零抖動；兩頁相似時看起來就像
-   內容柔和換掉。boot 開場遮罩在「經由過渡進來」時會被略過（見 darkroom.js 的
-   pagereveal），才不會在過渡中閃一下載入畫面。 */
-@view-transition { navigation: auto; }
+/* ── 同文件過渡（切模式、切資料夾/篩選/搜尋）：走 View Transitions。 ──────────
+   暗房與打標已併成一頁、用頂列模式切換，不再有跨文件換頁，故不需 @view-transition
+   opt-in。root 交叉淡入供「切模式」用（topbar/coverbar 等改變的部分柔和淡入）；
+   dr-grid-live 供「切資料夾/篩選」用（withTransition 由 JS 暫時把 #grid 命名成它，
+   只讓格線交叉淡入）。 */
 ::view-transition-old(root),
 ::view-transition-new(root) { animation-duration: var(--d-pop); animation-timing-function: var(--ease-out); }
-
-/* 切資料夾／篩選／搜尋（同文件）：withTransition 把格線 view-transition-name 暫時
-   設成 dr-grid-live → 只讓格線交叉淡入（--d-ui）。這名字只在同文件切換時由 JS 掛上，
-   不是靜態命名，所以不影響上面的換頁純 root 淡入。 */
 ::view-transition-group(dr-grid-live) { animation-duration: var(--d-ui); }
 ::view-transition-old(dr-grid-live),
 ::view-transition-new(dr-grid-live) { animation-timing-function: var(--ease-out); }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
-  @view-transition { navigation: none; }   /* 換頁不做過渡，直接切 */
 }
 @media (max-width: 860px) {
   .rail { position: fixed; z-index: 30; height: 100%; left: 0; top: 0; box-shadow: var(--shadow); transform: translateX(-100%); transition: transform .2s; }

@@ -1071,11 +1071,6 @@ function hideBoot() {
   b.classList.add('hide');
   setTimeout(() => b.remove(), 600);
 }
-// 若是經由跨文件過渡（暗房↔打標）進來，pagereveal 時直接移除開場遮罩——否則換頁
-// 的交叉淡入會把「載入畫面」也淡進來、閃一下很怪。這裡在新頁快照擷取前就拿掉它。
-window.addEventListener('pagereveal', (e) => {
-  if (e.viewTransition) { const b = document.getElementById('boot'); if (b) b.remove(); }
-});
 // boot 只等「資料到＋首屏渲染完」就關。pollBatch 是常駐背景輪詢——批次執行中它
 // 的 while(true) 永不 resolve，所以**不能**把 hideBoot 鏈在它後面（`() => pollBatch()`
 // 會回傳那個永不結算的 promise），否則只要背景有批次在跑，boot 就會一直等到下面
