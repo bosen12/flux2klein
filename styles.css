@@ -1272,10 +1272,21 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 /* 已選的 LoRA */
 .lora-current { display: none; }
 .lora-current.has {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; flex-direction: column; align-items: stretch; gap: 8px;
   border: 1px solid var(--accent); background: var(--accent-soft);
   border-radius: var(--radius-sm); padding: 8px 10px;
 }
+.lora-cur-row { display: flex; align-items: center; gap: 10px; }
+/* 多組觸發詞：每組一顆晶片，點選要加入哪組（可多選）。選中的組會組成觸發詞框內容。 */
+.lora-tw { display: flex; flex-wrap: wrap; gap: 6px; }
+.tw-chip {
+  max-width: 100%; border: 1px solid var(--border); background: var(--panel-2); color: var(--text-dim);
+  padding: 4px 9px; border-radius: 999px; cursor: pointer; font-size: var(--fs-xs); font-family: inherit;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: border-color var(--dur-1), background var(--dur-1), color var(--dur-1);
+}
+.tw-chip:hover { border-color: var(--border-strong); color: var(--text); }
+.tw-chip.on { border-color: var(--accent); background: var(--accent-soft); color: var(--text); font-weight: 600; }
 .lora-current img { width: 36px; height: 36px; border-radius: var(--radius-xs); object-fit: cover; flex: none; }
 .lora-cur-name { flex: 1; min-width: 0; font-size: var(--fs-sm); font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lora-clear {

@@ -22,7 +22,8 @@
     // strength 字面值須與 illustrious.js 的 lora.defaultStrength 一致
     //（這裡在 const I 宣告前，不能引用 I）。
     lora: { list: null, counts: {}, folders: [], cat: 'all', page: 0, loading: false,
-            enabled: false, selected: null, strength: 0.8, text: '', inject: true },
+            enabled: false, selected: null, strength: 0.8, text: '', inject: true,
+            picks: new Set() },   // 多組 trainedWords 時，選中的組索引
     // Illustrious 的「詞庫」（special_prompts）。單選一個情境：選取時把正向填進
     // 提示詞框（可再編輯），送出時把該詞庫的 negative 寫進負向節點。
     lib: { list: null, counts: {}, folders: [], cat: 'all', page: 0, loading: false,
@@ -730,9 +731,19 @@
     }
   }
 
+  // trainedWords 是「多組」觸發詞（每個元素是一組獨立的詞，例如同一 LoRA 的不同角色/造型）。
+  // 依 state.lora.picks（選中的組索引）組成要注入的文字，用「, 」接。
+  function joinLoraPicks(l) {
+    const tw = l.trainedWords || [];
+    return [...state.lora.picks].sort((a, b) => a - b).map(i => tw[i]).filter(Boolean).join(', ');
+  }
+
   function selectLora(l) {
     state.lora.selected = l;
-    state.lora.text = (l.trainedWords || []).join(', ');   // 帶入觸發詞，之後可自由編輯、不動原始 metadata
+    const tw = l.trainedWords || [];
+    // 預設只選「第一組」（多組時不再把全部黏成一段；使用者可自行勾選要哪幾組）
+    state.lora.picks = new Set(tw.length ? [0] : []);
+    state.lora.text = joinLoraPicks(l);
     $('lora-menu').style.display = 'none';
     $('lora-search').value = '';
     hideLoraHover();
@@ -745,12 +756,34 @@
     const l = state.lora.selected;
     if (!l) { box.innerHTML = '<span class="lora-none">尚未選擇 LoRA</span>'; box.classList.remove('has'); return; }
     const thumb = l.preview ? `<img src="${loraPreviewUrl(l)}" alt="">` : '<span class="lora-thumb ph"></span>';
-    box.innerHTML = `${thumb}<span class="lora-cur-name">${esc(l.title)}</span><button type="button" class="lora-clear" title="取消選擇">✕</button>`;
+    const tw = l.trainedWords || [];
+    const multi = tw.length > 1;   // 只有多組時才顯示晶片；單組/無詞維持原樣
+    box.innerHTML =
+      `<div class="lora-cur-row">${thumb}<span class="lora-cur-name">${esc(l.title)}</span>` +
+      `<button type="button" class="lora-clear" title="取消選擇">✕</button></div>` +
+      (multi ? `<div class="lora-tw" id="lora-tw"></div>` : '');
     box.classList.add('has');
     box.querySelector('.lora-clear').addEventListener('click', () => {
-      state.lora.selected = null; state.lora.text = '';
+      state.lora.selected = null; state.lora.text = ''; state.lora.picks = new Set();
       renderLoraCurrent(); renderLoraWords();
     });
+    if (multi) {
+      const wrap = $('lora-tw');
+      tw.forEach((w, i) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'tw-chip' + (state.lora.picks.has(i) ? ' on' : '');
+        b.title = w;   // 完整內容 hover 可見
+        b.textContent = `${i + 1}. ${w.length > 42 ? w.slice(0, 40) + '…' : w}`;
+        b.addEventListener('click', () => {
+          if (state.lora.picks.has(i)) state.lora.picks.delete(i); else state.lora.picks.add(i);
+          b.classList.toggle('on');
+          state.lora.text = joinLoraPicks(l);   // 重組要注入的觸發詞
+          renderLoraWords();                     // 同步進可編輯文字框
+        });
+        wrap.appendChild(b);
+      });
+    }
   }
 
   // 把 state.lora.text 同步進文字框（框內容就是要注入的觸發詞，使用者可自由改）
