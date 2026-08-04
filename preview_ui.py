@@ -21,6 +21,7 @@ preview_ui.py
 from __future__ import annotations
 
 import argparse
+import base64
 import gzip
 import hashlib
 import io
@@ -36,6 +37,7 @@ import threading
 import time
 import traceback
 import urllib.parse
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -54,6 +56,7 @@ from generate_special_previews import (
     build_negative,
     build_prompt,
     download_image,
+    http_json,
     load_lib,
     load_workflow,
     prepare_workflow,
@@ -806,9 +809,147 @@ def inject_lora(wf: dict, lora_name: str, strength: float):
 
 
 _gen_results = {}      # gid -> {"bytes", "ctype"}
-_gen_status = {}       # gid -> {"status": pending/done/error, "rel", "name", "err", "seed"}
+_gen_preview = {}      # gid -> {"bytes", "ctype"}（採樣中的即時預覽，生完即清）
+_gen_status = {}       # gid -> {"status", "rel", "name", "err", "seed", "pv"}
 _gen_lock = threading.Lock()
 _GEN_MAX = 240         # 結果快取上限，超過砍最舊
+
+
+class _WSHandshakeError(Exception):
+    """WS 握手失敗——呼叫端可據此退化成純 HTTP 輪詢（無即時預覽）。"""
+
+
+def _ws_send(sock, opcode, payload: bytes):
+    """送一個 client→server WS frame（規範要求 client frame 一律 masked）。"""
+    import struct
+    header = bytearray([0x80 | opcode])
+    mask = os.urandom(4)
+    ln = len(payload)
+    if ln < 126:
+        header.append(0x80 | ln)
+    elif ln < 65536:
+        header.append(0x80 | 126); header += struct.pack(">H", ln)
+    else:
+        header.append(0x80 | 127); header += struct.pack(">Q", ln)
+    header += mask
+    masked = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+    sock.sendall(bytes(header) + masked)
+
+
+def _comfy_ws_generate(base: str, wf: dict, timeout: float, on_preview):
+    """開 WebSocket 連 ComfyUI、以同一 client_id POST /prompt，邊收採樣預覽邊回呼
+    on_preview(bytes, ctype)，執行完成後用 /history 取輸出圖 info 回傳。純標準庫實作的
+    最小 WS client（握手＋讀 frame）。握手失敗拋 _WSHandshakeError 讓呼叫端退化。
+
+    ComfyUI 的二進位 preview frame 格式：前 4 bytes 大端＝事件型別（1=PREVIEW_IMAGE）、
+    次 4 bytes＝影像格式（1=JPEG、2=PNG），其後為影像位元組。"""
+    import struct
+    u = urllib.parse.urlparse(base)
+    host = u.hostname or "127.0.0.1"
+    port = u.port or (443 if u.scheme == "https" else 80)
+    client_id = uuid.uuid4().hex
+    # --- 握手 ---
+    try:
+        sock = socket.create_connection((host, port), timeout=15)
+        sock.settimeout(max(60.0, float(timeout)))
+        key = base64.b64encode(os.urandom(16)).decode()
+        req = (f"GET /ws?clientId={client_id} HTTP/1.1\r\nHost: {host}:{port}\r\n"
+               "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+               f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n")
+        sock.sendall(req.encode())
+        buf = b""
+        while b"\r\n\r\n" not in buf:
+            chunk = sock.recv(4096)
+            if not chunk:
+                raise _WSHandshakeError("握手時連線中斷")
+            buf += chunk
+            if len(buf) > 65536:
+                raise _WSHandshakeError("握手回應過長")
+        head, _, rest = buf.partition(b"\r\n\r\n")
+        if b" 101 " not in head.split(b"\r\n", 1)[0]:
+            raise _WSHandshakeError("非 101：" + head.split(b"\r\n", 1)[0].decode("latin1", "replace"))
+    except _WSHandshakeError:
+        raise
+    except Exception as e:
+        raise _WSHandshakeError(f"{type(e).__name__}: {e}")
+
+    inbuf = bytearray(rest)
+
+    def _need(n):
+        while len(inbuf) < n:
+            chunk = sock.recv(65536)
+            if not chunk:
+                raise ConnectionError("WS 連線關閉")
+            inbuf.extend(chunk)
+
+    def read_frame():
+        _need(2)
+        b0, b1 = inbuf[0], inbuf[1]; del inbuf[:2]
+        opcode = b0 & 0x0f
+        masked = b1 & 0x80; ln = b1 & 0x7f
+        if ln == 126:
+            _need(2); ln = struct.unpack(">H", inbuf[:2])[0]; del inbuf[:2]
+        elif ln == 127:
+            _need(8); ln = struct.unpack(">Q", inbuf[:8])[0]; del inbuf[:8]
+        mask = b""
+        if masked:
+            _need(4); mask = bytes(inbuf[:4]); del inbuf[:4]
+        _need(ln); payload = bytes(inbuf[:ln]); del inbuf[:ln]
+        if masked:
+            payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+        return opcode, payload
+
+    # --- 握手成功後才 POST（確保 client 已註冊，收得到自己這次的預覽）---
+    result = http_json("POST", f"{base}/prompt", {"prompt": wf, "client_id": client_id}, timeout=60)
+    if not result or "prompt_id" not in result:
+        try: sock.close()
+        except Exception: pass
+        raise RuntimeError(f"queue 失敗：{result}")
+    prompt_id = result["prompt_id"]
+
+    try:
+        while True:
+            opcode, payload = read_frame()
+            if opcode == 0x8:            # close
+                break
+            if opcode == 0x9:            # ping → pong
+                _ws_send(sock, 0xA, payload); continue
+            if opcode == 0x2:            # binary → 可能是預覽
+                if len(payload) >= 8 and payload[0:4] == b"\x00\x00\x00\x01":
+                    fmt = struct.unpack(">I", payload[4:8])[0]
+                    on_preview(payload[8:], "image/jpeg" if fmt == 1 else "image/png")
+                continue
+            if opcode == 0x1:            # text json
+                try:
+                    msg = json.loads(payload.decode("utf-8"))
+                except Exception:
+                    continue
+                t = msg.get("type"); d = msg.get("data") or {}
+                if t == "executing" and d.get("node") is None and d.get("prompt_id") == prompt_id:
+                    break                # 本次全部節點執行完
+                if t == "execution_error" and d.get("prompt_id") == prompt_id:
+                    raise RuntimeError("ComfyUI 執行錯誤：" + str(d.get("exception_message") or d.get("node_type") or d))
+    except (ConnectionError, socket.timeout) as e:
+        plog(f"[genmode] WS 中斷改用 history 取圖：{type(e).__name__}")   # 生成仍在 ComfyUI 跑，退化取結果
+    finally:
+        try: sock.close()
+        except Exception: pass
+
+    # --- 取輸出圖（executing-done 後 history 可能略慢，短重試）---
+    for _ in range(8):
+        hist = http_json("GET", f"{base}/history/{prompt_id}", timeout=15)
+        if hist and prompt_id in hist:
+            outputs = hist[prompt_id].get("outputs") or {}
+            images = []
+            for node_id in sorted(outputs.keys(), key=lambda x: int(x) if str(x).isdigit() else 0):
+                for img in outputs[node_id].get("images") or []:
+                    if img.get("type") == "temp":
+                        continue
+                    images.append(img)
+            if images:
+                return images
+        time.sleep(1.0)
+    raise RuntimeError("執行完成但取不到輸出圖")
 
 
 def _gen_one_worker(gid, rel, lora_name, strength, trigger):
@@ -828,16 +969,32 @@ def _gen_one_worker(gid, rel, lora_name, strength, trigger):
                                   steps=STATE["steps"])
             if lora_name:
                 inject_lora(wf, lora_name, strength)
-            images = queue_and_wait(STATE["comfy_base"], wf, timeout=STATE["timeout"])
-            data = download_image(STATE["comfy_base"], images[0])
+
+            def on_prev(b, ct):
+                with _gen_lock:
+                    _gen_preview[gid] = {"bytes": b, "ctype": ct}
+                    if gid in _gen_status:
+                        _gen_status[gid]["pv"] = _gen_status[gid].get("pv", 0) + 1
+
+            base = STATE["comfy_base"]
+            try:
+                images = _comfy_ws_generate(base, wf, STATE["timeout"], on_prev)
+            except _WSHandshakeError as e:
+                plog(f"[genmode] 無即時預覽（WS 握手失敗：{e}），改純輪詢")
+                images = queue_and_wait(base, wf, timeout=STATE["timeout"])
+            data = download_image(base, images[0])
             with _gen_lock:
                 _gen_results[gid] = {"bytes": data, "ctype": "image/webp"}
+                _gen_preview.pop(gid, None)
                 _gen_status[gid].update(status="done", seed=seed)
                 while len(_gen_results) > _GEN_MAX:
-                    _gen_results.pop(next(iter(_gen_results)), None)
+                    old = next(iter(_gen_results))
+                    _gen_results.pop(old, None)
+                    _gen_preview.pop(old, None)
             plog(f"[genmode] OK {rel} seed={seed}")
         except Exception as e:
             with _gen_lock:
+                _gen_preview.pop(gid, None)
                 if gid in _gen_status:
                     _gen_status[gid].update(status="error", err=f"{type(e).__name__}: {e}")
             plog(f"[genmode] ERR {rel} {type(e).__name__}: {e}")
@@ -853,7 +1010,7 @@ def start_gen(rels, lora_name, strength, trigger):
         except Exception:
             name = rel
         with _gen_lock:
-            _gen_status[gid] = {"status": "pending", "rel": rel, "name": name, "err": ""}
+            _gen_status[gid] = {"status": "pending", "rel": rel, "name": name, "err": "", "pv": 0}
         out.append({"id": gid, "rel": rel, "name": name})
         threading.Thread(target=_gen_one_worker,
                          args=(gid, rel, lora_name, strength, trigger), daemon=True).start()
@@ -1016,6 +1173,18 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_bytes(b"not ready", "text/plain", 404)
                     return
                 self._send_cacheable(r["bytes"], r["ctype"], gid)
+                return
+            if u.path == "/api/gen-preview":
+                # 採樣中的即時預覽（ComfyUI 經 WS 送的中途影像）。前端靠 gen-status 的 pv
+                # 遞增才來抓，抓不到（尚無預覽/已生完清掉）就 404。附 pv 進 etag 避免快取。
+                gid = qs.get("id", [""])[0]
+                with _gen_lock:
+                    p = _gen_preview.get(gid)
+                    pv = _gen_status.get(gid, {}).get("pv", 0)
+                if not p:
+                    self._send_bytes(b"no preview", "text/plain", 404)
+                    return
+                self._send_cacheable(p["bytes"], p["ctype"], f"{gid}:{pv}")
                 return
             self._send_bytes(b"not found", "text/plain", 404)
         except Exception as e:

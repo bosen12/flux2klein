@@ -733,7 +733,9 @@ window.addEventListener('keydown', e => {
       }
       return;
     }
-    if (e.key === 'r' || e.key === 'R' || e.key === 'Enter') { e.preventDefault(); drawTarot(); return; }  // 瀏覽：R 重抽
+    if (e.key === 'r' || e.key === 'R' || e.key === 'Enter') {   // R 重抽（生圖模式抽新的一批來生）
+      e.preventDefault(); (MODE === 'gen' ? drawGenTarot : drawTarot)(); return;
+    }
     return;
   }
   if (!$('modal').classList.contains('open')) return;
@@ -952,7 +954,7 @@ function updateTarotProgress() {
   const el = $('ttag-progress'); if (el) el.textContent = `已標 ${done} / ${cards.length}`;
 }
 
-const drawDispatch = () => (MODE === 'gen' ? drawGenAndRun() : MODE === 'tag' ? drawTagTarot() : drawTarot());
+const drawDispatch = () => (MODE === 'gen' ? drawGenTarot() : MODE === 'tag' ? drawTagTarot() : drawTarot());
 $('draw-cards').onclick = drawDispatch;
 $('tarot-redraw').onclick = drawDispatch;
 $('tarot-close').onclick = closeTarot;
@@ -1190,16 +1192,19 @@ $('gen-strength').addEventListener('input', (e) => {
 $('gen-results-btn').onclick = () => $('gen-results').classList.toggle('open');
 $('gen-run').onclick = () => runGen();
 
-// 抽卡生圖：從目前資料夾/搜尋範圍隨機抽 8 個詞庫，用目前選的 LoRA/強度/觸發詞生成到結果區。
-function drawGenAndRun() {
+// 抽卡生圖：從目前資料夾/搜尋範圍隨機抽 8 個詞庫，翻塔羅牌呈現、邊生成邊在牌面顯示即時預覽。
+function drawGenTarot() {
   if (!VISIBLE.length) { toast('目前沒有詞庫可抽'); return; }
-  const picks = sampleN(VISIBLE, Math.min(8, VISIBLE.length)).map(x => x.rel);
-  runGen(picks);
+  const want = isMobile() ? 1 : 8;
+  const picks = sampleN(VISIBLE, Math.min(want, VISIBLE.length));
+  runGen(picks.map(x => x.rel), picks);
 }
 
+// 起一批生圖並在結果區建卡；若傳入 tarotItems 則同時開塔羅覆蓋層發牌呈現。
+// rels 省略時用目前選取（生圖鈕）。回傳的每張圖 gid 同時掛在結果卡與（有的話）塔羅卡上，
+// 由 startGenPoll 統一更新：pending 期間抓 /api/gen-preview 顯示採樣中畫面，done 換成成品。
 let _genPoll = null;
-// rels 省略時用目前選取（生圖鈕）；抽卡生圖會傳入隨機抽的一批。
-async function runGen(rels) {
+async function runGen(rels, tarotItems) {
   rels = rels || [...SEL];
   if (!rels.length) return;
   const payload = {
@@ -1228,14 +1233,77 @@ async function runGen(rels) {
     box.insertBefore(card, box.firstChild);
   }
   updateGenResultsN();
-  toast(`生圖 ${items.length} 張，生成中…`);
+  if (tarotItems) openGenTarot(items, tarotItems);
+  else toast(`生圖 ${items.length} 張，生成中…`);
   startGenPoll(items.map(x => x.id));
+}
+
+// 生圖抽卡的塔羅呈現：沿用瀏覽抽卡的發牌／翻牌動畫，牌面是生成中的即時預覽而非既有圖。
+function openGenTarot(items, picks) {
+  const n = items.length;
+  const title = document.querySelector('.tarot-title');
+  if (title) title.textContent = `✦ 抽選${CN_NUM[n] || n}張生圖 ✦`;
+  const wrap = $('tarot-cards');
+  wrap.classList.remove('ttag');
+  $('tarot-stage').classList.remove('ttag-stage');
+  $('tarot-hint').textContent = '牌面即時顯示生成中的採樣畫面；完成後點卡片看大圖，R 重抽、Esc 關閉';
+  wrap.innerHTML = '';
+  items.forEach((it, i) => {
+    const item = picks[i] || {};
+    const card = document.createElement('div');
+    card.className = 'tarot-card gen-card pending';
+    card.dataset.gid = it.id;
+    card.style.animationDelay = REDUCE ? '0ms' : (i * 48) + 'ms';
+    card.innerHTML =
+      `<div class="tarot-inner">
+         <div class="tarot-back"><span class="tarot-emblem">✦</span></div>
+         <div class="tarot-front gen-front">
+           <img class="gen-live" decoding="async" alt="" onload="this.classList.add('ld')">
+           <div class="gen-spin"></div>
+           <div class="tarot-name"></div>
+           <div class="tarot-folder"></div>
+           <div class="tarot-glare"></div>
+         </div>
+       </div>`;
+    card.querySelector('.tarot-name').textContent = item.display_name || item.name || it.name;
+    card.querySelector('.tarot-folder').textContent = item.folder || '(根目錄)';
+    card.addEventListener('click', () => { if (!card.classList.contains('pending')) { closeTarot(); openGenResult(it.id); } });
+    if (!REDUCE) {
+      card.addEventListener('mousemove', e => tiltCard(card, e));
+      card.addEventListener('mouseleave', () => { card.style.transform = ''; });
+    }
+    wrap.appendChild(card);
+  });
+  $('tarot').classList.add('open');
+  const cards = [...wrap.children];
+  if (REDUCE) { cards.forEach(c => c.classList.add('revealed')); return; }
+  const dealDone = n * 48 + 220;
+  cards.forEach((c, i) => setTimeout(() => c.classList.add('revealed'), dealDone + i * 80));
 }
 
 function updateGenResultsN() {
   const el = $('gen-results-n'); if (!el) return;
   const n = $('gen-results').querySelectorAll('.gr-card').length;
   el.textContent = n ? `(${n})` : '';
+}
+
+// 更新某 gid 的所有卡片（結果區＋塔羅），pending 顯示即時預覽、done 換成品、error 標記。
+function applyGenState(gid, s) {
+  const cards = document.querySelectorAll(`[data-gid="${cssAttr(gid)}"]`);
+  cards.forEach(card => {
+    const img = card.querySelector('img');
+    if (s.status === 'done') {
+      card.classList.remove('pending');
+      if (img) img.src = '/api/gen-result?id=' + gid;
+    } else if (s.status === 'error') {
+      card.classList.remove('pending'); card.classList.add('gr-err');
+      const nm = card.querySelector('.gr-name'); if (nm) nm.textContent += ' ✕ ' + (s.err || '失敗');
+    } else if (img && (s.pv || 0) > (+card.dataset.pv || 0)) {
+      // 有新的採樣預覽才換 src（pv 遞增），避免每 2s 無謂重載
+      card.dataset.pv = s.pv;
+      img.src = '/api/gen-preview?id=' + gid + '&v=' + s.pv;
+    }
+  });
 }
 
 function startGenPoll(ids) {
@@ -1248,14 +1316,8 @@ function startGenPoll(ids) {
     catch (e) { return; }
     for (const gid of [...pending]) {
       const s = st[gid]; if (!s) continue;
-      const card = $('gen-results').querySelector(`.gr-card[data-gid="${cssAttr(gid)}"]`);
-      if (s.status === 'done') {
-        if (card) { card.classList.remove('pending'); card.querySelector('img').src = '/api/gen-result?id=' + gid; }
-        pending.delete(gid);
-      } else if (s.status === 'error') {
-        if (card) { card.classList.remove('pending'); card.classList.add('gr-err'); card.querySelector('.gr-name').textContent += ' ✕ ' + (s.err || '失敗'); }
-        pending.delete(gid);
-      }
+      applyGenState(gid, s);
+      if (s.status === 'done' || s.status === 'error') pending.delete(gid);
     }
     if (!pending.size) { clearInterval(_genPoll); _genPoll = null; }
   };

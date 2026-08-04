@@ -446,6 +446,17 @@ input[type=text]::placeholder { color: var(--faint); }
 .tarot-noimg { aspect-ratio: 1 / 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
                gap: 6px; color: var(--faint); font-size: 12px; background: var(--sunk); }
 .tarot-noimg svg { width: 28px; height: 28px; opacity: .5; }
+/* 生圖抽卡牌面：方形區顯示採樣中的即時預覽（初始無 src → 深底 + 轉圈，預覽到就淡入） */
+.gen-front .gen-live { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block;
+                       position: relative; z-index: 2; background: var(--sunk); }
+.gen-front .gen-spin {
+  position: absolute; top: calc(50% - 13px); left: calc(50% - 13px); z-index: 3;
+  width: 26px; height: 26px; border-radius: 50%; pointer-events: none;
+  border: 2.5px solid rgba(234,173,87,.22); border-top-color: var(--amber);
+  animation: spin .8s linear infinite;
+}
+.gen-card:not(.pending) .gen-spin { display: none; }   /* 生完不再轉 */
+.gen-card.gr-err .gen-spin { display: none; }
 .tarot-name { padding: 8px 9px 2px; font-size: 12.5px; font-weight: 600; line-height: 1.3;
               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tarot-folder { padding: 0 9px 9px; font-family: var(--mono); font-size: 10px; color: var(--amber);
