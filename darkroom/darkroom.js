@@ -1295,9 +1295,10 @@ function applyGenState(gid, s) {
     if (s.status === 'done') {
       card.classList.remove('pending');
       if (img) img.src = '/api/gen-result?id=' + gid;
-    } else if (s.status === 'error') {
+    } else if (s.status === 'error' || s.status === 'cancelled') {
       card.classList.remove('pending'); card.classList.add('gr-err');
-      const nm = card.querySelector('.gr-name'); if (nm) nm.textContent += ' ✕ ' + (s.err || '失敗');
+      const nm = card.querySelector('.gr-name');
+      if (nm && !nm.dataset.tag) { nm.dataset.tag = '1'; nm.textContent += s.status === 'cancelled' ? ' · 已取消' : (' ✕ ' + (s.err || '失敗')); }
     } else if (img && (s.pv || 0) > (+card.dataset.pv || 0)) {
       // 有新的採樣預覽才換 src（pv 遞增），避免每 2s 無謂重載
       card.dataset.pv = s.pv;
@@ -1317,13 +1318,21 @@ function startGenPoll(ids) {
     for (const gid of [...pending]) {
       const s = st[gid]; if (!s) continue;
       applyGenState(gid, s);
-      if (s.status === 'done' || s.status === 'error') pending.delete(gid);
+      if (s.status === 'done' || s.status === 'error' || s.status === 'cancelled') pending.delete(gid);
     }
     if (!pending.size) { clearInterval(_genPoll); _genPoll = null; }
   };
   tick();
   _genPoll = setInterval(tick, 2000);
 }
+
+// 網頁關閉/刷新時，通知後端停掉在途生圖（別再送出排隊的、並中斷正在跑的），避免關了
+// 頁面 ComfyUI 還一直生。用 sendBeacon 才保證 unload 期間送得出去；只有還有生圖在跑
+// （_genPoll 未清）才送，平常刷新不打擾。pagehide 不像 visibilitychange 會在切分頁時誤觸。
+window.addEventListener('pagehide', () => {
+  if (!_genPoll) return;
+  try { navigator.sendBeacon('/api/gen-cancel', new Blob(['{}'], { type: 'application/json' })); } catch (e) {}
+});
 
 // 點結果縮圖看大圖（沿用 modal；清掉 dataset.rel 讓方向鍵的 modalStep 不誤動詞庫）
 function openGenResult(gid) {
