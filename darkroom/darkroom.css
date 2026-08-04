@@ -116,6 +116,14 @@ input[type=text]::placeholder { color: var(--faint); }
 ::view-transition-group(dr-topbar) { z-index: 100; animation-duration: var(--d-ui); }
 ::view-transition-group(dr-tagbar) { z-index: 100; animation-duration: var(--d-ui); }
 ::view-transition-group(dr-mainhead) { z-index: 50; }
+/* 底部操作列在切模式時是「整個出現/消失」（打標↔瀏覽）：改成從底部滑入/滑出，
+   取代預設的原地淡出（半透明在 z-index:100 淡出會像閃一下）。用 :only-child 只在
+   「純進場（只有 new）/純退場（只有 old）」時套用；切資料夾時 tagbar 兩邊都在、
+   不是 only-child，就維持原位不滑。 */
+@keyframes tagbar-slide-in  { from { transform: translateY(105%); } }
+@keyframes tagbar-slide-out { to   { transform: translateY(105%); } }
+::view-transition-new(dr-tagbar):only-child { animation: tagbar-slide-in var(--d-ui) var(--ease-out); }
+::view-transition-old(dr-tagbar):only-child { animation: tagbar-slide-out var(--d-ui) var(--ease-in); }
 .brand { display: flex; align-items: center; gap: 9px; }
 /* 品牌 logo：相機光圈（aperture）。琥珀色＋柔光呼吸，hover 轉一格光圈葉片 */
 .brand-logo { width: 22px; height: 22px; color: var(--amber); flex: none;
