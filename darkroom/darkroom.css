@@ -108,22 +108,7 @@ input[type=text]::placeholder { color: var(--faint); }
 .topbar { flex: none; display: flex; align-items: center; gap: 14px; padding: 11px 18px;
           background: linear-gradient(180deg, var(--panel), color-mix(in srgb, var(--panel) 92%, #000));
           border-bottom: 1px solid var(--line);
-          box-shadow: 0 1px 0 rgba(255,255,255,.02) inset, 0 6px 20px -12px rgba(0,0,0,.6);
-          /* 命名為持久群組：切模式的 View Transition 中，頂列維持在原位、只讓自身控制項
-             （步數/篩選）交叉淡，不會被整體 root 交叉淡而「消失又出現」。 */
-          view-transition-name: dr-topbar; }
-/* 頂列與底部操作列在過渡時要壓在最上層（z-index 高），才不會被格線的過渡蓋住／閃掉 */
-::view-transition-group(dr-topbar) { z-index: 100; animation-duration: var(--d-ui); }
-::view-transition-group(dr-tagbar) { z-index: 100; animation-duration: var(--d-ui); }
-::view-transition-group(dr-mainhead) { z-index: 50; }
-/* 底部操作列在切模式時是「整個出現/消失」（打標↔瀏覽）：改成從底部滑入/滑出，
-   取代預設的原地淡出（半透明在 z-index:100 淡出會像閃一下）。用 :only-child 只在
-   「純進場（只有 new）/純退場（只有 old）」時套用；切資料夾時 tagbar 兩邊都在、
-   不是 only-child，就維持原位不滑。 */
-@keyframes tagbar-slide-in  { from { transform: translateY(105%); } }
-@keyframes tagbar-slide-out { to   { transform: translateY(105%); } }
-::view-transition-new(dr-tagbar):only-child { animation: tagbar-slide-in var(--d-ui) var(--ease-out); }
-::view-transition-old(dr-tagbar):only-child { animation: tagbar-slide-out var(--d-ui) var(--ease-in); }
+          box-shadow: 0 1px 0 rgba(255,255,255,.02) inset, 0 6px 20px -12px rgba(0,0,0,.6); }
 .brand { display: flex; align-items: center; gap: 9px; }
 /* 品牌 logo：相機光圈（aperture）。琥珀色＋柔光呼吸，hover 轉一格光圈葉片 */
 .brand-logo { width: 22px; height: 22px; color: var(--amber); flex: none;
@@ -208,13 +193,7 @@ input[type=text]::placeholder { color: var(--faint); }
 /* 內容區 */
 .main { flex: 1; min-width: 0; overflow-y: auto; }
 .main-head { position: sticky; top: 0; z-index: 5; background: linear-gradient(180deg, var(--bg) 82%, transparent);
-             padding: 16px 20px 12px; display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
-             /* 命名為持久群組：切模式/切資料夾的 View Transition 中，這塊維持在原位、只讓
-                內容（分類名稱、右側動作鈕）柔和交叉淡，不會因為它是 sticky 而在捲動時閃掉。 */
-             view-transition-name: dr-mainhead; }
-::view-transition-group(dr-mainhead) { animation-duration: var(--d-ui); }
-::view-transition-old(dr-mainhead),
-::view-transition-new(dr-mainhead) { animation-timing-function: var(--ease-out); }
+             padding: 16px 20px 12px; display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
 .main-title { display: flex; align-items: baseline; gap: 10px; }
 .main-title .num { font-family: var(--mono); font-size: 13px; color: var(--amber); }
 .main-title h2 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: .2px; }
@@ -550,14 +529,18 @@ body[data-mode="tag"] .fav-btn, body[data-mode="tag"] .gen-btn { display: none; 
   place-items: center; color: #241a08; font-weight: 800; font-size: 14px; }
 .card.selected { border-color: var(--amber); box-shadow: 0 0 0 2px var(--amber) inset; }
 
-/* 打標底部稀有度列（tag-only、固定在底部）＋ toast */
+/* 打標底部稀有度列（固定在底部）＋ toast。
+   顯隱**不用 display:none／不走 VT**：改成一直在 DOM、用 transform 從底部滑入滑出，
+   由 body[data-mode] 切換。這樣切模式時它只是單純 CSS 滑動（不會被 View Transitions
+   拍進快照交叉淡而「整條閃一下」）。瀏覽模式滑到畫面外並關掉點擊。 */
 .tagbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
   display: flex; align-items: center; gap: 14px; padding: 12px 18px;
   background: color-mix(in srgb, var(--panel) 92%, transparent);
   border-top: 1px solid var(--line); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
   box-shadow: 0 -8px 24px -12px rgba(0,0,0,.5);
-  /* 命名為持久群組（見 dr-topbar）：切模式時底部操作列維持在最上層、不被 root 淡掉。 */
-  view-transition-name: dr-tagbar; }
+  transform: translateY(105%); pointer-events: none;
+  transition: transform var(--d-pop) var(--ease-out); }
+body[data-mode="tag"] .tagbar { transform: none; pointer-events: auto; }
 .tagbar-count { font-family: var(--mono); font-size: 13px; color: var(--dim); min-width: 74px; }
 .tagbar-count.has { color: var(--ink); font-weight: 700; }
 .rar-picker { display: flex; gap: 8px; flex-wrap: wrap; }

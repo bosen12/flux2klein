@@ -594,9 +594,14 @@ function applyMode(mode) {
 }
 $('mode-seg').addEventListener('click', e => {
   const btn = e.target.closest('button'); if (!btn) return;
-  // 切模式用 withTransition：消失/出現的控制項柔和交叉淡入，共用按鈕因靠右錨定不位移。
-  // 換模式時清掉打標選取（避免殘留），並重置底部稀有度列狀態。
-  if (btn.dataset.mode !== MODE) withTransition(() => { SEL.clear(); applyMode(btn.dataset.mode); render(); updateTagbar(); });
+  if (btn.dataset.mode === MODE) return;
+  // 切模式**不走 View Transitions**：VT 會把整個畫面拍快照交叉淡，讓「打標才有的」底部
+  // tagbar 在進退場時整條閃一下。改成瞬間套用，各元素用自己的單純 CSS 過渡（tagbar 用
+  // transform 滑動、topbar 控制項顯隱），根本不碰 VT ＝不會閃。_switching 讓格線首屏
+  // 直接可見、不套 reveal（免得看到空格線再淡入）。
+  _switching = true;
+  SEL.clear(); applyMode(btn.dataset.mode); render(); updateTagbar();
+  _switching = false;
 });
 applyMode(MODE);
 addEventListener('resize', moveModePill);
