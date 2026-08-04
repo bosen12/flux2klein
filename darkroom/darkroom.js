@@ -952,7 +952,7 @@ function updateTarotProgress() {
   const el = $('ttag-progress'); if (el) el.textContent = `已標 ${done} / ${cards.length}`;
 }
 
-const drawDispatch = () => (MODE === 'tag' ? drawTagTarot() : drawTarot());
+const drawDispatch = () => (MODE === 'gen' ? drawGenAndRun() : MODE === 'tag' ? drawTagTarot() : drawTarot());
 $('draw-cards').onclick = drawDispatch;
 $('tarot-redraw').onclick = drawDispatch;
 $('tarot-close').onclick = closeTarot;
@@ -1190,10 +1190,18 @@ $('gen-strength').addEventListener('input', (e) => {
 $('gen-results-btn').onclick = () => $('gen-results').classList.toggle('open');
 $('gen-run').onclick = () => runGen();
 
+// 抽卡生圖：從目前資料夾/搜尋範圍隨機抽 8 個詞庫，用目前選的 LoRA/強度/觸發詞生成到結果區。
+function drawGenAndRun() {
+  if (!VISIBLE.length) { toast('目前沒有詞庫可抽'); return; }
+  const picks = sampleN(VISIBLE, Math.min(8, VISIBLE.length)).map(x => x.rel);
+  runGen(picks);
+}
+
 let _genPoll = null;
-async function runGen() {
-  if (!SEL.size) return;
-  const rels = [...SEL];
+// rels 省略時用目前選取（生圖鈕）；抽卡生圖會傳入隨機抽的一批。
+async function runGen(rels) {
+  rels = rels || [...SEL];
+  if (!rels.length) return;
   const payload = {
     rels,
     lora: GEN_LORA ? { folder: GEN_LORA.folder, file: GEN_LORA.file } : null,
