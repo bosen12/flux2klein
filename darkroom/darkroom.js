@@ -147,34 +147,21 @@ function buildRarityBar() {
   });
 }
 
-// 切資料夾／篩選／搜尋時，用同文件 View Transitions 讓格線交叉淡入（見 css 的
-// dr-grid）。守 REDUCE_MOTION 與 visibilityState——窗格隱藏時 startViewTransition
-// 的 callback 不結算（CLAUDE.md 老坑），退化成直接更新。_switching 期間 appendPage
-// 不套 reveal，讓 VT 截到的新內容是「已可見」而非 opacity:0 的空白。
-let _switching = false;
-function withTransition(update) {
-  if (document.startViewTransition && !REDUCE_MOTION && document.visibilityState === 'visible') {
-    const grid = $('grid');
-    // 同文件切換：把格線名字暫改成會交叉淡入的 dr-grid-live（CSS 預設的 dr-grid 是
-    // 給換頁用的靜止版）。結束後還原成 CSS 名字，換頁時才會維持不動。
-    grid.style.viewTransitionName = 'dr-grid-live';
-    const restore = () => { _switching = false; grid.style.viewTransitionName = ''; };
-    _switching = true;
-    const t = document.startViewTransition(update);
-    t.finished.finally(restore);
-    setTimeout(restore, 1200);   // 保險：VT 未結算也不卡住後續分頁進場、且還原名字
-  } else {
-    update();
-  }
-}
+// 切資料夾／篩選／搜尋：直接更新，**不走 View Transitions**。VT 對「很高且有捲動偏移」
+// 的格線群組交叉淡會出現怪異位移（尤其先捲動再切資料夾），而且隱藏窗格根本沒法驗證。
+// 改成瞬間換內容，新卡片靠既有的逐張淡入（reveal-on-scroll，見 render 的 _revealIO）
+// 進場，穩定不怪。保留這個包裝函式只為讓呼叫端不必改。
+let _switching = false;   // 保留給 appendPage 判斷（現在恆為 false＝新卡片一律逐張淡入）
+function withTransition(update) { update(); }
 
-function render() {
+// 更新標頭統計（分類名、摘要、覆蓋率條）＋算出 VISIBLE。**不動格線 DOM**——所以
+// 切模式只要呼叫這個（內容相同、不必重建格線＝圖片不會重繪暗一下）。
+function updateStats() {
   buildRarityBar();          // 先算分布（可能把失效的篩選重置回全部），再取清單
   const list = currentList();
   VISIBLE = list;
   const total = list.length, have = list.filter(x => x.has_image).length;
   const pct = total ? Math.round(have / total * 100) : 0;
-
   if (SEARCH) {
     $('mt-num').textContent = '';
     $('mt-name').textContent = `搜尋:「${SEARCH}」`;
@@ -183,8 +170,7 @@ function render() {
     $('mt-num').textContent = idx ? idx[0] : '';
     $('mt-name').textContent = (CUR_FOLDER || '').replace(/^\d+[_\-\s]*/, '') || CUR_FOLDER || '—';
   }
-  // 覆蓋率條在兩模式都顯示（避免切模式時它消失導致下方格線上下跳）：瀏覽=已生成比例、
-  // 打標=已標稀有度比例。摘要文字同步。
+  // 覆蓋率條兩模式都顯示：瀏覽=已生成比例、打標=已標稀有度比例。摘要文字同步。
   if (MODE === 'tag') {
     const tagged = list.filter(x => x.rarity).length;
     const pctT = total ? Math.round(tagged / total * 100) : 0;
@@ -194,7 +180,11 @@ function render() {
     $('mt-sub').textContent = `${total} 個詞庫 · 已生成 ${have} · 缺 ${total - have} · 覆蓋率 ${pct}%`;
     $('coverbar').firstElementChild.style.width = pct + '%';
   }
+  return total;
+}
 
+function render() {
+  const total = updateStats();
   const grid = $('grid');
   grid.innerHTML = '';
   if (_io) { _io.disconnect(); _io = null; }
@@ -595,13 +585,14 @@ function applyMode(mode) {
 $('mode-seg').addEventListener('click', e => {
   const btn = e.target.closest('button'); if (!btn) return;
   if (btn.dataset.mode === MODE) return;
-  // 切模式**不走 View Transitions**：VT 會把整個畫面拍快照交叉淡，讓「打標才有的」底部
-  // tagbar 在進退場時整條閃一下。改成瞬間套用，各元素用自己的單純 CSS 過渡（tagbar 用
-  // transform 滑動、topbar 控制項顯隱），根本不碰 VT ＝不會閃。_switching 讓格線首屏
-  // 直接可見、不套 reveal（免得看到空格線再淡入）。
-  _switching = true;
-  SEL.clear(); applyMode(btn.dataset.mode); render(); updateTagbar();
-  _switching = false;
+  // 切模式**不重建格線、不走 VT**：瀏覽/打標的卡片 DOM 相同（只差 CSS 顯隱與點擊行為，
+  // 由 body[data-mode] 控制），所以只要切 body[data-mode]＋更新標頭統計＋清選取即可。
+  // 不動格線 = 不重建 <img> = 圖片不會重繪暗一下；不碰 VT = 不會閃。
+  document.querySelectorAll('#grid .card.selected').forEach(c => c.classList.remove('selected'));
+  SEL.clear();
+  applyMode(btn.dataset.mode);
+  updateStats();
+  updateTagbar();
 });
 applyMode(MODE);
 addEventListener('resize', moveModePill);

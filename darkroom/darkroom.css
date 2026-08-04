@@ -339,16 +339,11 @@ input[type=text]::placeholder { color: var(--faint); }
          font-size: 20px; color: var(--ink); }
 .m-nav.prev { left: 10px; } .m-nav.next { right: 10px; }
 
-/* ── 同文件過渡（切模式、切資料夾/篩選/搜尋）：走 View Transitions。 ──────────
-   暗房與打標已併成一頁、用頂列模式切換，不再有跨文件換頁，故不需 @view-transition
-   opt-in。root 交叉淡入供「切模式」用（topbar/coverbar 等改變的部分柔和淡入）；
-   dr-grid-live 供「切資料夾/篩選」用（withTransition 由 JS 暫時把 #grid 命名成它，
-   只讓格線交叉淡入）。 */
+/* 開大圖的 shared-element morph（hero-img，見 #modal-image）會連帶對其餘畫面做一次
+   root 交叉淡入——這裡設它的時長／緩動。切模式與切資料夾都已改成不走 View Transitions
+   （前者只換 CSS/統計、後者瞬間換內容＋逐張淡入），所以沒有 dr-grid-live 這類規則了。 */
 ::view-transition-old(root),
 ::view-transition-new(root) { animation-duration: var(--d-pop); animation-timing-function: var(--ease-out); }
-::view-transition-group(dr-grid-live) { animation-duration: var(--d-ui); }
-::view-transition-old(dr-grid-live),
-::view-transition-new(dr-grid-live) { animation-timing-function: var(--ease-out); }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
