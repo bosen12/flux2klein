@@ -1189,7 +1189,79 @@ $('gen-strength').addEventListener('input', (e) => {
 });
 $('gen-results-btn').onclick = () => $('gen-results').classList.toggle('open');
 $('gen-run').onclick = () => runGen();
-function runGen() { toast('生圖生成建置中（Stage 3）'); }   // Stage 3 會接上實際生成
+
+let _genPoll = null;
+async function runGen() {
+  if (!SEL.size) return;
+  const rels = [...SEL];
+  const payload = {
+    rels,
+    lora: GEN_LORA ? { folder: GEN_LORA.folder, file: GEN_LORA.file } : null,
+    strength: GEN_STRENGTH,
+    trigger: genTriggerText(),
+  };
+  let res;
+  try {
+    res = await fetch('/api/gen', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(r => r.json());
+  } catch (e) { toast('生圖失敗：' + e.message); return; }
+  if (res.error) { toast(res.error); return; }
+  const items = res.items || [];
+  const box = $('gen-results');
+  box.classList.add('open');
+  // prepend（新的在前）；同一批內維持選取順序，所以 reverse 後逐一插到最前
+  for (const it of items.slice().reverse()) {
+    const card = document.createElement('div');
+    card.className = 'gr-card pending';
+    card.dataset.gid = it.id;
+    const img = document.createElement('img'); img.alt = '';
+    img.onclick = () => { if (!card.classList.contains('pending')) openGenResult(it.id); };
+    const nm = document.createElement('div'); nm.className = 'gr-name'; nm.textContent = it.name;
+    card.append(img, nm);
+    box.insertBefore(card, box.firstChild);
+  }
+  updateGenResultsN();
+  toast(`生圖 ${items.length} 張，生成中…`);
+  startGenPoll(items.map(x => x.id));
+}
+
+function updateGenResultsN() {
+  const el = $('gen-results-n'); if (!el) return;
+  const n = $('gen-results').querySelectorAll('.gr-card').length;
+  el.textContent = n ? `(${n})` : '';
+}
+
+function startGenPoll(ids) {
+  const pending = new Set(ids);
+  if (_genPoll) clearInterval(_genPoll);
+  const tick = async () => {
+    if (!pending.size) { clearInterval(_genPoll); _genPoll = null; return; }
+    let st;
+    try { st = await fetch('/api/gen-status?ids=' + [...pending].join(',')).then(r => r.json()); }
+    catch (e) { return; }
+    for (const gid of [...pending]) {
+      const s = st[gid]; if (!s) continue;
+      const card = $('gen-results').querySelector(`.gr-card[data-gid="${cssAttr(gid)}"]`);
+      if (s.status === 'done') {
+        if (card) { card.classList.remove('pending'); card.querySelector('img').src = '/api/gen-result?id=' + gid; }
+        pending.delete(gid);
+      } else if (s.status === 'error') {
+        if (card) { card.classList.remove('pending'); card.classList.add('gr-err'); card.querySelector('.gr-name').textContent += ' ✕ ' + (s.err || '失敗'); }
+        pending.delete(gid);
+      }
+    }
+    if (!pending.size) { clearInterval(_genPoll); _genPoll = null; }
+  };
+  tick();
+  _genPoll = setInterval(tick, 2000);
+}
+
+// 點結果縮圖看大圖（沿用 modal；清掉 dataset.rel 讓方向鍵的 modalStep 不誤動詞庫）
+function openGenResult(gid) {
+  const inner = $('modal-inner'); if (!inner) return;
+  delete inner.dataset.rel;
+  inner.innerHTML = `<div><img style="max-width:100%;border-radius:10px;background:#000" src="/api/gen-result?id=${encodeURIComponent(gid)}"></div>`;
+  $('modal').classList.add('open');
+}
 
 function hideBoot() {
   const b = document.getElementById('boot');

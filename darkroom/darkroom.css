@@ -599,6 +599,7 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 .gen-results .gr-card img { width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius: 10px; background: var(--sunk); cursor: pointer; }
 .gen-results .gr-name { font-size: 11px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gen-results .gr-card.pending img { animation: pulse 1.4s ease-in-out infinite; }
+.gen-results .gr-card.gr-err .gr-name { color: var(--err); }
 @keyframes pulse { 0%,100% { opacity: .5; } 50% { opacity: .9; } }
 .toast { position: fixed; left: 50%; bottom: 92px; transform: translate(-50%, 12px);
   background: var(--panel); border: 1px solid var(--line-2); color: var(--ink);

@@ -776,6 +776,91 @@ def do_generate(rel: str, seed: int | None = None, in_batch: bool = False):
 
 
 # ---------------------------------------------------------------------------
+# 「生圖」模式：選詞庫 + LoRA → 注入 LoraLoader 生成，結果只放前端結果區、
+# 不覆蓋詞庫的預覽圖（存在記憶體 _gen_results，供 /api/gen-result 取用）。
+# ---------------------------------------------------------------------------
+def inject_lora(wf: dict, lora_name: str, strength: float):
+    """在工作流插入一個 LoraLoader：把原本吃 checkpoint model([_,0])/clip([_,1]) 的節點
+    改接到它（VAE([_,2]) 不動）。lora_name 用 ComfyUI 認得的 '<folder>\\<file>'。"""
+    ckpt = None
+    for nid, n in wf.items():
+        if isinstance(n, dict) and n.get("class_type") == "CheckpointLoaderSimple":
+            ckpt = str(nid); break
+    if ckpt is None:
+        return
+    lid = "200"
+    while lid in wf:
+        lid = str(int(lid) + 1)
+    wf[lid] = {"class_type": "LoraLoader", "inputs": {
+        "lora_name": lora_name, "strength_model": float(strength), "strength_clip": float(strength),
+        "model": [ckpt, 0], "clip": [ckpt, 1]}}
+    for nid, n in wf.items():
+        if nid == lid or not isinstance(n, dict):
+            continue
+        for k, v in (n.get("inputs") or {}).items():
+            if isinstance(v, list) and len(v) == 2 and str(v[0]) == ckpt:
+                if v[1] == 0:
+                    n["inputs"][k] = [lid, 0]
+                elif v[1] == 1:
+                    n["inputs"][k] = [lid, 1]
+
+
+_gen_results = {}      # gid -> {"bytes", "ctype"}
+_gen_status = {}       # gid -> {"status": pending/done/error, "rel", "name", "err", "seed"}
+_gen_lock = threading.Lock()
+_GEN_MAX = 240         # 結果快取上限，超過砍最舊
+
+
+def _gen_one_worker(gid, rel, lora_name, strength, trigger):
+    with STATE["gen_sem"]:
+        try:
+            if not STATE["comfy_base"]:
+                raise RuntimeError("ComfyUI 未連線")
+            py = py_of(rel)
+            req, pos, neg = load_lib(py)
+            positive = build_prompt(req, pos)
+            if trigger:
+                positive = (positive + ", " + trigger) if positive else trigger
+            negative = build_negative(neg)
+            seed = random.randint(0, 2**63 - 1)
+            wf = prepare_workflow(STATE["template"], positive=positive, negative=negative,
+                                  seed=seed, filename_prefix=f"genmode/{py.stem}"[:180],
+                                  steps=STATE["steps"])
+            if lora_name:
+                inject_lora(wf, lora_name, strength)
+            images = queue_and_wait(STATE["comfy_base"], wf, timeout=STATE["timeout"])
+            data = download_image(STATE["comfy_base"], images[0])
+            with _gen_lock:
+                _gen_results[gid] = {"bytes": data, "ctype": "image/webp"}
+                _gen_status[gid].update(status="done", seed=seed)
+                while len(_gen_results) > _GEN_MAX:
+                    _gen_results.pop(next(iter(_gen_results)), None)
+            plog(f"[genmode] OK {rel} seed={seed}")
+        except Exception as e:
+            with _gen_lock:
+                if gid in _gen_status:
+                    _gen_status[gid].update(status="error", err=f"{type(e).__name__}: {e}")
+            plog(f"[genmode] ERR {rel} {type(e).__name__}: {e}")
+
+
+def start_gen(rels, lora_name, strength, trigger):
+    """為每個 rel 起背景生成，回傳 [{id, rel, name}]（gen_sem 限併發）。"""
+    out = []
+    for rel in rels:
+        gid = os.urandom(6).hex()
+        try:
+            name = strip_rarity(py_of(rel).stem)
+        except Exception:
+            name = rel
+        with _gen_lock:
+            _gen_status[gid] = {"status": "pending", "rel": rel, "name": name, "err": ""}
+        out.append({"id": gid, "rel": rel, "name": name})
+        threading.Thread(target=_gen_one_worker,
+                         args=(gid, rel, lora_name, strength, trigger), daemon=True).start()
+    return out
+
+
+# ---------------------------------------------------------------------------
 # HTTP handler
 # ---------------------------------------------------------------------------
 class Handler(BaseHTTPRequestHandler):
@@ -916,6 +1001,22 @@ class Handler(BaseHTTPRequestHandler):
                 etag = hashlib.sha1(f"{p}|{int(st.st_mtime)}|{st.st_size}".encode("utf-8")).hexdigest()
                 self._send_cacheable(p.read_bytes(), ctype, etag)
                 return
+            if u.path == "/api/gen-status":
+                ids = [x for x in (qs.get("ids", [""])[0]).split(",") if x]
+                with _gen_lock:
+                    out = {gid: {k: v for k, v in _gen_status[gid].items() if k != "rel"}
+                           for gid in ids if gid in _gen_status}
+                self._send_json(out)
+                return
+            if u.path == "/api/gen-result":
+                gid = qs.get("id", [""])[0]
+                with _gen_lock:
+                    r = _gen_results.get(gid)
+                if not r:
+                    self._send_bytes(b"not ready", "text/plain", 404)
+                    return
+                self._send_cacheable(r["bytes"], r["ctype"], gid)
+                return
             self._send_bytes(b"not found", "text/plain", 404)
         except Exception as e:
             self._send_json({"error": f"{type(e).__name__}: {e}"}, 500)
@@ -986,6 +1087,25 @@ class Handler(BaseHTTPRequestHandler):
                 STATE["steps"] = s
                 plog(f"[steps] 生成步數設為 {s}")
                 self._send_json({"ok": True, "steps": s})
+                return
+            if u.path == "/api/gen":
+                # 生圖模式：對選中的詞庫套 LoRA 背景生成，結果進 _gen_results（不覆蓋詞庫預覽）。
+                rels = data.get("rels") or []
+                if not isinstance(rels, list) or not rels:
+                    self._send_json({"error": "沒有選取詞庫"}, 400)
+                    return
+                lora = data.get("lora") or {}
+                lname = ""
+                if lora.get("file"):
+                    lname = (lora["folder"] + "\\" + lora["file"]) if lora.get("folder") else lora["file"]
+                try:
+                    strength = float(data.get("strength", 0.8))
+                except Exception:
+                    strength = 0.8
+                trigger = (data.get("trigger") or "").strip()
+                items = start_gen(rels[:64], lname, strength, trigger)   # 一次最多 64 張保險
+                plog(f"[genmode] 起 {len(items)} 張 · lora={lname or '(無)'} · str={strength}")
+                self._send_json({"ok": True, "items": items})
                 return
             if u.path == "/api/generate":
                 rel = data.get("rel") or ""
