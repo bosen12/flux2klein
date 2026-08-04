@@ -370,7 +370,7 @@ input[type=text]::placeholder { color: var(--faint); }
   overscroll-behavior: contain; overflow: auto;   /* 手機捲動不穿透到背後清單 */
 }
 .tarot-overlay.open { display: flex; animation: fadeIn var(--d-pop) var(--ease-out); }
-.tarot-stage { width: 100%; max-width: 1040px; display: flex; flex-direction: column; align-items: center; gap: 20px; }
+.tarot-stage { width: 100%; max-width: 1160px; display: flex; flex-direction: column; align-items: center; gap: 20px; }
 .tarot-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; flex-wrap: wrap; }
 .tarot-title { font-size: 17px; font-weight: 650; letter-spacing: 2px; color: var(--amber);
                text-shadow: 0 0 16px rgba(234,173,87,.4); }
@@ -381,7 +381,7 @@ input[type=text]::placeholder { color: var(--faint); }
                gap: 18px; perspective: 1100px; }   /* 4 欄 → 8 張自動排成上下各 4 */
 @media (max-width: 760px) { .tarot-cards { grid-template-columns: repeat(2, auto); } }
 .tarot-card {
-  width: clamp(168px, 20vw, 236px); cursor: pointer; position: relative;
+  width: clamp(180px, 22vw, 264px); cursor: pointer; position: relative;
   touch-action: manipulation; -webkit-tap-highlight-color: transparent;   /* 手機：防雙擊縮放、去點按高亮 */
   transform-style: preserve-3d;                  /* 讓卡片的 3D 傾斜與內層翻牌都吃到 perspective */
   /* backwards：發牌動畫結束後回到基準（transform:none），hover 的滑鼠傾斜（JS 內嵌
