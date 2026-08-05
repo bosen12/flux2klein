@@ -1336,7 +1336,27 @@ async function openLoraModal() {
   renderLmList($('lm-search').value, true);
   $('lm-search').focus();
 }
-function closeLoraModal() { $('lora-modal').classList.remove('open'); }
+// 關閉走淡出＋輕微縮小（呼應開啟的 fadeIn+modalPop），不像開啟時瞬間消失。用
+// element.animate() 而不是加 class 再等 animationend——分頁在背景時 finished 不會
+// 結算（CLAUDE.md 記過的老坑），所以另外用 setTimeout 保險收尾。
+function closeLoraModal() {
+  const modal = $('lora-modal');
+  if (!modal.classList.contains('open')) return;
+  if (REDUCE_MOTION || document.visibilityState !== 'visible' || !modal.animate) {
+    modal.classList.remove('open');
+    return;
+  }
+  const inner = modal.querySelector('.lora-modal-inner');
+  const ease = 'cubic-bezier(.4,0,1,1)';   // --ease-in
+  const anims = [modal.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: ease })];
+  if (inner) anims.push(inner.animate(
+    [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.97)' }],
+    { duration: 160, easing: ease }));
+  let done = false;
+  const finish = () => { if (done) return; done = true; modal.classList.remove('open'); };
+  Promise.all(anims.map(a => a.finished)).then(finish).catch(finish);
+  setTimeout(finish, 260);
+}
 $('lora-panel-btn').onclick = openLoraModal;   // topbar 入口（只在生圖模式看得到，見 CSS）
 $('lora-pick-btn').onclick = openLoraModal;    // genbar 摘要鈕，同一個面板
 $('lora-modal-close').onclick = closeLoraModal;
