@@ -1275,7 +1275,7 @@ function openGenTarot(items, picks) {
          <div class="tarot-back"><span class="tarot-emblem">✦</span></div>
          <div class="tarot-front gen-front">
            <img class="gen-live" decoding="async" alt="" onload="this.classList.add('ld')">
-           <div class="gen-spin"></div>
+           <div class="gen-spin"><i class="gen-loader"></i></div>
            <div class="tarot-name"></div>
            <div class="tarot-folder"></div>
            <div class="tarot-glare"></div>

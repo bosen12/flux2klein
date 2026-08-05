@@ -446,16 +446,34 @@ input[type=text]::placeholder { color: var(--faint); }
 .tarot-noimg { aspect-ratio: 1 / 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
                gap: 6px; color: var(--faint); font-size: 12px; background: var(--sunk); }
 .tarot-noimg svg { width: 28px; height: 28px; opacity: .5; }
-/* 生圖抽卡牌面：方形區顯示採樣中的即時預覽（初始無 src → 深底 + 轉圈，預覽到就淡入） */
+/* 生圖抽卡牌面：方形區顯示採樣中的即時預覽（初始無 src → 深底 + 載入動畫，預覽到就淡入） */
 .gen-front .gen-live { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block;
                        position: relative; z-index: 2; background: var(--sunk); }
+/* 載入動畫容器：剛好覆蓋「方形圖」區（非整張牌，含下方文字），用 grid 置中 loader */
 .gen-front .gen-spin {
-  position: absolute; top: calc(50% - 13px); left: calc(50% - 13px); z-index: 3;
-  width: 26px; height: 26px; border-radius: 50%; pointer-events: none;
-  border: 2.5px solid rgba(234,173,87,.22); border-top-color: var(--amber);
-  animation: spin .8s linear infinite;
+  position: absolute; top: 0; left: 0; width: 100%; aspect-ratio: 1 / 1; z-index: 3;
+  display: grid; place-items: center; pointer-events: none;
 }
-.gen-card:not(.pending) .gen-spin { display: none; }   /* 生完不再轉 */
+/* loader（來源 css-loaders l7，改用琥珀黃）：迴圈動畫維持字面時長 */
+.gen-loader {
+  width: 40px; aspect-ratio: 1; color: var(--amber); position: relative;
+  background:
+    conic-gradient(from 134deg at top,    currentColor 92deg, #0000 0) top,
+    conic-gradient(from -46deg at bottom, currentColor 92deg, #0000 0) bottom;
+  background-size: 100% 50%; background-repeat: no-repeat;
+}
+.gen-loader::before {
+  content: ''; position: absolute; inset: 0;
+  --g: currentColor 14.5px, #0000 0 calc(100% - 14.5px), currentColor 0;
+  background: linear-gradient(45deg, var(--g)), linear-gradient(-45deg, var(--g));
+  animation: gen-l7 1.5s infinite cubic-bezier(0.3, 1, 0, 1);
+}
+@keyframes gen-l7 {
+  33%  { inset: -10px; transform: rotate(0deg); }
+  66%  { inset: -10px; transform: rotate(90deg); }
+  100% { inset: 0;     transform: rotate(90deg); }
+}
+.gen-card:not(.pending) .gen-spin { display: none; }   /* 生完不再顯示 */
 .gen-card.gr-err .gen-spin { display: none; }
 .tarot-name { padding: 8px 9px 2px; font-size: 12.5px; font-weight: 600; line-height: 1.3;
               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
