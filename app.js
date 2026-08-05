@@ -197,6 +197,7 @@
     selectEngine('flux2klein');
     connectWS();
     startBgFx();
+    pollLoraPush();   // 要等 selectEngine('flux2klein') 跑完才能開始輪詢，見該函式上方註解
 
     // object_info 很大（約 10MB），改成背景載入，不擋 UI；生成時才需要
     state.objectInfoPromise = fetch(API + '/object_info')
@@ -2841,6 +2842,13 @@ EXPLICIT CONTENT:
      'illustrious'、LoRA 面板 DOM 也不保證已經建好。這裡需要呼叫完馬上就能確定
      切換完成，才能接著抓清單、選 LoRA，所以犧牲掉這個自動觸發路徑的換色動畫，
      換取同步、可預期的完成時機。
+
+     pollLoraPush() 的呼叫點放在 init() 裡 selectEngine('flux2klein') 之後（不是這裡
+     檔案尾端），這是踩過一次真的競態才改的：init() 是 async，await workflow.json
+     這類請求時會整個暫停；若輪詢在這段暫停期間就先抓到推送、把引擎切成
+     illustrious，之後 init() 恢復執行跑到 selectEngine('flux2klein') 會把引擎
+     無條件蓋回 flux2klein，推送的效果被悄悄復原。等 init() 自己的初始引擎設定
+     跑完再開始輪詢就不會有這個問題。
   --------------------------------------------------------------------------- */
   let LORA_PUSH_VER = 0;
   async function pollLoraPush() {
@@ -2872,7 +2880,6 @@ EXPLICIT CONTENT:
     $('lora-field').scrollIntoView({ behavior: 'smooth', block: 'center' });
     log(`已從 LoRA Manager 選入「${match.title || match.name}」`, 'ok');
   }
-  pollLoraPush();
 
   init();
 })();
