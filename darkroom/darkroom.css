@@ -454,25 +454,20 @@ input[type=text]::placeholder { color: var(--faint); }
   position: absolute; top: 0; left: 0; width: 100%; aspect-ratio: 1 / 1; z-index: 3;
   display: grid; place-items: center; pointer-events: none;
 }
-/* loader（來源 css-loaders l7，改用琥珀黃）：迴圈動畫維持字面時長 */
+/* loader（來源 css-loaders l24，三層同心圓不同速旋轉，橘色）：迴圈動畫維持字面時長 */
 .gen-loader {
-  width: 40px; aspect-ratio: 1; color: var(--amber); position: relative;
-  background:
-    conic-gradient(from 134deg at top,    currentColor 92deg, #0000 0) top,
-    conic-gradient(from -46deg at bottom, currentColor 92deg, #0000 0) bottom;
-  background-size: 100% 50%; background-repeat: no-repeat;
+  width: 50px; aspect-ratio: 1; border-radius: 50%;
+  border: 8px solid #0000; border-right-color: #ffa50097;
+  position: relative; animation: gen-l24 1s infinite linear;
 }
-.gen-loader::before {
-  content: ''; position: absolute; inset: 0;
-  --g: currentColor 14.5px, #0000 0 calc(100% - 14.5px), currentColor 0;
-  background: linear-gradient(45deg, var(--g)), linear-gradient(-45deg, var(--g));
-  animation: gen-l7 1.5s infinite cubic-bezier(0.3, 1, 0, 1);
+.gen-loader::before,
+.gen-loader::after {
+  content: ""; position: absolute; inset: -8px;
+  border-radius: 50%; border: inherit;
+  animation: inherit; animation-duration: 2s;
 }
-@keyframes gen-l7 {
-  33%  { inset: -10px; transform: rotate(0deg); }
-  66%  { inset: -10px; transform: rotate(90deg); }
-  100% { inset: 0;     transform: rotate(90deg); }
-}
+.gen-loader::after { animation-duration: 4s; }
+@keyframes gen-l24 { 100% { transform: rotate(1turn); } }
 .gen-card:not(.pending) .gen-spin { display: none; }   /* 生完不再顯示 */
 .gen-card.gr-err .gen-spin { display: none; }
 .tarot-name { padding: 8px 9px 2px; font-size: 12.5px; font-weight: 600; line-height: 1.3;
