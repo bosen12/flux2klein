@@ -1142,6 +1142,22 @@ const GEN_LORA_PAGE_SIZE = 80;          // 每頁列數（總數上百，全渲�
 let GEN_LORA_CAT = 'all';               // 目前選的資料夾分類（見 renderLmCats）
 function loraPreviewUrl(l) { return `/api/lora-preview?folder=${encodeURIComponent(l.folder)}&file=${encodeURIComponent(l.preview)}`; }
 
+// 有些 LoRA 的預覽檔是短片（.mp4/.webm）而不是圖片，要用 <video> 而不是 <img> 渲染。
+function isLoraPreviewVideo(l) { return /\.(mp4|webm)$/i.test(l.preview || ''); }
+
+// 建一個 LoRA 預覽用的 <img> 或 <video>（依副檔名判斷），呼叫端自己 append 進要放的容器。
+function makeLoraPreviewEl(l) {
+  if (isLoraPreviewVideo(l)) {
+    const v = document.createElement('video');
+    v.muted = true; v.loop = true; v.autoplay = true; v.playsInline = true;
+    v.src = loraPreviewUrl(l);
+    return v;
+  }
+  const im = document.createElement('img'); im.loading = 'lazy';
+  im.src = loraPreviewUrl(l);
+  return im;
+}
+
 // 大面板左欄最上面：依資料夾分類的篩選晶片（全部＋各資料夾＋各自張數），跟搜尋框疊加
 // 篩選。點了重繪清單並回第一頁。
 function renderLmCats() {
@@ -1170,10 +1186,20 @@ function renderLmList(filter, resetPage) {
   const box = $('lm-list'); if (!box) return;
   if (resetPage) GEN_LORA_PAGE = 0;
   const q = (filter || '').toLowerCase().trim();
-  const items = (GEN_LORAS || []).filter(l =>
-    (GEN_LORA_CAT === 'all' || l.folder === GEN_LORA_CAT) &&
-    (!q || l.name.toLowerCase().includes(q) || (l.title || '').toLowerCase().includes(q)
-      || (l.trainedWords || []).join(' ').toLowerCase().includes(q)));
+  // 名稱／標題有命中的排前面，只靠 trainedWords 命中的排後面——不然「查名稱完全不相關
+  // 的東西」也會混進來，使用者以為搜尋壞了。無搜尋字串時維持原本依資料夾排序。
+  let items = (GEN_LORAS || []).filter(l => GEN_LORA_CAT === 'all' || l.folder === GEN_LORA_CAT);
+  if (q) {
+    items = items
+      .map(l => {
+        const nameHit = l.name.toLowerCase().includes(q) || (l.title || '').toLowerCase().includes(q);
+        const twHit = (l.trainedWords || []).join(' ').toLowerCase().includes(q);
+        return { l, tier: nameHit ? 0 : (twHit ? 1 : -1) };
+      })
+      .filter(x => x.tier >= 0)
+      .sort((a, b) => a.tier - b.tier)
+      .map(x => x.l);
+  }
   box.innerHTML = '';
   if (!items.length) { box.innerHTML = '<div class="lora-empty">找不到 LoRA</div>'; return; }
   const pages = Math.ceil(items.length / GEN_LORA_PAGE_SIZE);
@@ -1181,9 +1207,10 @@ function renderLmList(filter, resetPage) {
   if (GEN_LORA_PAGE < 0) GEN_LORA_PAGE = 0;
   const page = GEN_LORA_PAGE;
   const shown = items.slice(page * GEN_LORA_PAGE_SIZE, page * GEN_LORA_PAGE_SIZE + GEN_LORA_PAGE_SIZE);
+  // 搜尋時清單已依相關度排序、不再依資料夾連續分組，資料夾標頭意義不大，直接不顯示。
   let curFolder = '';
   for (const l of shown) {
-    if (l.folder !== curFolder) {
+    if (!q && l.folder !== curFolder) {
       curFolder = l.folder;
       const h = document.createElement('div'); h.className = 'lora-cat-head'; h.textContent = curFolder;
       box.appendChild(h);
@@ -1192,9 +1219,7 @@ function renderLmList(filter, resetPage) {
     row.type = 'button';
     row.className = 'lora-row' + (GEN_LORA && GEN_LORA.folder === l.folder && GEN_LORA.file === l.file ? ' on' : '');
     if (l.preview) {
-      const im = document.createElement('img'); im.loading = 'lazy';
-      im.src = loraPreviewUrl(l);
-      row.appendChild(im);
+      row.appendChild(makeLoraPreviewEl(l));
     } else { const ph = document.createElement('span'); ph.className = 'ph'; row.appendChild(ph); }
     const rn = document.createElement('span'); rn.className = 'rn';
     const rt = document.createElement('span'); rt.className = 'rt'; rt.textContent = l.title || l.name;
@@ -1243,7 +1268,7 @@ function renderLmCurrent() {
   box.innerHTML = '';
   if (!GEN_LORA) { box.innerHTML = '<div class="lm-none">尚未選擇 LoRA——從左邊清單點一個</div>'; return; }
   const head = document.createElement('div'); head.className = 'lm-cur-head';
-  if (GEN_LORA.preview) { const im = document.createElement('img'); im.src = loraPreviewUrl(GEN_LORA); head.appendChild(im); }
+  if (GEN_LORA.preview) { head.appendChild(makeLoraPreviewEl(GEN_LORA)); }
   else { const ph = document.createElement('span'); ph.className = 'ph'; head.appendChild(ph); }
   const meta = document.createElement('div');
   const t = document.createElement('div'); t.className = 'lm-cur-title'; t.textContent = GEN_LORA.title || GEN_LORA.name;
@@ -1287,9 +1312,9 @@ function renderLmCurrent() {
   if (GEN_LORA.preview) {
     const pv = document.createElement('div'); pv.className = 'lm-preview';
     pv.style.animationDelay = (tailDelay + 60) + 'ms';
-    const im = document.createElement('img'); im.loading = 'lazy'; im.alt = '';
-    im.src = loraPreviewUrl(GEN_LORA);
-    pv.appendChild(im);
+    const pvEl = makeLoraPreviewEl(GEN_LORA);
+    if (isLoraPreviewVideo(GEN_LORA)) pvEl.controls = true;
+    pv.appendChild(pvEl);
     box.appendChild(pv);
   }
 }

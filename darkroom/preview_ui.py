@@ -298,8 +298,10 @@ LORA_ROOT = Path(os.environ.get(
 ))
 LORA_FOLDERS = ["style", "Character", "HENTAI", "illus"]
 LORA_PREVIEW_EXTS = (".preview.png", ".preview.jpeg", ".preview.jpg", ".preview.webp",
-                     ".png", ".jpg", ".jpeg", ".webp")
+                     ".preview.mp4", ".preview.webm",
+                     ".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm")
 mimetypes.add_type("image/webp", ".webp")   # 有些 Python 的 mimetypes 不認 webp
+LORA_VIDEO_EXTS = (".mp4", ".webm")   # 有些 LoRA 的預覽是短片，前端要改用 <video> 渲染
 
 
 _lora_cache = {"data": None, "at": 0.0}
