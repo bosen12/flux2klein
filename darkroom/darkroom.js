@@ -1103,6 +1103,7 @@ document.querySelectorAll('.rar-pick').forEach(b =>
 /* ── 生圖模式：多選詞庫 + 選一個 LoRA（可預覽）+ 強度 + 觸發詞（多組可選）→ 生圖。 ── */
 let GEN_LORAS = null;                 // /api/loras 的 items（快取）
 let GEN_LORA = null;                  // 選中的 LoRA
+let GEN_LORA_PAGE = 0;                // LoRA 清單目前頁（搜尋變動時歸零，見 renderGenLoraList）
 let GEN_STRENGTH = 0.8;
 const GEN_TW_PICKS = new Set();       // 選中的觸發詞組索引
 // 這個分頁的識別碼：生圖時帶給後端，讓「刷新/關閉這個分頁」只取消自己送的生圖，別的分頁不受影響。
@@ -1122,16 +1123,23 @@ function updateGenbar() {
   const run = $('gen-run'); if (run) run.disabled = n === 0;
 }
 
-function renderGenLoraList(filter) {
+const GEN_LORA_PAGE_SIZE = 80;          // 每頁列數（總數上百，全渲染會卡；改翻頁而非截斷丟資料）
+function loraPreviewUrl(l) { return `/api/lora-preview?folder=${encodeURIComponent(l.folder)}&file=${encodeURIComponent(l.preview)}`; }
+
+function renderGenLoraList(filter, resetPage) {
   const box = $('lora-list'); if (!box) return;
+  if (resetPage) GEN_LORA_PAGE = 0;
   const q = (filter || '').toLowerCase().trim();
   const items = (GEN_LORAS || []).filter(l =>
     !q || l.name.toLowerCase().includes(q) || (l.title || '').toLowerCase().includes(q)
     || (l.trainedWords || []).join(' ').toLowerCase().includes(q));
   box.innerHTML = '';
   if (!items.length) { box.innerHTML = '<div class="lora-empty">找不到 LoRA</div>'; return; }
-  const CAP = 80;                        // 一次最多渲染 80 列（總數上百，全渲染會卡）
-  const shown = items.slice(0, CAP);
+  const pages = Math.ceil(items.length / GEN_LORA_PAGE_SIZE);
+  if (GEN_LORA_PAGE >= pages) GEN_LORA_PAGE = pages - 1;
+  if (GEN_LORA_PAGE < 0) GEN_LORA_PAGE = 0;
+  const page = GEN_LORA_PAGE;
+  const shown = items.slice(page * GEN_LORA_PAGE_SIZE, page * GEN_LORA_PAGE_SIZE + GEN_LORA_PAGE_SIZE);
   let curFolder = '';
   for (const l of shown) {
     if (l.folder !== curFolder) {
@@ -1144,8 +1152,10 @@ function renderGenLoraList(filter) {
     row.className = 'lora-row' + (GEN_LORA && GEN_LORA.folder === l.folder && GEN_LORA.file === l.file ? ' on' : '');
     if (l.preview) {
       const im = document.createElement('img'); im.loading = 'lazy';
-      im.src = `/api/lora-preview?folder=${encodeURIComponent(l.folder)}&file=${encodeURIComponent(l.preview)}`;
+      im.src = loraPreviewUrl(l);
       row.appendChild(im);
+      row.addEventListener('mouseenter', () => showLoraHover(l, row));
+      row.addEventListener('mouseleave', hideLoraHover);
     } else { const ph = document.createElement('span'); ph.className = 'ph'; row.appendChild(ph); }
     const rn = document.createElement('span'); rn.className = 'rn';
     const rt = document.createElement('span'); rt.className = 'rt'; rt.textContent = l.title || l.name;
@@ -1154,12 +1164,35 @@ function renderGenLoraList(filter) {
     row.addEventListener('click', () => selectGenLora(l));
     box.appendChild(row);
   }
-  if (items.length > shown.length) {
-    const more = document.createElement('div'); more.className = 'lora-empty';
-    more.textContent = `還有 ${items.length - shown.length} 個——打字搜尋縮小範圍`;
-    box.appendChild(more);
+  if (pages > 1) {
+    const nav = document.createElement('div'); nav.className = 'lora-pager';
+    const prev = document.createElement('button'); prev.type = 'button'; prev.className = 'lora-page-btn';
+    prev.textContent = '‹ 上一頁'; prev.disabled = page === 0;
+    const info = document.createElement('span'); info.className = 'lora-page-info';
+    info.textContent = `第 ${page + 1} / ${pages} 頁 · 共 ${items.length} 個`;
+    const next = document.createElement('button'); next.type = 'button'; next.className = 'lora-page-btn';
+    next.textContent = '下一頁 ›'; next.disabled = page >= pages - 1;
+    prev.addEventListener('click', (e) => { e.stopPropagation(); GEN_LORA_PAGE = page - 1; renderGenLoraList(filter); box.scrollTop = 0; });
+    next.addEventListener('click', (e) => { e.stopPropagation(); GEN_LORA_PAGE = page + 1; renderGenLoraList(filter); box.scrollTop = 0; });
+    nav.append(prev, info, next);
+    box.appendChild(nav);
   }
 }
+
+// 滑鼠移到 LoRA 列上浮出大一點的預覽圖（沿用主面板 KLEIN 的 #lora-hover 樣式與定位邏輯）。
+function showLoraHover(l, row) {
+  let h = document.getElementById('lora-hover');
+  if (!h) { h = document.createElement('div'); h.id = 'lora-hover'; h.className = 'lora-hover'; document.body.appendChild(h); }
+  if (!l.preview) return;
+  h.innerHTML = ''; const im = document.createElement('img'); im.src = loraPreviewUrl(l); h.appendChild(im);
+  const r = row.getBoundingClientRect(), w = 180;
+  let left = r.right + 10;
+  if (left + w > window.innerWidth) left = r.left - w - 10;   // 右側放不下改放左側
+  h.style.left = Math.max(8, left) + 'px';
+  h.style.top = Math.min(r.top, window.innerHeight - 240) + 'px';
+  h.style.display = 'block';
+}
+function hideLoraHover() { const h = document.getElementById('lora-hover'); if (h) h.style.display = 'none'; }
 
 function selectGenLora(l) {
   GEN_LORA = l;
@@ -1167,6 +1200,7 @@ function selectGenLora(l) {
   GEN_TW_PICKS.clear();
   if (tw.length) GEN_TW_PICKS.add(0);   // 預設選第一組觸發詞
   $('lora-pop').style.display = 'none';
+  hideLoraHover();
   renderGenCurrent();
 }
 
@@ -1203,16 +1237,16 @@ function genTriggerText() {
 
 $('lora-pick-btn').onclick = async () => {
   const pop = $('lora-pop');
-  if (pop.style.display !== 'none') { pop.style.display = 'none'; return; }
+  if (pop.style.display !== 'none') { pop.style.display = 'none'; hideLoraHover(); return; }
   pop.style.display = '';                                  // 先開，避免第一次 await 5s 像凍住
   if (!GEN_LORAS) $('lora-list').innerHTML = '<div class="lora-empty">載入中…</div>';
   $('lora-search').focus();
   await fetchGenLoras();
-  renderGenLoraList($('lora-search').value);
+  renderGenLoraList($('lora-search').value, true);
 };
-$('lora-search').addEventListener('input', () => renderGenLoraList($('lora-search').value));
+$('lora-search').addEventListener('input', () => renderGenLoraList($('lora-search').value, true));
 document.addEventListener('pointerdown', (e) => {
-  if ($('lora-pop').style.display !== 'none' && !$('lora-pick').contains(e.target)) $('lora-pop').style.display = 'none';
+  if ($('lora-pop').style.display !== 'none' && !$('lora-pick').contains(e.target)) { $('lora-pop').style.display = 'none'; hideLoraHover(); }
 });
 $('gen-strength').addEventListener('input', (e) => {
   GEN_STRENGTH = parseFloat(e.target.value);
