@@ -19,7 +19,11 @@ import subprocess
 import sys
 import pathlib
 
-import groq_proxy   # 同目錄，純標準庫的 Groq 多 key 代理
+# groq_proxy.py 留在專案根目錄（同時被 KLEIN 面板與這支語音助理共用，見
+# 2026-08 整理專案結構時的說明），這支腳本住在 voice-assistant/ 底下，
+# 得先把根目錄加進 sys.path 才 import 得到。
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+import groq_proxy   # 根目錄，純標準庫的 Groq 多 key 代理
 
 BASE = pathlib.Path(__file__).resolve().parent
 VENV = pathlib.Path(r"C:\projects\s2s")

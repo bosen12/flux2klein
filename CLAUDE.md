@@ -8,6 +8,8 @@
 
 **依賴政策（2026-07-29 起放寬）**：可以使用第三方前端函式庫來提升體驗（例如 WebGL 背景用的 `three.min.js` + `vanta.fog.min.js`），但必須：① **本機 vendored**——把 min.js 檔案下載進專案，不掛外部 CDN（面板可能離線跑）；② 加進 `serve.py` 的 `STATIC_FILES` 與 `VERSIONED_ASSETS`；③ 在 `index.html` 用 `?v=1` 引用（serve.py 會換成雜湊）；④ 尊重 `prefers-reduced-motion`、並提供退化方案（WebGL 失敗時要能 fallback）。仍然**不引入 build step / npm / 前端框架**。
 
+**專案結構（2026-08 整理）**：根目錄只留 KLEIN 面板本體（`serve.py`/`app.js`/`index.html`/各引擎設定與 workflow）。三個獨立資料夾：`darkroom/`（詞庫暗房，`preview_ui.py` 等全部併進去，見下方檔案職責）、`voice-assistant/`（語音助理＋LiveTalking 數字人）、`design-ref/`（hero_demo.html 等純設計參考，非面板一部分）。`config.js`／`groq_proxy.py` 因為同時被面板與語音助理共用，**留在根目錄**沒有跟著搬——改動這兩個檔案時要記得兩邊都會受影響。詳細檔案清單見 [README.md](README.md) 的「檔案結構」一節。
+
 ## 怎麼跑與怎麼驗證
 
 ```bash
@@ -54,7 +56,9 @@ API 格式的範本在啟動時一次 fetch 進 `state.zTemplates`，送出前 d
 | `zimage.js` / `krea2.js` / `illustrious.js` | 各引擎設定：模型檔名、模式、節點對照、增強分支 |
 | `config.js` | Groq API key。**已 gitignore**，不要提交，也不要把 key 寫回程式碼 |
 | `styles.css` | 樣式。設計 token 在 `:root`，各引擎主題色用 `:root[data-engine="..."]` 覆寫 |
-| `hero_demo.html` | **設計參考，不是面板的一部分。** 獨立單檔，用 `file://` 直接開；刻意不列入 `STATIC_FILES`，不要把它加進去 |
+| `design-ref/hero_demo.html` | **設計參考，不是面板的一部分。** 獨立單檔，用 `file://` 直接開；刻意不列入 `STATIC_FILES`，不要把它加進去 |
+| `darkroom/preview_ui.py` | 詞庫暗房後端，獨立工具（見上「專案結構」）。改路徑相關程式碼前先確認 `Path(__file__).resolve().parent` 現在指的是 `darkroom/`，不是根目錄 |
+| `groq_proxy.py` | Groq 多 key 輪替代理。留根目錄（跟 `config.js` 同層），被面板 AI 優化與 `voice-assistant/` 的語音助理／LiveTalking 三邊共用 |
 
 ## 引擎設定的結構
 
@@ -82,6 +86,8 @@ API 格式的範本在啟動時一次 fetch 進 `state.zTemplates`，送出前 d
 涉及**模型行為、token 限制、提示詞寫法**這類聲明時，要上網查證再寫進程式碼或 system prompt，不要憑記憶。這份專案已經因此出過錯（見下方 77 token 那條）。
 
 ## 踩過的坑
+
+**搬檔案前先找出所有靠 `Path(__file__).resolve().parent` 算出來的路徑常數。** 2026-08 把散在根目錄的暗房相關檔案整理進 `darkroom/` 時，`preview_ui.py` 裡有好幾個常數都是這樣算的（`CONFIG_PATH`／`META_DIR`／`.thumb_cache` 的 `THUMB_DIR`／舊遷移檔 `FLAGS_OLD_PATH`）——這些**因為所有相關檔案跟著一起搬，不用改**；但 `DARKROOM_DIR = Path(__file__).resolve().parent / "darkroom"` 原本是「往下找子資料夾」，`preview_ui.py` 本身搬進 `darkroom/` 之後這行必須改成直接是自己的目錄，不然會去找不存在的 `darkroom/darkroom/`。另外 `serve.py` 讀 `darkroom/preview_config.json` 的 `_prompts_root_default()` 也要跟著改路徑（它跟 `preview_ui.py` 不同目錄，讀的是同一份設定檔）——這種**兩支腳本各自用 `Path(__file__)` 算路徑、但读同一份共用檔**的模式最容易漏改，因為兩邊都「看起來沒錯」（各自都能正常算出一個路徑），只是其中一邊算出來的路徑檔案不存在，會靜默 fallback 成內建預設值而不是報錯。搬檔案時務必對每一個路徑常數想清楚：這個檔案的其他相關檔案有沒有跟著搬？
 
 **PreviewImage 的輸出會被結果區過濾掉。** `addResults()` 會跳過 `type === 'temp'` 的圖片，而 `PreviewImage` 節點回傳的正是 `temp`。要讓成品出現在結果區，workflow 裡必須用 `SaveImage`（需要 `filename_prefix`）。Illustrious 原本六個輸出全是 `PreviewImage`，導致生成完全沒有成品。
 

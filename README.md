@@ -139,12 +139,12 @@ python serve.py 127.0.0.1:8188 8190     # 面板改用 8190
 **需要先啟動語音服務**（獨立於面板）：
 
 ```bash
-python start_assistant.py
+python voice-assistant/start_assistant.py
 ```
 
-管線是 VAD（Silero）→ STT（Whisper large-v3-turbo）→ LLM（Groq）→ TTS（Qwen3-TTS），除 LLM 外都在本機跑。首次啟動會下載模型權重，需要 NVIDIA 顯示卡與 CUDA 版 PyTorch（缺環境時腳本會印出建立步驟）。
+或直接雙擊 `voice-assistant/start_assistant.bat`。管線是 VAD（Silero）→ STT（Whisper large-v3-turbo）→ LLM（Groq）→ TTS（Qwen3-TTS），除 LLM 外都在本機跑。首次啟動會下載模型權重，需要 NVIDIA 顯示卡與 CUDA 版 PyTorch（缺環境時腳本會印出建立步驟）。
 
-**自訂音色**：把一段自己的錄音轉成 24kHz 單聲道 wav 放進 `voices/`，改 `start_assistant.py` 上方的 `REF_AUDIO` 即可。預設走 x-vector 聲紋模式，不需要提供逐字稿。`voices/` 已 gitignore——聲音樣本不進版控。
+**自訂音色**：把一段自己的錄音轉成 24kHz 單聲道 wav 放進 `voice-assistant/voices/`，改 `voice-assistant/start_assistant.py` 上方的 `REF_AUDIO` 即可。預設走 x-vector 聲紋模式，不需要提供逐字稿。`voice-assistant/voices/` 已 gitignore——聲音樣本不進版控。
 
 > 只克隆你自己或已取得同意的聲音。未經同意複製他人（尤其是公眾人物）的聲音在許多地區有法律風險。
 
@@ -157,32 +157,32 @@ python start_assistant.py
 | 你要幹嘛 | 開哪個 | 有對嘴嗎 |
 |---|---|---|
 | 陪聊 | LiveTalking | ✅ |
-| 叫助理操作面板生圖 | `start_assistant.py` | ❌ 只有音量驅動頭像 |
+| 叫助理操作面板生圖 | `voice-assistant/start_assistant.py` | ❌ 只有音量驅動頭像 |
 
 Windows 雙擊即可（會自動啟動 Groq 多 key 代理）：
 
 | bat | 說明 |
 |---|---|
-| `start_livetalking_edge.bat` | EdgeTTS 雲端語音。**先用這個驗證**，啟動快、省顯存 |
-| `start_livetalking_qwen.bat` | 本地 Qwen3-TTS **你的克隆音色**，全在本機跑 |
+| `voice-assistant/start_livetalking_edge.bat` | EdgeTTS 雲端語音。**先用這個驗證**，啟動快、省顯存 |
+| `voice-assistant/start_livetalking_qwen.bat` | 本地 Qwen3-TTS **你的克隆音色**，全在本機跑 |
 
 啟動後開 `http://127.0.0.1:8010/index.html`，按「開始連接」，在文字框打字送出即可。本地音色模式**第一次連線要等約 16 秒**載入並預熱模型（之後合成比即時快約 3 倍）。
 
-環境與模型的完整搭建步驟、實測數字與已知問題見 [LiveTalking.md](LiveTalking.md)。LiveTalking 是第三方 repo，我們的改動用 `python livetalking_patch.py` 套用（冪等，上游更新後重跑即可還原）。
+環境與模型的完整搭建步驟、實測數字與已知問題見 [LiveTalking.md](voice-assistant/LiveTalking.md)。LiveTalking 是第三方 repo，我們的改動用 `python voice-assistant/livetalking_patch.py` 套用（冪等，上游更新後重跑即可還原）。
 
 ---
 
 ## 詞庫暗房（預覽圖產生器）
 
-`preview_ui.py` 是一個**獨立工具**，用來幫 `special_prompts` 的每個詞庫透過 ComfyUI 生成 `.webp` 預覽圖（也就是 Illustrious 詞庫選單 hover 顯示的那些圖）。深色「暗房」介面：左側資料夾導覽（含覆蓋率條）、縮圖牆、點圖看大圖與正/負向 prompt、單張或**批次**補齊缺圖／重生、資料夾／缺圖／已有／名稱篩選。
+`darkroom/preview_ui.py` 是一個**獨立工具**（跟前端檔案、暗房的 Python「大腦」都收在 `darkroom/` 底下，2026-08 整理專案結構時把散在根目錄的暗房相關檔案全部併過去），用來幫 `special_prompts` 的每個詞庫透過 ComfyUI 生成 `.webp` 預覽圖（也就是 Illustrious 詞庫選單 hover 顯示的那些圖）。深色「暗房」介面：左側資料夾導覽（含覆蓋率條）、縮圖牆、點圖看大圖與正/負向 prompt、單張或**批次**補齊缺圖／重生、資料夾／缺圖／已有／名稱篩選。
 
-- **啟動**：跑 `preview_ui.bat`（或 `python preview_ui.py`），預設開在 `http://localhost:7860/`。要真的生成圖需先開 ComfyUI。詞庫很多時開頁/重整要幾秒（掃描＋渲染），會先顯示一個**科技感載入畫面**（相機光圈 logo 自轉＋掃描光弧＋掃描進度條），載入完自動淡出。頁面品牌與分頁圖示（favicon）都用**相機光圈**當 logo。
-- **面板按鈕**：主面板頂部「AI Assistant」旁有「**詞庫暗房**」按鈕，點了用新視窗開這個工具（不嵌入面板）。工具沒啟動的話新視窗會連不上——先跑 `preview_ui.bat`。
-- **設定**：機器相關路徑放 `preview_config.json`（已 gitignore，複製 `preview_config.example.json` 來改）——`special_dir`（詞庫資料夾，預設指向 `C:\projects\special_prompts`）、`comfy`、`workflow`、`port` 等。**面板的詞庫選單（`serve.py`）也讀同一個 `special_dir`**，所以兩邊看的是同一份詞庫。
-- **兩份詞庫別搞混**：`preview_ui.bat`（`special_prompts`）與 `preview_ui_animebot.bat`（`animebot\special_prompts`）**共用同一個 port 7860、一次只能開一個**。改名等操作在後端就被限制在啟動時的 `special_dir` 內、**動不到另一份**；但兩個頁面長得一樣，所以頂列會顯示**目前操作的資料夾**（如 `animebot/special_prompts`），切換 bat 時看一眼就知道現在是哪份。
+- **啟動**：跑 `darkroom/preview_ui.bat`（或 `python darkroom/preview_ui.py`），預設開在 `http://localhost:7860/`。要真的生成圖需先開 ComfyUI。詞庫很多時開頁/重整要幾秒（掃描＋渲染），會先顯示一個**科技感載入畫面**（相機光圈 logo 自轉＋掃描光弧＋掃描進度條），載入完自動淡出。頁面品牌與分頁圖示（favicon）都用**相機光圈**當 logo。
+- **面板按鈕**：主面板頂部「AI Assistant」旁有「**詞庫暗房**」按鈕，點了用新視窗開這個工具（不嵌入面板）。工具沒啟動的話新視窗會連不上——先跑 `darkroom/preview_ui.bat`。
+- **設定**：機器相關路徑放 `darkroom/preview_config.json`（已 gitignore，複製 `darkroom/preview_config.example.json` 來改）——`special_dir`（詞庫資料夾，預設指向 `C:\projects\special_prompts`）、`comfy`、`workflow`、`port` 等。**面板的詞庫選單（`serve.py`）也讀同一個 `special_dir`**（從 `darkroom/preview_config.json` 讀），所以兩邊看的是同一份詞庫。
+- **兩份詞庫別搞混**：`darkroom/preview_ui.bat`（`special_prompts`）與 `darkroom/preview_ui_animebot.bat`（`animebot\special_prompts`）**共用同一個 port 7860、一次只能開一個**。改名等操作在後端就被限制在啟動時的 `special_dir` 內、**動不到另一份**；但兩個頁面長得一樣，所以頂列會顯示**目前操作的資料夾**（如 `animebot/special_prompts`），切換 bat 時看一眼就知道現在是哪份。
 - **「重掃」鈕的用途**：詞庫清單在伺服器端有快取，開頁／重整都直接吃快取（秒回）。**在暗房外面新增或刪除詞庫檔之後，按「重掃」才會看到**（重掃是唯一會重走檔案系統的操作，約 1 秒）。快取超過 60 秒會自動在背景更新，不會擋住畫面；用暗房自己生成的圖則是立刻反映，不用重掃。
-- **收藏**：每張縮圖右上角有**星號**，點一下就收藏（金色實心星常駐）、再點取消。桌面平常藏起、hover 卡片才浮現，已收藏的則一直亮著。收藏清單存後端 `favorites.json`（已 gitignore，跟品質旗標 `flags.json` 同一套機制），只記錄、不影響抽卡與顯示。
-- **稀有度**：四個等級——`普通版`（灰、無光環）、`稀有版`（黃光）、`特別版`（藍光）、`傳奇版`（彩色循環光暈）。存**側檔** `.darkroom_meta/rarities.<dataset>.json`（不改檔名，見打標頁一節），格線與**抽卡**都會顯示對應顏色的光暈＋角標。舊版寫在檔名前綴（`傳奇版xxx.py`）的檔案仍會被辨識、顯示名稱自動去掉前綴。
+- **收藏**：每張縮圖右上角有**星號**，點一下就收藏（金色實心星常駐）、再點取消。桌面平常藏起、hover 卡片才浮現，已收藏的則一直亮著。收藏清單存後端 `darkroom/favorites.json`（已 gitignore，跟品質旗標 `darkroom/flags.json` 同一套機制），只記錄、不影響抽卡與顯示。
+- **稀有度**：四個等級——`普通版`（灰、無光環）、`稀有版`（黃光）、`特別版`（藍光）、`傳奇版`（彩色循環光暈）。存**側檔** `darkroom/.darkroom_meta/rarities.<dataset>.json`（不改檔名，見打標頁一節），格線與**抽卡**都會顯示對應顏色的光暈＋角標。舊版寫在檔名前綴（`傳奇版xxx.py`）的檔案仍會被辨識、顯示名稱自動去掉前綴。
 - **稀有度分布條**：覆蓋率條下方一排晶片，顯示目前資料夾／搜尋範圍內各等級的數量（全部／未標／普通／稀有／特別／傳奇，帶色點），點一下只看該等級、再點「全部」清除。暗房與打標頁都有；切資料夾時數字即時更新，是分布概覽也是篩選。
 - **卡片聚光＋傳奇火花**（參考 Aceternity、以 vanilla 重現）：滑鼠移到縮圖上會有一圈**跟著游標的琥珀柔光**；**傳奇**卡（格線與抽卡）會多一層**閃爍火花**點綴。
 - **瀏覽/打標模式切換**：暗房與打標**合併成同一頁**，頂列有「✦ 瀏覽 · 🏷 打標」分段切換，切模式是**頁內瞬間切換、不換頁**——共用按鈕（切換鈕/抽卡/重掃/連線）位置固定不位移、覆蓋率條兩模式都在所以圖片不上下跳，只有各自的控制項柔和交叉淡入。切模式用同文件 View Transitions。頁內**切資料夾、稀有度篩選、缺圖/已有篩選、搜尋**時，只有格線交叉淡入（較快、220ms），不再硬切。**點縮圖開大圖**時，縮圖會**平滑放大**成大圖（shared-element morph）、關閉時縮回原位。動效與主面板同一套 token；開啟系統「減少動態效果」時自動關閉、直接切。
@@ -192,7 +192,7 @@ Windows 雙擊即可（會自動啟動 Groq 多 key 代理）：
 用**詞庫 + LoRA** 生圖來試效果的模式，跟瀏覽/打標**在同一頁**（頂列「✦ 瀏覽 · 🏷 打標 · 🎨 生圖」切換）。
 
 - **多選詞庫**：點縮圖多選（跟打標一樣，可全選/清除）。
-- **選 LoRA（大面板）**：topbar「🧩」鈕（**只在生圖模式顯示**，位置緊接在「🖼 圖庫」右邊）或 genbar「🧩 選 LoRA」都會開同一個**置中大面板**——左欄**資料夾分類晶片**（全部／各分類＋張數，先粗篩）＋搜尋（再細篩）＋**翻頁**（每頁 80 個，總數上百不會卡也不會截斷丟資料，清單可正常滾動）＋預覽縮圖清單（縮圖直接放大顯示在列上，不用 hover 才跳一張大圖；**選中的那列會有左側琥珀色細條**常駐標示，跟單純滑鼠移過去的效果分得清楚）；右欄是選中 LoRA 的**每段觸發詞各自一張完整文字卡**（**不截斷**，長的段落也整段讀得完，一眼看懂哪段在講什麼）＋勾選要用哪幾段＋強度滑桿＋**放大版參考圖**（在強度滑桿下方，完整顯示不裁切，不用另外點開或 hover）。選一個 LoRA 時，縮圖/標題→每段觸發詞卡（小 stagger 依序浮現）→強度／參考圖 依序淡入，讀起來有層次而不是整塊瞬間換掉；清單本身翻頁/篩選/搜尋切換也有淡入。選擇即時生效，關閉（✕／Esc／點背景）只是收起檢視。LoRA 清單/預覽由 `preview_ui.py` 直接讀 ComfyUI 的 `loras` 資料夾（同 `serve.py` 的路徑，`LORA_ROOT` 可覆寫）。
+- **選 LoRA（大面板）**：topbar「🧩」鈕（**只在生圖模式顯示**，位置緊接在「🖼 圖庫」右邊）或 genbar「🧩 選 LoRA」都會開同一個**置中大面板**——左欄**資料夾分類晶片**（全部／各分類＋張數，先粗篩）＋搜尋（再細篩）＋**翻頁**（每頁 80 個，總數上百不會卡也不會截斷丟資料，清單可正常滾動）＋預覽縮圖清單（縮圖直接放大顯示在列上，不用 hover 才跳一張大圖；**選中的那列會有左側琥珀色細條**常駐標示，跟單純滑鼠移過去的效果分得清楚）；右欄是選中 LoRA 的**每段觸發詞各自一張完整文字卡**（**不截斷**，長的段落也整段讀得完，一眼看懂哪段在講什麼）＋勾選要用哪幾段＋強度滑桿＋**放大版參考圖**（在強度滑桿下方，完整顯示不裁切，不用另外點開或 hover）。選一個 LoRA 時，縮圖/標題→每段觸發詞卡（小 stagger 依序浮現）→強度／參考圖 依序淡入，讀起來有層次而不是整塊瞬間換掉；清單本身翻頁/篩選/搜尋切換也有淡入。選擇即時生效，關閉（✕／Esc／點背景）只是收起檢視。LoRA 清單/預覽由 `darkroom/preview_ui.py` 直接讀 ComfyUI 的 `loras` 資料夾（同 `serve.py` 的路徑，`LORA_ROOT` 可覆寫）。
 - **生圖**：點「🎨 生圖」→ 對每個選中詞庫，用其正/負向 +（選的）LoRA 觸發詞、**注入一個 LoraLoader** 到暗房工作流（底模就是 `waiIllustriousSDXL_v170`，Illustrious LoRA 相容）送 ComfyUI 生成。
 - **抽卡生圖**：先選好 LoRA，點「✦ 抽卡」→ 從**全分類**（不限目前資料夾/搜尋範圍）**隨機抽 8 個詞庫**（手機一張），用**塔羅發牌動畫**呈現（跟瀏覽抽卡同一套），每張牌面**即時顯示生成中的採樣畫面**、生完換成成品；點卡片看大圖（大圖疊在牌上，關掉回到那批牌、不會消失），`R` 重抽新的一批來生。
 - **鍵盤 `R` 抽卡**：任何模式下（焦點不在輸入框、未開大圖/抽卡浮層時）按 `R` 就直接抽卡——依目前模式：瀏覽=看圖、打標=逐張標、生圖=抽詞庫來生。
@@ -206,9 +206,9 @@ Windows 雙擊即可（會自動啟動 Groq 多 key 代理）：
 
 稀有度共四級：**普通版／稀有版／特別版／傳奇版**（`普通版` 只有灰色角標、無光環，用途是「看過確認是普通、別再被抽到」）。
 
-**稀有度存側檔、不改檔名**：標註寫進 `.darkroom_meta/rarities.<dataset>.json`（跟品質旗標、收藏同一套機制），**不再動到 `.py` 檔名**。好處：即時生效、隨時可改可清、不會撞名、檔名保持乾淨（主面板詞庫選單不會出現前綴）。舊版把稀有度寫在檔名前綴（`傳奇版xxx.py`）的檔案**檔名不動、自動沿用**，之後在此頁改的以側檔為準。
+**稀有度存側檔、不改檔名**：標註寫進 `darkroom/.darkroom_meta/rarities.<dataset>.json`（跟品質旗標、收藏同一套機制），**不再動到 `.py` 檔名**。好處：即時生效、隨時可改可清、不會撞名、檔名保持乾淨（主面板詞庫選單不會出現前綴）。舊版把稀有度寫在檔名前綴（`傳奇版xxx.py`）的檔案**檔名不動、自動沿用**，之後在此頁改的以側檔為準。
 
-**兩個 bat 各自獨立**：`preview_ui.bat` 與 `preview_ui_animebot.bat` 指向不同的 `special_dir`，側檔（旗標／收藏／稀有度）**依 special_dir 分檔**，兩份詞庫的標註互不干擾。
+**兩個 bat 各自獨立**：`darkroom/preview_ui.bat` 與 `darkroom/preview_ui_animebot.bat` 指向不同的 `special_dir`，側檔（旗標／收藏／稀有度）**依 special_dir 分檔**，兩份詞庫的標註互不干擾。
 
 標註方式（**即時生效**，像收藏星號那樣，不需要確認步驟）：左側選資料夾、主區點縮圖多選（跨資料夾保留選取），下方點稀有度就**立刻**把選取的標成該級（含「移除標記」）；卡片馬上亮起對應光環／角標、選取清空可繼續下一批。
 
@@ -256,9 +256,13 @@ Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188
 
 ## 檔案結構
 
+2026-08 整理過專案結構：根目錄只留 **KLEIN 面板本體**（最常用、最多東西依賴它），暗房、語音助理／LiveTalking、設計參考各自收進獨立資料夾。`serve.py`／`darkroom/preview_ui.py`／`voice-assistant/groq_proxy.py`(留根目錄) 之間有幾個共用檔案（`config.js`、`darkroom/preview_config.json`），拆資料夾時特別處理過路徑，見下方各表格附註。
+
+### 根目錄（KLEIN 面板本體）
+
 | 檔案 | 用途 |
 |------|------|
-| `serve.py` | 同源反向代理伺服器 |
+| `serve.py` | 同源反向代理伺服器（面板、暗房、助理、LiveTalking 都經過它轉發） |
 | `index.html` | 面板頁面 |
 | `styles.css` | 樣式（繁體中文、淺色主題、各引擎主題色） |
 | `app.js` | 主邏輯：表單、上傳、遮罩、WebSocket 進度、AI 優化 |
@@ -273,12 +277,48 @@ Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188
 | `illustrious.json` | Illustrious workflow（API 格式） |
 | `three.min.js` | Three.js r134（Vanta 依賴，vendored） |
 | `vanta.fog.min.js` | Vanta.js FOG WebGL 背景（vendored） |
-| `preview_ui.py` | 詞庫暗房：獨立工具的後端（供 `darkroom/` 靜態檔＋ `/api/*`，見上節） |
-| `darkroom/` | 暗房前端（瀏覽/生成 ＋ 打標**合併成一頁**）：`index.html` / `darkroom.css` / `darkroom.js`。舊網址 `/tag` 保留，回同一頁並自動進打標模式 |
-| `generate_special_previews.py` | 暗房的 ComfyUI 生成邏輯（`preview_ui.py` 依賴） |
-| `preview_ui.bat` | 啟動詞庫暗房 |
-| `preview_config.example.json` | 暗房設定範本（複製成 `preview_config.json`，後者已 gitignore） |
-| `config.js` | 本地設定（API Key，不進版控） |
+| `config.js` | 本地設定（Groq API Key，不進版控）。**面板 AI 優化、`groq_proxy.py`、語音助理都讀這份**，所以留根目錄，沒有跟著語音助理搬進 `voice-assistant/` |
+| `groq_proxy.py` | Groq 多 key 輪替代理（429 打到上限自動換下一把）。同時被面板 AI 優化與 `voice-assistant/` 的語音助理／LiveTalking 用，是三邊共用的檔案，所以留根目錄 |
+| `_test_convert.js` | 離線驗證 `converter.js` 的 UI→API 轉換，`node _test_convert.js` 從根目錄執行 |
+| `start.bat` / `start_https.bat` | 啟動面板（後者走 HTTPS，手機麥克風要用） |
+| `panel_funnel.bat` / `panel_funnel_off.bat` | Tailscale funnel 開關（讓面板能從外網連） |
+| `stop_panel.bat` | 停掉 `serve.py` |
+| `cert.pem` / `key.pem` / `cert.pem.san` | HTTPS 自簽憑證（已 gitignore，每台機器自己產） |
+
+### `darkroom/`（詞庫暗房：獨立工具，自己一整套）
+
+| 檔案 | 用途 |
+|------|------|
+| `preview_ui.py` | 暗房後端（靜態檔＋`/api/*`，見上節） |
+| `generate_special_previews.py` | 暗房的 ComfyUI 生成邏輯（`preview_ui.py` 依賴，同目錄 sibling import） |
+| `index.html` / `darkroom.css` / `darkroom.js` | 暗房前端（瀏覽/生成 ＋ 打標**合併成一頁**）。舊網址 `/tag` 保留，回同一頁並自動進打標模式 |
+| `preview_ui.bat` | 啟動詞庫暗房（`special_prompts`） |
+| `preview_ui_animebot.bat` | 啟動詞庫暗房（改讀 `animebot\special_prompts`，同 port 一次只能開一個） |
+| `preview_config.example.json` | 暗房設定範本（複製成同目錄的 `preview_config.json`，後者已 gitignore）。**`serve.py` 也讀這份**（`darkroom/preview_config.json` 的 `special_dir`），兩邊詞庫選單同步 |
+| `.darkroom_meta/` | 依 dataset 分檔的旗標／收藏／稀有度側檔（已 gitignore） |
+| `.thumb_cache/` | 縮圖快取（已 gitignore） |
+| `flags.json` / `favorites.json` | 舊版共用檔，僅供首次遷移用（現行資料在 `.darkroom_meta/`，這兩份已是歷史遺留、不影響功能） |
+
+### `voice-assistant/`（語音助理／LiveTalking 數字人）
+
+| 檔案 | 用途 |
+|------|------|
+| `start_assistant.py` / `start_assistant.bat` | 啟動語音助理（見上「AI 助理」一節） |
+| `LiveTalking.md` | LiveTalking 環境搭建、實測數字、已知問題 |
+| `start_livetalking.bat` | LiveTalking 共用啟動腳本（`start_livetalking_edge.bat`／`start_livetalking_qwen.bat` 呼叫它） |
+| `start_livetalking_edge.bat` / `start_livetalking_qwen.bat` | 兩種 TTS 模式的啟動捷徑 |
+| `livetalking_patch.py` | 把 `livetalking/` 底下維護的原始檔套進外部 LiveTalking clone（冪等） |
+| `livetalking/` | 我們維護的 LiveTalking 補丁原始檔（`llm.py`、`qwen3local.py`） |
+| `patch_s2s.py` | 修補外部 `speech-to-speech`（s2s）套件，語音助理管線用 |
+| `voices/` | 聲音克隆參考音檔（已 gitignore，屬個人生物特徵資料） |
+
+### `design-ref/`（設計參考，非面板一部分）
+
+| 檔案 | 用途 |
+|------|------|
+| `hero_demo.html` | 首頁視覺設計參考，獨立單檔用 `file://` 直接開，不進 `serve.py` 的 `STATIC_FILES` |
+| `logo_options.html` | logo 設計選項比較頁 |
+| `logo.png` | logo 原始圖檔 |
 
 ---
 

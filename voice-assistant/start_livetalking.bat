@@ -15,7 +15,9 @@ rem ============================================================
 
 set "LT_DIR=C:\projects\LiveTalking"
 set "LT_PY=E:\lt\Scripts\python.exe"
-set "PANEL_DIR=%~dp0"
+rem groq_proxy.py 留在專案根目錄（跟 config.js 一起，KLEIN 面板也在用），這支 bat
+rem 住在 voice-assistant\ 底下，PANEL_DIR 要往上一層才對得到 groq_proxy.py。
+set "PANEL_DIR=%~dp0.."
 set "PROXY_PORT=8756"
 
 rem --- TTS mode comes from the wrapper; default to EdgeTTS ---

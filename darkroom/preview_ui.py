@@ -357,9 +357,10 @@ def lora_preview_path(folder: str, fn: str):
 
 
 # ---------------------------------------------------------------------------
-# 前端靜態檔（拆成 darkroom/ 資料夾，跟主面板一樣分 html/css/js，不再內嵌字串）
-# ---------------------------------------------------------------------------
-DARKROOM_DIR = Path(__file__).resolve().parent / "darkroom"
+# 前端靜態檔（html/css/js，跟主面板一樣分開，不再內嵌字串）。preview_ui.py 本身現在
+# 就住在 darkroom/ 裡（2026-08 整理專案結構時跟前端檔案併到同一層），DARKROOM_DIR
+# 直接是自己的目錄，不再是子資料夾。
+DARKROOM_DIR = Path(__file__).resolve().parent
 STATIC_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/index.html": ("index.html", "text/html; charset=utf-8"),

@@ -15,7 +15,7 @@ key，撞到 Groq 每日 token 上限（429 rate_limit_exceeded）整條就斷�
   當下攔到、換 key；200 之後才 chunked 轉發 body。
 - 記住目前用到第幾把，下次從那把開始，不必每次都從撞頂的第一把重試。
 
-可獨立跑（python groq_proxy.py），或被 start_assistant.py import 後
+可獨立跑（python groq_proxy.py），或被 voice-assistant/start_assistant.py import 後
 用 start(keys, port) 在背景執行緒起代理。
 """
 import http.server

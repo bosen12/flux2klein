@@ -85,7 +85,7 @@ if USE_HTTPS:
     sys.argv = [a for a in sys.argv if a != "--https"]
 
 COMFY_HOST, COMFY_PORT, LISTEN_PORT = parse_args()
-# 語音服務（start_assistant.py）跑在本機這個埠。助理的 WebSocket 由本代理
+# 語音服務（voice-assistant/start_assistant.py）跑在本機這個埠。助理的 WebSocket 由本代理
 # 同源轉發過去——手機走 HTTPS 面板時才能用（同源 wss、無混合內容，麥克風也可用）。
 ASST_HOST, ASST_PORT = "127.0.0.1", 8765
 # LiveTalking（對嘴數字人）跑在這個埠。助理講話時把 TTS 音訊送去 /humanaudio
@@ -107,10 +107,11 @@ LORA_FOLDERS = ["style", "Character", "HENTAI", "illus"]
 # 每個 .py 是一組情境提示詞（REQUIRED_POSITIVE / POSITIVE / NEGATIVE 三個 list），
 # 旁邊可能有同名 .webp 預覽圖。面板用 ast 安全解析（只取那三個 list，不 import／不執行）。
 # 路徑來源優先序：環境變數 PROMPTS_ROOT > preview_config.json 的 special_dir >
-# 內建預設。這樣詞庫選單（這裡）跟詞庫暗房（preview_ui.py）指向同一份資料。
-# 分類子夾動態掃描（略過 __ 開頭）。
+# 內建預設。這樣詞庫選單（這裡）跟詞庫暗房（preview_ui.py）指向同一份資料——
+# preview_config.json 跟著 preview_ui.py 住在 darkroom/ 底下（2026-08 整理專案結構），
+# 不是跟這支 serve.py 同一層，讀取路徑要往那邊找。
 def _prompts_root_default():
-    cfg = os.path.join(BASE, "preview_config.json")
+    cfg = os.path.join(BASE, "darkroom", "preview_config.json")
     if os.path.isfile(cfg):
         try:
             import json as _json
@@ -726,7 +727,7 @@ def handle(client, ssl_ctx=None):
             # 助理語音 WS：同源代理到本機語音服務，路徑改寫成它期望的 /v1/realtime。
             # 手機走 HTTPS 面板時，這條走同源 wss，本代理做 TLS 終止再轉明文到 8765。
             initial = rewrite_request_path(initial, "/v1/realtime")
-            proxy_upstream(client, initial, ASST_HOST, ASST_PORT, True, "語音服務（請先啟動 start_assistant.py）")
+            proxy_upstream(client, initial, ASST_HOST, ASST_PORT, True, "語音服務（請先啟動 voice-assistant/start_assistant.py）")
         elif path in LT_PATHS and not is_ws:
             # 對嘴數字人：同源轉發到 LiveTalking。路徑原樣送過去，不改寫。
             proxy_upstream(client, initial, LT_HOST, LT_PORT, False,
