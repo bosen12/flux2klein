@@ -595,7 +595,6 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 .lora-row { display: flex; align-items: center; gap: 9px; padding: 6px 8px; border-radius: 8px;
   cursor: pointer; text-align: left; border: 0; background: transparent; color: var(--ink); }
 .lora-row:hover, .lora-row.on { background: var(--amber-soft); }
-.lora-row img, .lora-row .ph { width: 34px; height: 34px; border-radius: 6px; object-fit: cover; flex: none; background: var(--sunk); }
 .lora-row .rn { flex: 1; min-width: 0; }
 .lora-row .rt { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lora-row .rf { font-size: 10px; color: var(--faint); font-family: var(--mono); }
@@ -610,18 +609,6 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 .lora-page-btn:hover:not(:disabled) { border-color: var(--amber); color: var(--amber); background: var(--amber-soft); }
 .lora-page-btn:disabled { opacity: .4; cursor: default; }
 .lora-page-info { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
-/* 滑鼠移到有預覽的 LoRA 列上，浮出稍大一點的預覽圖（不擋互動，pointer-events:none）。
-   用 opacity/transform 過渡而非 display 硬切——進場慢收（--d-ui + ease-entrance）、
-   退場快走（--d-micro + ease-in，時長比進場短），跟專案其他浮層退場的節奏一致。
-   換列快速滑過時（先 mouseleave 舊列再 mouseenter 新列）過渡會平滑反向接上，不會閃爍。 */
-.lora-hover { position: fixed; z-index: 60; width: 180px; border-radius: 10px; overflow: hidden;
-  border: 1px solid var(--line-2); box-shadow: var(--shadow); background: var(--panel); pointer-events: none;
-  opacity: 0; transform: translateY(-6px);
-  transition: opacity var(--d-micro) var(--ease-in), transform var(--d-micro) var(--ease-in); }
-.lora-hover.show { opacity: 1; transform: none;
-  transition: opacity var(--d-ui) var(--ease-entrance), transform var(--d-ui) var(--ease-entrance); }
-.lora-hover img { display: block; width: 100%; height: auto; }
-@media (prefers-reduced-motion: reduce) { .lora-hover, .lora-hover.show { transition: none; } }
 /* ---- 生成圖庫視圖：由「🖼 圖庫」鈕切換，蓋掉詞庫格線；本次生成、新→舊 ---- */
 .gallery-btn.on { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 55%, transparent);
                   background: color-mix(in srgb, var(--amber) 12%, transparent); }
@@ -675,11 +662,26 @@ body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不�
   cursor: pointer; font-size: 15px; transition: color var(--d-micro) var(--ease-out), background var(--d-micro) var(--ease-out); }
 .lora-modal-close:hover { color: var(--ink); background: var(--line-2); }
 
-.lm-left { display: flex; flex-direction: column; border-right: 1px solid var(--line); background: var(--rail); min-width: 0; }
-.lm-search-wrap { position: relative; padding: 14px 14px 10px; flex: none; }
+/* min-height:0 是關鍵：.lm-left 是 CSS Grid 的格子（跟 .lm-right 並排），Grid/Flex 項目
+   預設 min-height 是 auto（＝內容自然高度），沒有這行的話 80 幾列的清單會把 .lm-left
+   撐高到內容全部高度（實測 3900px+），而不是被壓進面板固定的高度裡——結果整個面板往下
+   撐爆，清單本身反而量不出可捲動的高度，滾輪自然沒有用。這是 grid/flex 子項目常見的
+   「內容撐爆容器」陷阱，加 min-height:0 讓它乖乖被 grid 列高度壓住，內層 .lm-list 的
+   overflow-y:auto 才吃得到剩餘高度、滾輪/捲軸才會動。 */
+.lm-left { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: var(--rail); min-width: 0; }
+.lm-cats { display: flex; flex-wrap: wrap; gap: 6px; padding: 14px 14px 0; flex: none; }
+.lm-cat { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line-2); background: var(--sunk);
+  color: var(--dim); padding: 5px 10px; border-radius: 999px; font-size: 11.5px; cursor: pointer;
+  transition: border-color var(--d-micro) var(--ease-out), background var(--d-micro) var(--ease-out), color var(--d-micro) var(--ease-out); }
+.lm-cat:hover { border-color: var(--line-2); color: var(--ink); }
+.lm-cat.on { border-color: var(--amber); background: var(--amber-soft); color: var(--ink); }
+.lm-cat-n { font-family: var(--mono); font-size: 10px; opacity: .75; }
+.lm-search-wrap { position: relative; padding: 12px 14px 10px; flex: none; }
 .lm-search-wrap svg { position: absolute; left: 24px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--faint); pointer-events: none; }
 .lm-search-wrap input { width: 100%; box-sizing: border-box; padding: 8px 10px 8px 32px; }
 .lm-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 10px; display: flex; flex-direction: column; gap: 2px; }
+/* 清單縮圖直接夠大就看得清楚，不用另外 hover 才跳一張大圖出來——少一層互動、更直觀。 */
+.lora-row img, .lora-row .ph { width: 52px; height: 52px; border-radius: 8px; object-fit: cover; flex: none; background: var(--sunk); }
 
 .lm-right { padding: 20px 22px; overflow-y: auto; min-width: 0; }
 .lm-right-head { font-size: 11px; color: var(--faint); font-family: var(--mono); letter-spacing: .5px; margin-bottom: 10px; }

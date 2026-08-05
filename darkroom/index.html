@@ -42,8 +42,9 @@
   <button class="ghost gallery-btn" id="gallery-btn" title="生成圖庫（本次生成的圖，刷新／關頁即清空）">🖼 圖庫<span class="gallery-n" id="gallery-n"></span></button>
   <!-- LoRA 大面板：只在生圖模式顯示（用 visibility 而非 display，切模式時不擠動旁邊固定的
        圖庫/分段/抽卡/重掃/連線鈕——見 darkroom.css .lora-panel-btn）。圖示鈕、不帶文字，
-       盡量壓低寬度，減少極窄視窗下擠壓其他固定按鈕的風險。 -->
-  <button class="ghost lora-panel-btn" id="lora-panel-btn" title="LoRA 大面板：瀏覽並選擇（完整顯示每段觸發詞）" aria-label="LoRA 大面板">🎨</button>
+       盡量壓低寬度，減少極窄視窗下擠壓其他固定按鈕的風險。用拼圖圖示（LoRA＝可插拔的風格
+       模組），跟「🎨 生圖」模式鈕、「🎨 選 LoRA」摘要鈕的調色盤圖示區分開，不會看混。 -->
+  <button class="ghost lora-panel-btn" id="lora-panel-btn" title="LoRA 大面板：瀏覽並選擇（完整顯示每段觸發詞）" aria-label="LoRA 大面板">🧩</button>
   <div class="seg mode-seg" id="mode-seg" role="group" aria-label="模式">
     <span class="seg-pill" id="mode-pill" aria-hidden="true"></span>
     <button data-mode="browse" class="on" title="瀏覽與生成預覽圖">✦ 瀏覽</button>
@@ -129,7 +130,7 @@
      #lora-modal 大面板（見下方），這裡只留「目前選的是誰」摘要鈕，開的是同一個大面板。 -->
 <div class="tagbar" id="genbar">
   <span class="tagbar-count" id="gen-count">已選 0</span>
-  <button class="ghost" id="lora-pick-btn" title="選一個 LoRA 套用（開大面板）">🎨 選 LoRA</button>
+  <button class="ghost" id="lora-pick-btn" title="選一個 LoRA 套用（開大面板）">🧩 選 LoRA</button>
   <div class="spacer"></div>
   <button class="primary" id="gen-run" disabled>🎨 生圖</button>
 </div>
@@ -147,6 +148,7 @@
   <div class="lora-modal-inner">
     <button class="lora-modal-close" id="lora-modal-close" aria-label="關閉 (Esc)" title="關閉 (Esc)">✕</button>
     <div class="lm-left">
+      <div id="lm-cats" class="lm-cats"></div>
       <div class="lm-search-wrap">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input type="text" id="lm-search" placeholder="搜尋 LoRA…" autocomplete="off">
