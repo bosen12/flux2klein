@@ -87,6 +87,8 @@ API 格式的範本在啟動時一次 fetch 進 `state.zTemplates`，送出前 d
 
 ## 踩過的坑
 
+**`threading.Semaphore` 不保證 FIFO 喚醒順序。** 暗房抽卡生圖（`darkroom/preview_ui.py` 的 `start_gen()`/`_gen_one_worker()`）原本是「每張 rel 各自起一條 thread、全部同時搶同一個 `STATE["gen_sem"]`」，理論上該照排隊順序（＝牌面順序）依序拿到執行名額，但 CPython 的 `Semaphore` 只保證公平釋放不保證誰先醒來——thread 幾乎同時抵達 `acquire()` 時，OS 排程決定誰先搶到，順序沒有保證。使用者反映「抽卡有時候是從第二張開始生圖」，正是這個非決定性競態：牌面 2 的 thread 偶爾比牌面 1 先搶到 semaphore。修法是用 `threading.Event` 把每個 worker 串成鏈（`wait_for`/`mark_started`），逼下一張要等上一張「已經拿到 semaphore」才能開始搶，代價是犧牲一點點理論並發啟動速度，換來嚴格 FIFO。**判斷方法**：這類「大部分時候正常、偶爾亂序」的 bug 很難用眼睛抓到，寫一個獨立的最小重現腳本（起 N 條 thread 搶同一個 semaphore、記錄實際拿到的順序、跑幾十輪）比盯著真實生成的網路請求時序有效率得多。
+
 **搬檔案前先找出所有靠 `Path(__file__).resolve().parent` 算出來的路徑常數。** 2026-08 把散在根目錄的暗房相關檔案整理進 `darkroom/` 時，`preview_ui.py` 裡有好幾個常數都是這樣算的（`CONFIG_PATH`／`META_DIR`／`.thumb_cache` 的 `THUMB_DIR`／舊遷移檔 `FLAGS_OLD_PATH`）——這些**因為所有相關檔案跟著一起搬，不用改**；但 `DARKROOM_DIR = Path(__file__).resolve().parent / "darkroom"` 原本是「往下找子資料夾」，`preview_ui.py` 本身搬進 `darkroom/` 之後這行必須改成直接是自己的目錄，不然會去找不存在的 `darkroom/darkroom/`。另外 `serve.py` 讀 `darkroom/preview_config.json` 的 `_prompts_root_default()` 也要跟著改路徑（它跟 `preview_ui.py` 不同目錄，讀的是同一份設定檔）——這種**兩支腳本各自用 `Path(__file__)` 算路徑、但读同一份共用檔**的模式最容易漏改，因為兩邊都「看起來沒錯」（各自都能正常算出一個路徑），只是其中一邊算出來的路徑檔案不存在，會靜默 fallback 成內建預設值而不是報錯。搬檔案時務必對每一個路徑常數想清楚：這個檔案的其他相關檔案有沒有跟著搬？
 
 **PreviewImage 的輸出會被結果區過濾掉。** `addResults()` 會跳過 `type === 'temp'` 的圖片，而 `PreviewImage` 節點回傳的正是 `temp`。要讓成品出現在結果區，workflow 裡必須用 `SaveImage`（需要 `filename_prefix`）。Illustrious 原本六個輸出全是 `PreviewImage`，導致生成完全沒有成品。

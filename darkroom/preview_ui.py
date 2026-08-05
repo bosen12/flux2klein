@@ -982,8 +982,16 @@ def _gen_cancelled(gid):
         return bool(_gen_status.get(gid, {}).get("cancel"))
 
 
-def _gen_one_worker(gid, rel, lora_name, strength, trigger):
+def _gen_one_worker(gid, rel, lora_name, strength, trigger, wait_for=None, mark_started=None):
+    # wait_for/mark_started 串成一條鏈，逼 gen_sem 照 rels 的順序被搶到——不然多張同時
+    # 起的 thread 搶同一個 semaphore，OS 排程先讓誰醒來沒有保證順序，抽卡偶爾會變成
+    # 「牌面 1 還在等、牌面 2 先開始跑」，使用者感覺像「從第二張開始生圖」。見
+    # start_gen() 呼叫端怎麼串起這條鏈。
+    if wait_for is not None:
+        wait_for.wait()
     with STATE["gen_sem"]:
+        if mark_started is not None:
+            mark_started.set()      # 讓下一張現在才開始搶 gen_sem，保證搶到的順序＝排隊順序
         # 排在信號量後面等的那幾張，若在等待期間被取消（該分頁刷新/關閉）就別再送出去
         if _gen_cancelled(gid):
             with _gen_lock:
@@ -1056,6 +1064,7 @@ def start_gen(rels, lora_name, strength, trigger, client=""):
     """為每個 rel 起背景生成，回傳 [{id, rel, name}]（gen_sem 限併發）。client 記錄是哪個
     分頁送的，供該分頁刷新/關閉時只取消自己這批（見 cancel_client_gen）。"""
     out = []
+    prev_started = None   # 第一張不用等任何人
     for rel in rels:
         gid = os.urandom(6).hex()
         try:
@@ -1066,8 +1075,11 @@ def start_gen(rels, lora_name, strength, trigger, client=""):
             _gen_status[gid] = {"status": "pending", "rel": rel, "name": name, "err": "",
                                 "pv": 0, "cancel": False, "pid": "", "client": client}
         out.append({"id": gid, "rel": rel, "name": name})
+        my_started = threading.Event()
         threading.Thread(target=_gen_one_worker,
-                         args=(gid, rel, lora_name, strength, trigger), daemon=True).start()
+                         args=(gid, rel, lora_name, strength, trigger, prev_started, my_started),
+                         daemon=True).start()
+        prev_started = my_started
     return out
 
 
