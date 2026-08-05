@@ -29,6 +29,11 @@ License：GNU GPL v3（見 `LICENSE`）——只在本機自己用、不重新�
   `sendLoraToDarkroom()`（暗房沒有附加/取代的概念，兩個選單項目現在做同一件事，
   是已知的、可接受的小瑕疵——菜單文字沒有跟著改，優先度不高）。
 
+  （2026-08：`sendLoraToDarkroom()` 進一步擴充成同時推送給暗房與 KLEIN 面板
+  兩個目標——函式名稱沒再改，內部改用 `Promise.allSettled` 平行打兩個端點，
+  合併成一則涵蓋四種成功/失敗組合的 toast。詳見 flux2klein 專案的
+  `docs/superpowers/specs/2026-08-06-lora-manager-to-klein-design.md`。）
+
 **沒有動到的已知範圍**：`BulkContextMenu.js` 的「全部送到 workflow」（多選批次）、
 checkpoint／embedding／recipe 各自的送出路徑，都維持上游原樣——在 standalone 模式
 一樣是原本就壞的（跳警告 toast），沒有變得更差，只是還沒接去暗房。之後真的需要
