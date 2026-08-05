@@ -444,6 +444,14 @@ function reloadModalImage(rel) {
   if (inner && inner.dataset.rel === rel) openModal(rel, false);
 }
 
+// 抽卡點卡片開大圖時，大圖疊在塔羅之上（不關塔羅）；關大圖就回到那批牌而非主頁。
+// 由各開啟點設定：抽卡的卡片設 true、格線縮圖/結果區設 false。
+let MODAL_FROM_TAROT = false;
+function dismissModal() {
+  if (MODAL_FROM_TAROT) { MODAL_FROM_TAROT = false; closeModal(); }   // 露出底下那批抽到的牌
+  else closeModalWithMorph();
+}
+
 function openModal(rel, resetNav = true) {
   const item = ALL.find(x => x.rel === rel);
   if (!item) return;
@@ -473,7 +481,7 @@ function openModal(rel, resetNav = true) {
   $('modal-title').textContent = item.display_name || item.name;
   $('modal-folder').textContent = item.folder || '(根目錄)';
   $('modal-gen').onclick = () => generate(rel);
-  $('modal-close').onclick = closeModalWithMorph;
+  $('modal-close').onclick = dismissModal;
   $('modal').classList.add('open');
   if (item.job && item.job.status) updateStatusEl($('modal-status'), item.job);
   fetch('/api/prompt?rel=' + relEnc).then(r => r.json()).then(j => {
@@ -504,6 +512,7 @@ function closeModal() {
 // modal（大圖經 css 帶 hero-img），新快照只有大圖有名字 → 縮圖平滑長成大圖。
 // 守 REDUCE_MOTION 與 visibilityState（窗格隱藏 callback 不結算，CLAUDE.md 老坑）。
 function openModalFromThumb(rel, thumbImg) {
+  MODAL_FROM_TAROT = false;                 // 格線縮圖開的大圖：關閉走 morph 縮回縮圖
   const item = ALL.find(x => x.rel === rel);
   const canMorph = document.startViewTransition && !REDUCE_MOTION
     && document.visibilityState === 'visible' && item && item.has_image && thumbImg;
@@ -708,10 +717,18 @@ async function pollBatch() {
   }
 }
 
-$('modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModalWithMorph(); });
+$('modal').addEventListener('click', e => { if (e.target.id === 'modal') dismissModal(); });
 $('m-prev').onclick = () => modalStep(-1);
 $('m-next').onclick = () => modalStep(1);
 window.addEventListener('keydown', e => {
+  // 大圖疊在抽卡之上時，鍵盤先歸大圖：Esc 關大圖回到那批牌（而非關掉整個抽卡）
+  if ($('modal').classList.contains('open')) {
+    if (e.key === 'Escape') { dismissModal(); return; }
+    if (MODAL_FROM_TAROT) return;                // 從抽卡開的大圖不左右切（那批牌不在 VISIBLE 裡）
+    if (e.key === 'ArrowLeft') modalStep(-1);
+    else if (e.key === 'ArrowRight') modalStep(1);
+    return;
+  }
   if ($('tarot').classList.contains('open')) {
     if (e.key === 'Escape') { closeTarot(); return; }
     if (MODE === 'tag') {                                  // 抽卡打標：全鍵盤逐張標
@@ -738,10 +755,6 @@ window.addEventListener('keydown', e => {
     }
     return;
   }
-  if (!$('modal').classList.contains('open')) return;
-  if (e.key === 'Escape') closeModalWithMorph();
-  else if (e.key === 'ArrowLeft') modalStep(-1);
-  else if (e.key === 'ArrowRight') modalStep(1);
 });
 
 /* ---------------- 抽卡（塔羅式發牌 + 翻牌） ---------------- */
@@ -790,7 +803,7 @@ function drawTarot() {
        </div>`;
     card.querySelector('.tarot-name').textContent = it.display_name || it.name;
     card.querySelector('.tarot-folder').textContent = it.folder || '(根目錄)';
-    card.addEventListener('click', () => { closeTarot(); openModal(it.rel); });
+    card.addEventListener('click', () => { MODAL_FROM_TAROT = true; openModal(it.rel); });   // 大圖疊上層，關掉回到這批牌
     if (!REDUCE) {                                        // 3D 傾斜（參考 Aceternity 3D card）
       card.addEventListener('mousemove', e => tiltCard(card, e));
       card.addEventListener('mouseleave', () => { card.style.transform = ''; });
@@ -1227,7 +1240,7 @@ async function runGen(rels, tarotItems) {
     card.className = 'gr-card pending';
     card.dataset.gid = it.id;
     const img = document.createElement('img'); img.alt = '';
-    img.onclick = () => { if (!card.classList.contains('pending')) openGenResult(it.id); };
+    img.onclick = () => { if (!card.classList.contains('pending')) { MODAL_FROM_TAROT = false; openGenResult(it.id); } };   // 結果區開的大圖：正常關閉
     const nm = document.createElement('div'); nm.className = 'gr-name'; nm.textContent = it.name;
     card.append(img, nm);
     box.insertBefore(card, box.firstChild);
@@ -1267,7 +1280,7 @@ function openGenTarot(items, picks) {
        </div>`;
     card.querySelector('.tarot-name').textContent = item.display_name || item.name || it.name;
     card.querySelector('.tarot-folder').textContent = item.folder || '(根目錄)';
-    card.addEventListener('click', () => { if (!card.classList.contains('pending')) { closeTarot(); openGenResult(it.id); } });
+    card.addEventListener('click', () => { if (!card.classList.contains('pending')) { MODAL_FROM_TAROT = true; openGenResult(it.id); } });   // 疊上層，關掉回到這批牌
     if (!REDUCE) {
       card.addEventListener('mousemove', e => tiltCard(card, e));
       card.addEventListener('mouseleave', () => { card.style.transform = ''; });
@@ -1295,10 +1308,9 @@ function applyGenState(gid, s) {
     if (s.status === 'done') {
       card.classList.remove('pending');
       if (img) img.src = '/api/gen-result?id=' + gid;
-    } else if (s.status === 'error' || s.status === 'cancelled') {
+    } else if (s.status === 'error') {
       card.classList.remove('pending'); card.classList.add('gr-err');
-      const nm = card.querySelector('.gr-name');
-      if (nm && !nm.dataset.tag) { nm.dataset.tag = '1'; nm.textContent += s.status === 'cancelled' ? ' · 已取消' : (' ✕ ' + (s.err || '失敗')); }
+      const nm = card.querySelector('.gr-name'); if (nm) nm.textContent += ' ✕ ' + (s.err || '失敗');
     } else if (img && (s.pv || 0) > (+card.dataset.pv || 0)) {
       // 有新的採樣預覽才換 src（pv 遞增），避免每 2s 無謂重載
       card.dataset.pv = s.pv;
@@ -1318,21 +1330,13 @@ function startGenPoll(ids) {
     for (const gid of [...pending]) {
       const s = st[gid]; if (!s) continue;
       applyGenState(gid, s);
-      if (s.status === 'done' || s.status === 'error' || s.status === 'cancelled') pending.delete(gid);
+      if (s.status === 'done' || s.status === 'error') pending.delete(gid);
     }
     if (!pending.size) { clearInterval(_genPoll); _genPoll = null; }
   };
   tick();
   _genPoll = setInterval(tick, 2000);
 }
-
-// 網頁關閉/刷新時，通知後端停掉在途生圖（別再送出排隊的、並中斷正在跑的），避免關了
-// 頁面 ComfyUI 還一直生。用 sendBeacon 才保證 unload 期間送得出去；只有還有生圖在跑
-// （_genPoll 未清）才送，平常刷新不打擾。pagehide 不像 visibilitychange 會在切分頁時誤觸。
-window.addEventListener('pagehide', () => {
-  if (!_genPoll) return;
-  try { navigator.sendBeacon('/api/gen-cancel', new Blob(['{}'], { type: 'application/json' })); } catch (e) {}
-});
 
 // 點結果縮圖看大圖（沿用 modal；清掉 dataset.rel 讓方向鍵的 modalStep 不誤動詞庫）
 function openGenResult(gid) {

@@ -819,10 +819,6 @@ class _WSHandshakeError(Exception):
     """WS 握手失敗——呼叫端可據此退化成純 HTTP 輪詢（無即時預覽）。"""
 
 
-class _GenCancelled(Exception):
-    """生圖被取消（網頁關閉/刷新）——中止採樣、不取結果。"""
-
-
 def _ws_send(sock, opcode, payload: bytes):
     """送一個 client→server WS frame（規範要求 client frame 一律 masked）。"""
     import struct
@@ -840,8 +836,7 @@ def _ws_send(sock, opcode, payload: bytes):
     sock.sendall(bytes(header) + masked)
 
 
-def _comfy_ws_generate(base: str, wf: dict, timeout: float, on_preview,
-                       should_cancel=None, on_prompt_id=None):
+def _comfy_ws_generate(base: str, wf: dict, timeout: float, on_preview):
     """開 WebSocket 連 ComfyUI、以同一 client_id POST /prompt，邊收採樣預覽邊回呼
     on_preview(bytes, ctype)，執行完成後用 /history 取輸出圖 info 回傳。純標準庫實作的
     最小 WS client（握手＋讀 frame）。握手失敗拋 _WSHandshakeError 讓呼叫端退化。
@@ -911,14 +906,9 @@ def _comfy_ws_generate(base: str, wf: dict, timeout: float, on_preview,
         except Exception: pass
         raise RuntimeError(f"queue 失敗：{result}")
     prompt_id = result["prompt_id"]
-    if on_prompt_id:
-        on_prompt_id(prompt_id)     # 交給呼叫端記錄，取消時才能請 ComfyUI 移除/中斷這個 prompt
 
-    cancelled = False
     try:
         while True:
-            if should_cancel and should_cancel():
-                cancelled = True; break     # 頻繁收到採樣 frame，每收一張就能檢查一次
             opcode, payload = read_frame()
             if opcode == 0x8:            # close
                 break
@@ -945,9 +935,6 @@ def _comfy_ws_generate(base: str, wf: dict, timeout: float, on_preview,
         try: sock.close()
         except Exception: pass
 
-    if cancelled:
-        raise _GenCancelled()
-
     # --- 取輸出圖（executing-done 後 history 可能略慢，短重試）---
     for _ in range(8):
         hist = http_json("GET", f"{base}/history/{prompt_id}", timeout=15)
@@ -965,20 +952,8 @@ def _comfy_ws_generate(base: str, wf: dict, timeout: float, on_preview,
     raise RuntimeError("執行完成但取不到輸出圖")
 
 
-def _gen_cancelled(gid):
-    with _gen_lock:
-        return bool(_gen_status.get(gid, {}).get("cancel"))
-
-
 def _gen_one_worker(gid, rel, lora_name, strength, trigger):
     with STATE["gen_sem"]:
-        # 排在信號量後面等的那幾張，若在等待期間被取消（網頁關掉）就別再送出去
-        if _gen_cancelled(gid):
-            with _gen_lock:
-                if _gen_status.get(gid, {}).get("status") == "pending":
-                    _gen_status[gid].update(status="cancelled")
-            plog(f"[genmode] 略過（已取消）{rel}")
-            return
         try:
             if not STATE["comfy_base"]:
                 raise RuntimeError("ComfyUI 未連線")
@@ -1001,16 +976,9 @@ def _gen_one_worker(gid, rel, lora_name, strength, trigger):
                     if gid in _gen_status:
                         _gen_status[gid]["pv"] = _gen_status[gid].get("pv", 0) + 1
 
-            def on_pid(pid):
-                with _gen_lock:
-                    if gid in _gen_status:
-                        _gen_status[gid]["pid"] = pid
-
             base = STATE["comfy_base"]
             try:
-                images = _comfy_ws_generate(base, wf, STATE["timeout"], on_prev,
-                                            should_cancel=lambda: _gen_cancelled(gid),
-                                            on_prompt_id=on_pid)
+                images = _comfy_ws_generate(base, wf, STATE["timeout"], on_prev)
             except _WSHandshakeError as e:
                 plog(f"[genmode] 無即時預覽（WS 握手失敗：{e}），改純輪詢")
                 images = queue_and_wait(base, wf, timeout=STATE["timeout"])
@@ -1024,12 +992,6 @@ def _gen_one_worker(gid, rel, lora_name, strength, trigger):
                     _gen_results.pop(old, None)
                     _gen_preview.pop(old, None)
             plog(f"[genmode] OK {rel} seed={seed}")
-        except _GenCancelled:
-            with _gen_lock:
-                _gen_preview.pop(gid, None)
-                if gid in _gen_status and _gen_status[gid].get("status") != "done":
-                    _gen_status[gid].update(status="cancelled")
-            plog(f"[genmode] 取消 {rel}")
         except Exception as e:
             with _gen_lock:
                 _gen_preview.pop(gid, None)
@@ -1048,37 +1010,11 @@ def start_gen(rels, lora_name, strength, trigger):
         except Exception:
             name = rel
         with _gen_lock:
-            _gen_status[gid] = {"status": "pending", "rel": rel, "name": name, "err": "",
-                                "pv": 0, "cancel": False, "pid": ""}
+            _gen_status[gid] = {"status": "pending", "rel": rel, "name": name, "err": "", "pv": 0}
         out.append({"id": gid, "rel": rel, "name": name})
         threading.Thread(target=_gen_one_worker,
                          args=(gid, rel, lora_name, strength, trigger), daemon=True).start()
     return out
-
-
-def cancel_all_gen():
-    """取消所有在途生圖（網頁關閉/刷新時呼叫）。等信號量的那幾張標記 cancel 就不會送出；
-    已排進 ComfyUI 的請 ComfyUI 移除排隊中的、並中斷正在跑的——但只針對我們自己的 gen
-    prompt_id，不會誤傷同時在跑的批次預覽生成。"""
-    pids = []
-    with _gen_lock:
-        for gid, s in _gen_status.items():
-            if s.get("status") == "pending":
-                s["cancel"] = True
-                if s.get("pid"):
-                    pids.append(s["pid"])
-    base = STATE.get("comfy_base")
-    if base and pids:
-        try:
-            q = http_json("GET", f"{base}/queue", timeout=10) or {}
-            running = {it[1] for it in (q.get("queue_running") or []) if isinstance(it, list) and len(it) > 1}
-            http_json("POST", f"{base}/queue", {"delete": pids}, timeout=10)   # 移除還在排隊的（ComfyUI 忽略不存在的）
-            if running & set(pids):
-                http_json("POST", f"{base}/interrupt", {}, timeout=10)         # 正在跑的是我們的才中斷
-        except Exception as e:
-            plog(f"[genmode] 取消時通知 ComfyUI 失敗：{e}")
-    plog(f"[genmode] 取消在途生圖（{len(pids)} 筆已在 ComfyUI）")
-    return len(pids)
 
 
 # ---------------------------------------------------------------------------
@@ -1224,9 +1160,8 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if u.path == "/api/gen-status":
                 ids = [x for x in (qs.get("ids", [""])[0]).split(",") if x]
-                skip = {"rel", "pid", "cancel"}   # 內部欄位不外送
                 with _gen_lock:
-                    out = {gid: {k: v for k, v in _gen_status[gid].items() if k not in skip}
+                    out = {gid: {k: v for k, v in _gen_status[gid].items() if k != "rel"}
                            for gid in ids if gid in _gen_status}
                 self._send_json(out)
                 return
@@ -1340,11 +1275,6 @@ class Handler(BaseHTTPRequestHandler):
                 items = start_gen(rels[:64], lname, strength, trigger)   # 一次最多 64 張保險
                 plog(f"[genmode] 起 {len(items)} 張 · lora={lname or '(無)'} · str={strength}")
                 self._send_json({"ok": True, "items": items})
-                return
-            if u.path == "/api/gen-cancel":
-                # 網頁關閉/刷新時由 sendBeacon 打來：停掉所有在途生圖，別再繼續送出。
-                n = cancel_all_gen()
-                self._send_json({"ok": True, "cancelled_queued": n})
                 return
             if u.path == "/api/generate":
                 rel = data.get("rel") or ""

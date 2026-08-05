@@ -318,7 +318,7 @@ input[type=text]::placeholder { color: var(--faint); }
 
 /* ── 大圖 modal ───────────────────────────────────────────────── */
 .modal { position: fixed; inset: 0; background: rgba(8,8,11,.8); backdrop-filter: blur(6px);
-         display: none; align-items: center; justify-content: center; z-index: 100; padding: 24px; }
+         display: none; align-items: center; justify-content: center; z-index: 130; padding: 24px; }   /* 高於抽卡覆蓋層(120)：抽卡點卡片時大圖疊在牌上、關掉回到那批牌 */
 .modal.open { display: flex; animation: fadeIn var(--d-pop) var(--ease-out); }
 .modal-inner { max-width: 1040px; width: 100%; max-height: 92vh; overflow: auto; box-shadow: var(--shadow);
                background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 22px;
