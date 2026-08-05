@@ -1170,17 +1170,6 @@ class Handler(BaseHTTPRequestHandler):
         u = urllib.parse.urlparse(self.path)
         qs = urllib.parse.parse_qs(u.query)
         try:
-            if u.path == "/root-config.js":
-                # config.js（GROQ_API_KEY）留在專案根目錄跟 app.js/voice-assistant 共用
-                # （見 CLAUDE.md），darkroom 住在子資料夾讀不到，這裡代讀一次轉發給前端。
-                # 檔案已 gitignore，本機沒建立時就跟其他缺檔資源一樣回 404，前端翻譯功能
-                # 自己會判斷沒有 key 就不能用，不會整頁掛掉。
-                cfg = DARKROOM_DIR.parent / "config.js"
-                try:
-                    self._send_bytes(cfg.read_bytes(), "application/javascript; charset=utf-8")
-                except OSError:
-                    self._send_bytes(b"// config.js not found", "application/javascript; charset=utf-8", 404)
-                return
             if u.path in STATIC_FILES:
                 fname, ctype = STATIC_FILES[u.path]
                 try:

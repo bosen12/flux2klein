@@ -1142,13 +1142,11 @@ const GEN_LORA_PAGE_SIZE = 80;          // 每頁列數（總數上百，全渲�
 let GEN_LORA_CAT = 'all';               // 目前選的資料夾分類（見 renderLmCats）
 function loraPreviewUrl(l) { return `/api/lora-preview?folder=${encodeURIComponent(l.folder)}&file=${encodeURIComponent(l.preview)}`; }
 
-/* ---------------- 觸發詞卡 hover 翻譯（Groq，跟主面板 app.js 的 AI 優化同一套 key 池）----
-   config.js 留在專案根目錄（跟語音助理共用，見 CLAUDE.md），darkroom 住在子資料夾讀不到，
-   由 preview_ui.py 的 /root-config.js 代讀轉發（見 index.html 的 <script> 順序：一定要在
-   darkroom.js 之前、且不能 defer，才能保證 window.YZ_CONFIG 先設好）。本機沒建立 config.js
-   時 window.YZ_CONFIG 是 undefined，翻譯功能就不能用，不影響其他功能。 */
-const TW_GROQ_KEYS = window.YZ_CONFIG?.GROQ_API_KEYS
-  || (window.YZ_CONFIG?.GROQ_API_KEY ? [window.YZ_CONFIG.GROQ_API_KEY] : []);
+/* ---------------- 觸發詞卡 hover 翻譯（Google 翻譯免費端點，不用 API key）----------------
+   用的是 translate.googleapis.com 的 gtx client（瀏覽器擴充套件常用的免金鑰端點，非官方
+   Cloud Translation API，回應是巢狀 JSON array，Access-Control-Allow-Origin: * 所以瀏覽器
+   直接 fetch 可用）。不保證永遠穩定（Google 隨時可能擋掉/改格式），但不用管使用者有沒有設
+   config.js，開箱即用。 */
 const TW_CACHE_KEY = 'yz-tw-translate';
 const TW_CACHE_MAX = 3000;   // 上限，避免 localStorage 無限長大（觸發詞短語重複率很高，這個上限很夠用）
 let TW_CACHE = null;
@@ -1166,39 +1164,22 @@ function saveTwCache() {
   try { localStorage.setItem(TW_CACHE_KEY, JSON.stringify(TW_CACHE)); } catch {}
 }
 const TW_PENDING = new Map();   // text -> 正在跑的 Promise，同一段文字重覆 hover 不重複打 API
-// 回傳中文翻譯（有快取先吃快取）；沒設 key 直接丟錯，呼叫端自己顯示提示。
+// 回傳中文翻譯（有快取先吃快取）。
 function translateTriggerWord(text) {
   const cache = loadTwCache();
   if (Object.prototype.hasOwnProperty.call(cache, text)) return Promise.resolve(cache[text]);
   if (TW_PENDING.has(text)) return TW_PENDING.get(text);
-  if (!TW_GROQ_KEYS.length) return Promise.reject(new Error('未設定 Groq API Key'));
   const p = (async () => {
-    let lastErr;
-    for (const k of TW_GROQ_KEYS) {
-      let res;
-      try {
-        res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + k },
-          body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile',
-            messages: [
-              { role: 'system', content: 'Translate the given Stable Diffusion / LoRA trigger-word phrase into natural Traditional Chinese (繁體中文). Return ONLY the translation, no quotes, no explanation, no pinyin.' },
-              { role: 'user', content: text },
-            ],
-            temperature: 0.3, max_completion_tokens: 200,
-          }),
-        });
-      } catch (e) { lastErr = e; continue; }
-      if (res.status === 429) { lastErr = new Error('Groq 每日上限（429）'); continue; }
-      if (!res.ok) throw new Error(`Groq API ${res.status}`);
-      const j = await res.json();
-      const zh = (j.choices?.[0]?.message?.content || '').trim();
-      cache[text] = zh;
-      saveTwCache();
-      return zh;
-    }
-    throw lastErr || new Error('沒有可用的 Groq key');
+    const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=zh-TW&dt=t&q='
+      + encodeURIComponent(text);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`翻譯服務 ${res.status}`);
+    const data = await res.json();
+    // 回應格式：[[[譯文, 原文, ...], [下一段, ...], ...], ...]——長句會被切成多段，全部接起來。
+    const zh = (data[0] || []).map(seg => seg[0]).join('').trim();
+    cache[text] = zh;
+    saveTwCache();
+    return zh;
   })();
   TW_PENDING.set(text, p);
   p.finally(() => TW_PENDING.delete(text));
@@ -1232,7 +1213,7 @@ function showTwTip(anchor, text) {
     tip.textContent = zh || '(空)';
   }).catch(e => {
     if (TW_TIP_FOR !== anchor) return;
-    tip.textContent = e.message === '未設定 Groq API Key' ? '未設定 Groq API Key，無法翻譯' : `翻譯失敗：${e.message}`;
+    tip.textContent = `翻譯失敗：${e.message}`;
   });
 }
 function hideTwTip(anchor) {
