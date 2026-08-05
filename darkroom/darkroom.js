@@ -1313,6 +1313,7 @@ function drawGenTarot() {
 // 手動生圖則切到圖庫視圖。startGenPoll 統一更新卡片：pending 抓 /api/gen-preview 顯示採樣
 // 中畫面、done 換成品；同時把 seed/done 回填進 GALLERY 供大圖資訊用。
 let _genPoll = null;
+const GEN_PENDING = new Set();     // 所有還在生的 gid（跨批次共用一個輪詢，避免第二批把第一批的輪詢頂掉）
 async function runGen(rels, tarotItems) {
   rels = rels || [...SEL];
   if (!rels.length) return;
@@ -1412,23 +1413,25 @@ function applyGenState(gid, s) {
   });
 }
 
-function startGenPoll(ids) {
-  const pending = new Set(ids);
-  if (_genPoll) clearInterval(_genPoll);
-  const tick = async () => {
-    if (!pending.size) { clearInterval(_genPoll); _genPoll = null; return; }
-    let st;
-    try { st = await fetch('/api/gen-status?ids=' + [...pending].join(',')).then(r => r.json()); }
-    catch (e) { return; }
-    for (const gid of [...pending]) {
+// 生圖輪詢間隔：ComfyUI 每個採樣步約 0.5s 送一張預覽，後端即時存進 _gen_preview；
+// 前端這裡每 GEN_POLL_MS 抓一次 gen-status，pv 有增才換預覽圖。設 500ms（原本 2000ms）
+// 讓即時預覽幾乎追上 ComfyUI 的出幀速度——再快也超不過 ComfyUI 每步一幀的上限。
+const GEN_POLL_MS = 500;
+async function _genTick() {
+  if (!GEN_PENDING.size) { _genPoll = null; return; }
+  try {
+    const st = await fetch('/api/gen-status?ids=' + [...GEN_PENDING].join(',')).then(r => r.json());
+    for (const gid of [...GEN_PENDING]) {
       const s = st[gid]; if (!s) continue;
       applyGenState(gid, s);
-      if (s.status === 'done' || s.status === 'error' || s.status === 'cancelled') pending.delete(gid);
+      if (s.status === 'done' || s.status === 'error' || s.status === 'cancelled') GEN_PENDING.delete(gid);
     }
-    if (!pending.size) { clearInterval(_genPoll); _genPoll = null; }
-  };
-  tick();
-  _genPoll = setInterval(tick, 2000);
+  } catch (e) { /* 暫時抓失敗就等下一輪 */ }
+  _genPoll = GEN_PENDING.size ? setTimeout(_genTick, GEN_POLL_MS) : null;
+}
+function startGenPoll(ids) {
+  ids.forEach(id => GEN_PENDING.add(id));
+  if (!_genPoll) _genPoll = setTimeout(_genTick, 0);   // 自排程單一輪詢；已在跑就沿用
 }
 
 // 刷新/關閉這個分頁時，只停掉「這個分頁自己」在途的生圖（帶 GEN_CLIENT），別的分頁照跑。
