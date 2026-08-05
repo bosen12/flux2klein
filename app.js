@@ -2829,5 +2829,50 @@ EXPLICIT CONTENT:
     catch (e) { log('桌面通知送出失敗：' + e.message, 'warn'); }   // 不要再默默吞掉
   }
 
+  /* ---------------------------------------------------------------------------
+     LoRA Manager（獨立埠 7861）「送到 workflow」推送過來的 LoRA：跟暗房共用同一套
+     folder/name payload 格式，但走面板自己的 /panel/lora-push（serve.py）。每 1s
+     輪詢版本號，有新版本就自動切 Illustrious、選進 LoRA 欄位——「推進目前開著的
+     分頁」，跟暗房那邊的行為一致。
+
+     這裡直接呼叫 applyEngine() 而不是 selectEngine()：selectEngine 在支援 View
+     Transitions 時會用 document.startViewTransition() 包一層，updateCallback 是
+     排程執行、不是呼叫當下就同步跑完，呼叫完後 state.engine 不保證已經是
+     'illustrious'、LoRA 面板 DOM 也不保證已經建好。這裡需要呼叫完馬上就能確定
+     切換完成，才能接著抓清單、選 LoRA，所以犧牲掉這個自動觸發路徑的換色動畫，
+     換取同步、可預期的完成時機。
+  --------------------------------------------------------------------------- */
+  let LORA_PUSH_VER = 0;
+  async function pollLoraPush() {
+    try {
+      const st = await fetch('/panel/lora-push?since=' + LORA_PUSH_VER).then(r => r.json());
+      if (st.ver > LORA_PUSH_VER) {
+        LORA_PUSH_VER = st.ver;
+        if (st.data) await applyLoraPush(st.data);
+      }
+    } catch (e) { /* 靜默；下一輪再試，不用整個工具連得上才能用 */ }
+    setTimeout(pollLoraPush, 1000);
+  }
+  async function applyLoraPush(d) {
+    if (!ENG.illustrious) { log('Illustrious 引擎設定未載入，收到的 LoRA 推送無法套用', 'err'); return; }
+    state.lora.enabled = true;
+    if (state.engine !== 'illustrious') {
+      applyEngine('illustrious');   // 內部會呼叫 setupLora()，同步 checkbox/面板顯示
+    } else {
+      // 已經在 Illustrious，applyEngine 不會重跑 setupLora，手動同步開關狀態
+      const on = $('lora-on');
+      if (on) on.checked = true;
+      $('lora-toggle').classList.add('on');
+      show('lora-panel', true);
+    }
+    if (state.lora.list === null) await fetchLoras(ENG.illustrious);
+    const match = (state.lora.list || []).find(l => l.name === d.name && (!d.folder || l.folder === d.folder));
+    if (!match) { log(`LoRA Manager 送來的「${d.name}」在這裡的清單找不到——可能還沒重新整理過清單`, 'err'); return; }
+    selectLora(match);
+    $('lora-field').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    log(`已從 LoRA Manager 選入「${match.title || match.name}」`, 'ok');
+  }
+  pollLoraPush();
+
   init();
 })();
