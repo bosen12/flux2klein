@@ -623,8 +623,7 @@ body.gallery-open #gallery-view { display: block; }
 body.gallery-open #grid,
 body.gallery-open #coverbar,
 body.gallery-open #rarity-bar,
-body.gallery-open .main-head,
-body.gallery-open #draw-cards { display: none; }
+body.gallery-open .main-head { display: none; }
 body.gallery-open #genbar,
 body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不顯示底部操作列 */
 
