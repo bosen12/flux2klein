@@ -54,7 +54,7 @@ API 格式的範本在啟動時一次 fetch 進 `state.zTemplates`，送出前 d
 | `app.js` | 主邏輯：表單、上傳、遮罩、WebSocket 進度、對照 overlay、AI 優化 |
 | `converter.js` | Flux2 Klein 專用的 UI→API 轉換器 |
 | `zimage.js` / `krea2.js` / `illustrious.js` | 各引擎設定：模型檔名、模式、節點對照、增強分支 |
-| `config.js` | Groq API key。**已 gitignore**，不要提交，也不要把 key 寫回程式碼 |
+| `config.js` | Groq API key。**已 gitignore**，不要提交，也不要把 key 寫回程式碼。留根目錄，`darkroom/preview_ui.py` 用 `/root-config.js` 路由代讀轉發（讀 `Path(__file__).resolve().parent.parent / "config.js"`）給暗房前端用（觸發詞翻譯），本機沒建這份檔案時該路由回 404、翻譯功能自己顯示「未設定 Groq API Key」，不影響其他功能 |
 | `styles.css` | 樣式。設計 token 在 `:root`，各引擎主題色用 `:root[data-engine="..."]` 覆寫 |
 | `design-ref/hero_demo.html` | **設計參考，不是面板的一部分。** 獨立單檔，用 `file://` 直接開；刻意不列入 `STATIC_FILES`，不要把它加進去 |
 | `darkroom/preview_ui.py` | 詞庫暗房後端，獨立工具（見上「專案結構」）。改路徑相關程式碼前先確認 `Path(__file__).resolve().parent` 現在指的是 `darkroom/`，不是根目錄 |

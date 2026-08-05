@@ -1142,6 +1142,105 @@ const GEN_LORA_PAGE_SIZE = 80;          // 每頁列數（總數上百，全渲�
 let GEN_LORA_CAT = 'all';               // 目前選的資料夾分類（見 renderLmCats）
 function loraPreviewUrl(l) { return `/api/lora-preview?folder=${encodeURIComponent(l.folder)}&file=${encodeURIComponent(l.preview)}`; }
 
+/* ---------------- 觸發詞卡 hover 翻譯（Groq，跟主面板 app.js 的 AI 優化同一套 key 池）----
+   config.js 留在專案根目錄（跟語音助理共用，見 CLAUDE.md），darkroom 住在子資料夾讀不到，
+   由 preview_ui.py 的 /root-config.js 代讀轉發（見 index.html 的 <script> 順序：一定要在
+   darkroom.js 之前、且不能 defer，才能保證 window.YZ_CONFIG 先設好）。本機沒建立 config.js
+   時 window.YZ_CONFIG 是 undefined，翻譯功能就不能用，不影響其他功能。 */
+const TW_GROQ_KEYS = window.YZ_CONFIG?.GROQ_API_KEYS
+  || (window.YZ_CONFIG?.GROQ_API_KEY ? [window.YZ_CONFIG.GROQ_API_KEY] : []);
+const TW_CACHE_KEY = 'yz-tw-translate';
+const TW_CACHE_MAX = 3000;   // 上限，避免 localStorage 無限長大（觸發詞短語重複率很高，這個上限很夠用）
+let TW_CACHE = null;
+function loadTwCache() {
+  if (TW_CACHE) return TW_CACHE;
+  try { TW_CACHE = JSON.parse(localStorage.getItem(TW_CACHE_KEY) || '{}'); }
+  catch { TW_CACHE = {}; }
+  return TW_CACHE;
+}
+function saveTwCache() {
+  const keys = Object.keys(TW_CACHE);
+  if (keys.length > TW_CACHE_MAX) {   // 物件屬性插入順序＝寫入順序，砍最舊的一批
+    for (const k of keys.slice(0, keys.length - TW_CACHE_MAX)) delete TW_CACHE[k];
+  }
+  try { localStorage.setItem(TW_CACHE_KEY, JSON.stringify(TW_CACHE)); } catch {}
+}
+const TW_PENDING = new Map();   // text -> 正在跑的 Promise，同一段文字重覆 hover 不重複打 API
+// 回傳中文翻譯（有快取先吃快取）；沒設 key 直接丟錯，呼叫端自己顯示提示。
+function translateTriggerWord(text) {
+  const cache = loadTwCache();
+  if (Object.prototype.hasOwnProperty.call(cache, text)) return Promise.resolve(cache[text]);
+  if (TW_PENDING.has(text)) return TW_PENDING.get(text);
+  if (!TW_GROQ_KEYS.length) return Promise.reject(new Error('未設定 Groq API Key'));
+  const p = (async () => {
+    let lastErr;
+    for (const k of TW_GROQ_KEYS) {
+      let res;
+      try {
+        res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + k },
+          body: JSON.stringify({
+            model: 'llama-3.3-70b-versatile',
+            messages: [
+              { role: 'system', content: 'Translate the given Stable Diffusion / LoRA trigger-word phrase into natural Traditional Chinese (繁體中文). Return ONLY the translation, no quotes, no explanation, no pinyin.' },
+              { role: 'user', content: text },
+            ],
+            temperature: 0.3, max_completion_tokens: 200,
+          }),
+        });
+      } catch (e) { lastErr = e; continue; }
+      if (res.status === 429) { lastErr = new Error('Groq 每日上限（429）'); continue; }
+      if (!res.ok) throw new Error(`Groq API ${res.status}`);
+      const j = await res.json();
+      const zh = (j.choices?.[0]?.message?.content || '').trim();
+      cache[text] = zh;
+      saveTwCache();
+      return zh;
+    }
+    throw lastErr || new Error('沒有可用的 Groq key');
+  })();
+  TW_PENDING.set(text, p);
+  p.finally(() => TW_PENDING.delete(text));
+  return p;
+}
+
+// 共用的浮動翻譯提示框：貼齊 hover 的觸發詞卡下方，跟著捲動就重新定位。
+let TW_TIP_EL = null, TW_TIP_FOR = null;
+function ensureTwTip() {
+  if (TW_TIP_EL) return TW_TIP_EL;
+  TW_TIP_EL = document.createElement('div');
+  TW_TIP_EL.className = 'tw-tip';
+  document.body.appendChild(TW_TIP_EL);
+  return TW_TIP_EL;
+}
+function positionTwTip(anchor) {
+  const tip = ensureTwTip();
+  const r = anchor.getBoundingClientRect();
+  tip.style.left = r.left + 'px';
+  tip.style.top = (r.bottom + 6) + 'px';
+  tip.style.maxWidth = Math.max(180, r.width) + 'px';
+}
+function showTwTip(anchor, text) {
+  TW_TIP_FOR = anchor;
+  const tip = ensureTwTip();
+  positionTwTip(anchor);
+  tip.textContent = '翻譯中…';
+  tip.classList.add('show');
+  translateTriggerWord(text).then(zh => {
+    if (TW_TIP_FOR !== anchor) return;   // hover 已經換到別段，不要蓋掉
+    tip.textContent = zh || '(空)';
+  }).catch(e => {
+    if (TW_TIP_FOR !== anchor) return;
+    tip.textContent = e.message === '未設定 Groq API Key' ? '未設定 Groq API Key，無法翻譯' : `翻譯失敗：${e.message}`;
+  });
+}
+function hideTwTip(anchor) {
+  if (TW_TIP_FOR !== anchor) return;
+  TW_TIP_FOR = null;
+  if (TW_TIP_EL) TW_TIP_EL.classList.remove('show');
+}
+
 // 有些 LoRA 的預覽檔是短片（.mp4/.webm）而不是圖片，要用 <video> 而不是 <img> 渲染。
 function isLoraPreviewVideo(l) { return /\.(mp4|webm)$/i.test(l.preview || ''); }
 
@@ -1290,6 +1389,8 @@ function renderLmCurrent() {
       const idx = document.createElement('span'); idx.className = 'lm-tw-idx'; idx.textContent = (i + 1) + '.';
       const txt = document.createElement('span'); txt.className = 'lm-tw-text'; txt.textContent = w;
       item.append(cb, idx, txt);
+      item.addEventListener('mouseenter', () => showTwTip(item, w));
+      item.addEventListener('mouseleave', () => hideTwTip(item));
       list.appendChild(item);
     });
     box.appendChild(list);
