@@ -655,31 +655,39 @@ async function ensureRelativeModelPath(modelPath, collectionType) {
 // flux2klein 整合（見 ../../VENDORED.md）：standalone 模式本來就連不到真正的
 // ComfyUI 網頁，sendLoraToWorkflow() 那條「同源 LiteGraph 即時改節點」的路一定會
 // 失敗（/api/lm/get-registry 固定回 Standalone Mode Active，只彈一個沒用的警告
-// toast）。改成直接 POST 給暗房（darkroom/preview_ui.py 的 /api/lora-push），
-// 暗房輪詢偵測到新版本就自動選進生圖大面板——這是「送到 workflow」在這份專案裡
-// 實際做的事。暗房預設 7860，換過 port 要記得改這裡。共用給 ModelCard.js 跟
-// LoraContextMenu.js 兩個呼叫點用，避免各自重複一份 fetch 邏輯。
+// toast）。改成直接 POST 給暗房（darkroom/preview_ui.py 的 /api/lora-push）與
+// KLEIN 面板（serve.py 的 /panel/lora-push）——兩邊各自輪詢，哪邊分頁開著就自動
+// 選中。函式名稱維持 sendLoraToDarkroom（雖然現在語意是「送到兩邊」），改名要跟著
+// 改 ModelCard.js/LoraContextMenu.js 兩個呼叫點，範圍不必要地擴大，用註解說明現況
+// 即可（見 VENDORED.md）。共用給那兩處用，避免各自重複一份 fetch 邏輯。
 const DARKROOM_ORIGIN = 'http://127.0.0.1:7860';
+const KLEIN_ORIGIN = 'http://127.0.0.1:7801';
+
+async function pushLora(origin, path, folder, fileNameNoExt) {
+  const res = await fetch(`${origin}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ folder, name: fileNameNoExt }),
+  });
+  const result = await res.json().catch(() => ({}));
+  if (!(res.ok && result.ok)) throw new Error(result.error || String(res.status));
+}
 
 export async function sendLoraToDarkroom(folder, fileNameNoExt) {
-  try {
-    const res = await fetch(`${DARKROOM_ORIGIN}/api/lora-push`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ folder, name: fileNameNoExt }),
-    });
-    const result = await res.json().catch(() => ({}));
-    if (res.ok && result.ok) {
-      const msg = `已送到暗房：${fileNameNoExt}`;
-      showToast('toast.general.sentToDarkroom', {}, 'success', msg);
-    } else {
-      const msg = `暗房回應失敗：${result.error || res.status}`;
-      showToast('toast.general.sendToDarkroomFailed', {}, 'error', msg);
-    }
-  } catch (error) {
-    console.error('Failed to send LoRA to darkroom:', error);
-    const msg = `連不到暗房（${DARKROOM_ORIGIN}）：${error.message}`;
-    showToast('toast.general.sendToDarkroomFailed', {}, 'error', msg);
+  const [dr, kl] = await Promise.allSettled([
+    pushLora(DARKROOM_ORIGIN, '/api/lora-push', folder, fileNameNoExt),
+    pushLora(KLEIN_ORIGIN, '/panel/lora-push', folder, fileNameNoExt),
+  ]);
+  if (dr.status === 'rejected') console.error('Failed to send LoRA to darkroom:', dr.reason);
+  if (kl.status === 'rejected') console.error('Failed to send LoRA to KLEIN:', kl.reason);
+  if (dr.status === 'fulfilled' && kl.status === 'fulfilled') {
+    showToast('toast.general.sentToDarkroom', {}, 'success', `已送到暗房、KLEIN 面板：${fileNameNoExt}`);
+  } else if (dr.status === 'fulfilled') {
+    showToast('toast.general.sentToDarkroom', {}, 'success', `已送到暗房：${fileNameNoExt}（KLEIN 面板沒連上，略過）`);
+  } else if (kl.status === 'fulfilled') {
+    showToast('toast.general.sentToDarkroom', {}, 'success', `已送到 KLEIN 面板：${fileNameNoExt}（暗房沒連上，略過）`);
+  } else {
+    showToast('toast.general.sendToDarkroomFailed', {}, 'error', `暗房、KLEIN 面板都送失敗：${fileNameNoExt}`);
   }
 }
 
