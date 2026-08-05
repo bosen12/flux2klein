@@ -40,6 +40,10 @@
   <!-- 以下為兩模式共用、位置固定：切模式時寬度不變、不位移 -->
   <!-- 生成圖庫：獨立於模式分段（放左邊、不混進分段）。本次生成、刷新即清空。 -->
   <button class="ghost gallery-btn" id="gallery-btn" title="生成圖庫（本次生成的圖，刷新／關頁即清空）">🖼 圖庫<span class="gallery-n" id="gallery-n"></span></button>
+  <!-- LoRA 大面板：只在生圖模式顯示（用 visibility 而非 display，切模式時不擠動旁邊固定的
+       圖庫/分段/抽卡/重掃/連線鈕——見 darkroom.css .lora-panel-btn）。圖示鈕、不帶文字，
+       盡量壓低寬度，減少極窄視窗下擠壓其他固定按鈕的風險。 -->
+  <button class="ghost lora-panel-btn" id="lora-panel-btn" title="LoRA 大面板：瀏覽並選擇（完整顯示每段觸發詞）" aria-label="LoRA 大面板">🎨</button>
   <div class="seg mode-seg" id="mode-seg" role="group" aria-label="模式">
     <span class="seg-pill" id="mode-pill" aria-hidden="true"></span>
     <button data-mode="browse" class="on" title="瀏覽與生成預覽圖">✦ 瀏覽</button>
@@ -105,21 +109,8 @@
         <h2>🖼 生成圖庫</h2>
         <span class="gallery-sub" id="gallery-sub"></span>
       </div>
-      <div class="gallery-body">
-        <div class="gallery-main">
-          <div id="gallery-grid" class="gallery-grid"></div>
-          <div id="gallery-empty" class="gallery-empty">還沒有生成任何圖 —— 到「🎨 生圖」選詞庫按生圖，或按「✦ 抽卡」隨機生一批。<br>（圖庫是本次生成的暫存，刷新或關頁就清空）</div>
-        </div>
-        <!-- 只在生圖模式開圖庫時出現（見 darkroom.css 的 body.gallery-open[data-mode="gen"] 選擇器）。
-             #genbar 開圖庫時會被 JS 整個搬進來（見 openGallery），關閉時搬回原本的底部列位置——
-             同一份 DOM／事件監聽器，不重複維護兩份 LoRA 狀態。 -->
-        <div id="gallery-lora-panel" class="gallery-lora-panel">
-          <div class="glp-head">
-            <span class="glp-title">🎨 生圖設定</span>
-            <button type="button" class="glp-toggle" id="glp-toggle" aria-label="收合／展開" title="收合／展開">︾</button>
-          </div>
-        </div>
-      </div>
+      <div id="gallery-grid" class="gallery-grid"></div>
+      <div id="gallery-empty" class="gallery-empty">還沒有生成任何圖 —— 到「🎨 生圖」選詞庫按生圖，或按「✦ 抽卡」隨機生一批。<br>（圖庫是本次生成的暫存，刷新或關頁就清空）</div>
     </div>
   </main>
 </div>
@@ -134,22 +125,11 @@
     <button data-r="" class="rar-pick none" disabled>移除標記</button>
   </div>
 </div>
-<!-- 生圖模式底部：選取詞庫 → 選 LoRA（可預覽）＋強度＋觸發詞 → 生圖（結果進結果區） -->
+<!-- 生圖模式底部：選取詞庫 → 選 LoRA → 生圖。LoRA 挑選/trainedWords/強度全部搬進
+     #lora-modal 大面板（見下方），這裡只留「目前選的是誰」摘要鈕，開的是同一個大面板。 -->
 <div class="tagbar" id="genbar">
   <span class="tagbar-count" id="gen-count">已選 0</span>
-  <div class="lora-pick" id="lora-pick">
-    <button class="ghost" id="lora-pick-btn" title="選一個 LoRA 套用">🎨 選 LoRA</button>
-    <div class="lora-pop" id="lora-pop" style="display:none">
-      <input type="text" id="lora-search" placeholder="搜尋 LoRA…" autocomplete="off">
-      <div class="lora-list" id="lora-list"></div>
-    </div>
-  </div>
-  <label class="gen-strength" id="gen-strength-wrap" style="display:none">
-    <span>強度</span>
-    <input type="range" id="gen-strength" min="0" max="1" step="0.05" value="0.8">
-    <output id="gen-strength-out">0.80</output>
-  </label>
-  <div class="gen-tw" id="gen-tw"></div>
+  <button class="ghost" id="lora-pick-btn" title="選一個 LoRA 套用（開大面板）">🎨 選 LoRA</button>
   <div class="spacer"></div>
   <button class="primary" id="gen-run" disabled>🎨 生圖</button>
 </div>
@@ -159,6 +139,25 @@
   <button class="m-nav prev" id="m-prev" aria-label="上一個">‹</button>
   <div class="modal-inner" id="modal-inner"></div>
   <button class="m-nav next" id="m-next" aria-label="下一個">›</button>
+</div>
+
+<!-- LoRA 大面板：搜尋/翻頁挑 LoRA + 完整顯示每段觸發詞（不截斷）+ 強度。選擇即時生效，
+     關閉只是收起檢視。由 topbar「🎨 LoRA」鈕或 genbar「🎨 選 LoRA」鈕開啟，同一個面板。 -->
+<div id="lora-modal" class="lora-modal">
+  <div class="lora-modal-inner">
+    <button class="lora-modal-close" id="lora-modal-close" aria-label="關閉 (Esc)" title="關閉 (Esc)">✕</button>
+    <div class="lm-left">
+      <div class="lm-search-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="text" id="lm-search" placeholder="搜尋 LoRA…" autocomplete="off">
+      </div>
+      <div id="lm-list" class="lm-list"></div>
+    </div>
+    <div class="lm-right">
+      <div class="lm-right-head">目前選擇</div>
+      <div id="lm-current" class="lm-current"></div>
+    </div>
+  </div>
 </div>
 
 <!-- 抽卡：從全部隨機抽 5 張，塔羅式發牌 + 翻牌呈現 -->

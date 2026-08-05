@@ -611,7 +611,7 @@ $('mode-seg').addEventListener('click', e => {
   const btn = e.target.closest('button'); if (!btn) return;
   if (!GALLERY_OPEN && btn.dataset.mode === MODE) return;
   const apply = () => {
-    if (GALLERY_OPEN) { GALLERY_OPEN = false; closeGalleryDom(); }
+    if (GALLERY_OPEN) { GALLERY_OPEN = false; document.body.classList.remove('gallery-open'); $('gallery-btn').classList.remove('on'); }
     switchMode(btn.dataset.mode);
   };
   if (GALLERY_OPEN) switchView(apply);   // 從圖庫切回某模式：交叉淡入
@@ -737,6 +737,10 @@ $('modal').addEventListener('click', e => { if (e.target.id === 'modal') dismiss
 $('m-prev').onclick = () => modalStep(-1);
 $('m-next').onclick = () => modalStep(1);
 window.addEventListener('keydown', e => {
+  if ($('lora-modal').classList.contains('open')) {
+    if (e.key === 'Escape') closeLoraModal();
+    return;
+  }
   // 大圖疊在抽卡之上時，鍵盤先歸大圖：Esc 關大圖回到那批牌（而非關掉整個抽卡）
   if ($('modal').classList.contains('open')) {
     if (e.key === 'Escape') { dismissModal(); return; }
@@ -1108,17 +1112,17 @@ $('sel-clear').onclick = () => { clearSel(); withTransition(render); };
 document.querySelectorAll('.rar-pick').forEach(b =>
   b.addEventListener('click', () => { if (!b.disabled) tagSelected(b.dataset.r); }));
 
-/* ── 生圖模式：多選詞庫 + 選一個 LoRA（可預覽）+ 強度 + 觸發詞（多組可選）→ 生圖。 ── */
+/* ── 生圖模式：多選詞庫 + 選一個 LoRA（大面板，完整顯示每段 trainedWords）+ 強度 → 生圖。 ──
+   面板由 topbar「🎨 LoRA」（只在生圖模式顯示）或 genbar「🎨 選 LoRA」開啟，同一個
+   #lora-modal；左欄搜尋/翻頁/預覽選 LoRA，右欄完整攤開每段 trainedWords（勾選要用哪幾段）
+   ＋強度，選擇即時生效、關閉只是收起檢視，不需要另外「確定」。 */
 let GEN_LORAS = null;                 // /api/loras 的 items（快取）
 let GEN_LORA = null;                  // 選中的 LoRA
-let GEN_LORA_PAGE = 0;                // LoRA 清單目前頁（搜尋變動時歸零，見 renderGenLoraList）
+let GEN_LORA_PAGE = 0;                // LoRA 清單目前頁（搜尋變動時歸零，見 renderLmList）
 let GEN_STRENGTH = 0.8;
 const GEN_TW_PICKS = new Set();       // 選中的觸發詞組索引
 // 這個分頁的識別碼：生圖時帶給後端，讓「刷新/關閉這個分頁」只取消自己送的生圖，別的分頁不受影響。
 const GEN_CLIENT = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now());
-// #genbar 原本在 DOM 裡的位置（開圖庫時會被整個搬進 #gallery-lora-panel，關閉時要搬回這裡）。
-// 開機時只記一次，之後不管搬去哪裡都能準確搬回來。
-const GENBAR_HOME = { parent: $('genbar').parentNode, next: $('genbar').nextSibling };
 
 async function fetchGenLoras() {
   if (GEN_LORAS) return GEN_LORAS;
@@ -1137,8 +1141,10 @@ function updateGenbar() {
 const GEN_LORA_PAGE_SIZE = 80;          // 每頁列數（總數上百，全渲染會卡；改翻頁而非截斷丟資料）
 function loraPreviewUrl(l) { return `/api/lora-preview?folder=${encodeURIComponent(l.folder)}&file=${encodeURIComponent(l.preview)}`; }
 
-function renderGenLoraList(filter, resetPage) {
-  const box = $('lora-list'); if (!box) return;
+// 大面板左欄：搜尋＋翻頁的 LoRA 清單（跟原本底部彈出小選單同一套渲染邏輯，只是容器換成
+// 大面板、可視高度更高）。
+function renderLmList(filter, resetPage) {
+  const box = $('lm-list'); if (!box) return;
   if (resetPage) GEN_LORA_PAGE = 0;
   const q = (filter || '').toLowerCase().trim();
   const items = (GEN_LORAS || []).filter(l =>
@@ -1183,15 +1189,15 @@ function renderGenLoraList(filter, resetPage) {
     info.textContent = `第 ${page + 1} / ${pages} 頁 · 共 ${items.length} 個`;
     const next = document.createElement('button'); next.type = 'button'; next.className = 'lora-page-btn';
     next.textContent = '下一頁 ›'; next.disabled = page >= pages - 1;
-    prev.addEventListener('click', (e) => { e.stopPropagation(); GEN_LORA_PAGE = page - 1; renderGenLoraList(filter); box.scrollTop = 0; });
-    next.addEventListener('click', (e) => { e.stopPropagation(); GEN_LORA_PAGE = page + 1; renderGenLoraList(filter); box.scrollTop = 0; });
+    prev.addEventListener('click', (e) => { e.stopPropagation(); GEN_LORA_PAGE = page - 1; renderLmList(filter); box.scrollTop = 0; });
+    next.addEventListener('click', (e) => { e.stopPropagation(); GEN_LORA_PAGE = page + 1; renderLmList(filter); box.scrollTop = 0; });
     nav.append(prev, info, next);
     box.appendChild(nav);
   }
 }
 
 // 滑鼠移到 LoRA 列上浮出大一點的預覽圖（沿用主面板 KLEIN 的 #lora-hover 定位邏輯，
-// 但用 .show 切 opacity/transform 過渡而非 display，讓退場有淡出、換列時平滑接上）。
+// 用 .show 切 opacity/transform 過渡而非 display，讓退場有淡出、換列時平滑接上）。
 function showLoraHover(l, row) {
   let h = document.getElementById('lora-hover');
   if (!h) { h = document.createElement('div'); h.id = 'lora-hover'; h.className = 'lora-hover'; document.body.appendChild(h); }
@@ -1206,40 +1212,67 @@ function showLoraHover(l, row) {
 }
 function hideLoraHover() { const h = document.getElementById('lora-hover'); if (h) h.classList.remove('show'); }
 
+// 點左欄某個 LoRA：選中它、預設勾第一段觸發詞，右欄換成它的完整內容。面板**不關閉**——
+// 這是個瀏覽/比較用的大面板，選完通常還要勾段落、調強度，關掉留給使用者自己按 ✕/Esc。
 function selectGenLora(l) {
   GEN_LORA = l;
   const tw = l.trainedWords || [];
   GEN_TW_PICKS.clear();
   if (tw.length) GEN_TW_PICKS.add(0);   // 預設選第一組觸發詞
-  $('lora-pop').style.display = 'none';
-  hideLoraHover();
   renderGenCurrent();
+  renderLmCurrent();
+  renderLmList($('lm-search').value);   // 只重繪列表刷新選中的高亮，不重置頁碼/搜尋
 }
 
+// genbar 摘要鈕：只顯示「目前選的是誰」，實際挑選都在大面板。
 function renderGenCurrent() {
   const btn = $('lora-pick-btn');
   if (btn) { btn.textContent = GEN_LORA ? `🎨 ${GEN_LORA.title || GEN_LORA.name}` : '🎨 選 LoRA'; btn.classList.toggle('has', !!GEN_LORA); }
-  $('gen-strength-wrap').style.display = GEN_LORA ? '' : 'none';
-  const wrap = $('gen-tw'); if (!wrap) return;
-  wrap.innerHTML = '';
-  const tw = GEN_LORA ? (GEN_LORA.trainedWords || []) : [];
-  if (tw.length > 1) {
-    tw.forEach((w, i) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'tw-chip' + (GEN_TW_PICKS.has(i) ? ' on' : '');
-      b.title = w;
-      b.textContent = `${i + 1}. ${w.length > 22 ? w.slice(0, 20) + '…' : w}`;
-      b.addEventListener('click', () => {
-        if (GEN_TW_PICKS.has(i)) GEN_TW_PICKS.delete(i); else GEN_TW_PICKS.add(i);
-        b.classList.toggle('on');
-      });
-      wrap.appendChild(b);
-    });
-  }
 }
 
-// 目前選的 LoRA 觸發詞（依 GEN_TW_PICKS 組合，供 Stage 3 生成時注入正向）
+// 大面板右欄：目前選的 LoRA 縮圖/標題 + 每段 trainedWords 各自一張完整文字卡（不截斷）
+// + 強度滑桿。這是「淺顯易懂」的重點——每段獨立成塊、可以整段讀完，勾選決定要不要用。
+function renderLmCurrent() {
+  const box = $('lm-current'); if (!box) return;
+  box.innerHTML = '';
+  if (!GEN_LORA) { box.innerHTML = '<div class="lm-none">尚未選擇 LoRA——從左邊清單點一個</div>'; return; }
+  const head = document.createElement('div'); head.className = 'lm-cur-head';
+  if (GEN_LORA.preview) { const im = document.createElement('img'); im.src = loraPreviewUrl(GEN_LORA); head.appendChild(im); }
+  else { const ph = document.createElement('span'); ph.className = 'ph'; head.appendChild(ph); }
+  const meta = document.createElement('div');
+  const t = document.createElement('div'); t.className = 'lm-cur-title'; t.textContent = GEN_LORA.title || GEN_LORA.name;
+  const f = document.createElement('div'); f.className = 'lm-cur-folder'; f.textContent = GEN_LORA.folder || '(根目錄)';
+  meta.append(t, f); head.appendChild(meta);
+  box.appendChild(head);
+
+  const tw = GEN_LORA.trainedWords || [];
+  if (tw.length) {
+    const label = document.createElement('div'); label.className = 'lm-tw-label';
+    label.textContent = tw.length > 1 ? `觸發詞（共 ${tw.length} 段，勾選要用哪幾段）` : '觸發詞';
+    box.appendChild(label);
+    const list = document.createElement('div'); list.className = 'lm-tw-list';
+    tw.forEach((w, i) => {
+      const item = document.createElement('label');
+      item.className = 'lm-tw-item' + (GEN_TW_PICKS.has(i) ? ' on' : '');
+      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = GEN_TW_PICKS.has(i); cb.dataset.i = i;
+      const idx = document.createElement('span'); idx.className = 'lm-tw-idx'; idx.textContent = (i + 1) + '.';
+      const txt = document.createElement('span'); txt.className = 'lm-tw-text'; txt.textContent = w;
+      item.append(cb, idx, txt);
+      list.appendChild(item);
+    });
+    box.appendChild(list);
+  }
+
+  const strengthRow = document.createElement('div'); strengthRow.className = 'lm-strength';
+  const sLabel = document.createElement('span'); sLabel.textContent = '強度';
+  const sInput = document.createElement('input'); sInput.type = 'range'; sInput.id = 'lm-strength';
+  sInput.min = '0'; sInput.max = '1'; sInput.step = '0.05'; sInput.value = String(GEN_STRENGTH);
+  const sOut = document.createElement('output'); sOut.id = 'lm-strength-out'; sOut.textContent = GEN_STRENGTH.toFixed(2);
+  strengthRow.append(sLabel, sInput, sOut);
+  box.appendChild(strengthRow);
+}
+
+// 目前選的 LoRA 觸發詞（依 GEN_TW_PICKS 組合，供生成時注入正向）
 function genTriggerText() {
   if (!GEN_LORA) return '';
   const tw = GEN_LORA.trainedWords || [];
@@ -1247,22 +1280,32 @@ function genTriggerText() {
   return [...GEN_TW_PICKS].sort((a, b) => a - b).map(i => tw[i]).filter(Boolean).join(', ');
 }
 
-$('lora-pick-btn').onclick = async () => {
-  const pop = $('lora-pop');
-  if (pop.style.display !== 'none') { pop.style.display = 'none'; hideLoraHover(); return; }
-  pop.style.display = '';                                  // 先開，避免第一次 await 5s 像凍住
-  if (!GEN_LORAS) $('lora-list').innerHTML = '<div class="lora-empty">載入中…</div>';
-  $('lora-search').focus();
+async function openLoraModal() {
+  $('lora-modal').classList.add('open');
+  if (!GEN_LORAS) $('lm-list').innerHTML = '<div class="lora-empty">載入中…</div>';
+  renderLmCurrent();
   await fetchGenLoras();
-  renderGenLoraList($('lora-search').value, true);
-};
-$('lora-search').addEventListener('input', () => renderGenLoraList($('lora-search').value, true));
-document.addEventListener('pointerdown', (e) => {
-  if ($('lora-pop').style.display !== 'none' && !$('lora-pick').contains(e.target)) { $('lora-pop').style.display = 'none'; hideLoraHover(); }
-});
-$('gen-strength').addEventListener('input', (e) => {
+  renderLmList($('lm-search').value, true);
+  $('lm-search').focus();
+}
+function closeLoraModal() { $('lora-modal').classList.remove('open'); hideLoraHover(); }
+$('lora-panel-btn').onclick = openLoraModal;   // topbar 入口（只在生圖模式看得到，見 CSS）
+$('lora-pick-btn').onclick = openLoraModal;    // genbar 摘要鈕，同一個面板
+$('lora-modal-close').onclick = closeLoraModal;
+$('lora-modal').addEventListener('click', e => { if (e.target.id === 'lora-modal') closeLoraModal(); });
+$('lm-search').addEventListener('input', () => renderLmList($('lm-search').value, true));
+// 強度滑桿／trainedWords 勾選都是動態生成（見 renderLmCurrent），用事件委派在容器上聽，
+// 不用每次重繪都重綁一次。
+$('lm-current').addEventListener('input', (e) => {
+  if (e.target.id !== 'lm-strength') return;
   GEN_STRENGTH = parseFloat(e.target.value);
-  $('gen-strength-out').textContent = GEN_STRENGTH.toFixed(2);
+  const out = $('lm-strength-out'); if (out) out.textContent = GEN_STRENGTH.toFixed(2);
+});
+$('lm-current').addEventListener('change', (e) => {
+  if (!e.target.matches('input[type=checkbox]')) return;
+  const i = +e.target.dataset.i;
+  if (e.target.checked) GEN_TW_PICKS.add(i); else GEN_TW_PICKS.delete(i);
+  const item = e.target.closest('.lm-tw-item'); if (item) item.classList.toggle('on', e.target.checked);
 });
 $('gen-run').onclick = () => runGen();
 
@@ -1305,41 +1348,13 @@ function renderGallery() {
   for (let k = GALLERY.length - 1, i = 0; k >= 0; k--, i++) grid.appendChild(buildGalleryCard(GALLERY[k], i));   // 新→舊
   updateGalleryHead();
 }
-const GALLERY_NARROW = () => matchMedia('(max-width: 860px)').matches;
-
-// 窄螢幕收合面板（省垂直空間，格線才是主角）：max-height 的數字用 scrollHeight 量實際內容
-// 高度，不是隨便設一個很大的值——CSS transition 轉場 to/from `none` 不會動畫，要精確像素值
-// 才能順順展開/收合（跟 app.js renderCatBar 收合分類同一招）。桌面版不受影響（沒設 inline style）。
-function setGalleryPanelCollapsed(collapsed) {
-  const panel = $('gallery-lora-panel'), bar = $('genbar');
-  if (!panel || !bar) return;
-  panel.classList.toggle('collapsed', collapsed);
-  if (!GALLERY_NARROW()) { bar.style.maxHeight = ''; return; }
-  bar.style.maxHeight = collapsed ? '0px' : bar.scrollHeight + 'px';
-}
-$('glp-toggle').onclick = () => setGalleryPanelCollapsed(!$('gallery-lora-panel').classList.contains('collapsed'));
-
-// 開圖庫：把 #genbar 整個搬進面板（只在生圖模式會顯示，見 CSS 的
-// body.gallery-open[data-mode="gen"] #gallery-lora-panel；其他模式面板 display:none，
-// genbar 待在裡面不影響任何東西）。窄螢幕預設收合，桌面預設展開。
 function openGallery() {
   if (GALLERY_OPEN) return;
-  switchView(() => {
-    GALLERY_OPEN = true; document.body.classList.add('gallery-open'); $('gallery-btn').classList.add('on');
-    $('gallery-lora-panel').appendChild($('genbar'));
-    updateGenbar();
-    setGalleryPanelCollapsed(GALLERY_NARROW());
-    renderGallery();
-  });
-}
-// 關圖庫：把 #genbar 搬回原本的底部列位置（GENBAR_HOME 開機時記錄的座標）。
-function closeGalleryDom() {
-  document.body.classList.remove('gallery-open'); $('gallery-btn').classList.remove('on');
-  GENBAR_HOME.parent.insertBefore($('genbar'), GENBAR_HOME.next);
+  switchView(() => { GALLERY_OPEN = true; document.body.classList.add('gallery-open'); $('gallery-btn').classList.add('on'); renderGallery(); });
 }
 function closeGallery() {
   if (!GALLERY_OPEN) return;
-  switchView(() => { GALLERY_OPEN = false; closeGalleryDom(); });
+  switchView(() => { GALLERY_OPEN = false; document.body.classList.remove('gallery-open'); $('gallery-btn').classList.remove('on'); });
 }
 $('gallery-btn').onclick = () => (GALLERY_OPEN ? closeGallery() : openGallery());
 

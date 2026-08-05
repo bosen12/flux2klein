@@ -586,15 +586,12 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 /* 打標／生圖模式底部有固定的操作列，格線多留空間免被蓋住 */
 :is(body[data-mode="tag"], body[data-mode="gen"]) #grid { padding-bottom: 72px; }
 
-/* ── 生圖底部列：LoRA 挑選器（彈出清單＋hover 預覽）＋強度＋觸發詞晶片＋生圖鈕 ── */
-.lora-pick { position: relative; }
+/* ── 生圖底部列：只留「目前選的 LoRA」摘要鈕＋生圖鈕。實際挑選/trainedWords/強度
+   全部在 #lora-modal 大面板（見下方），genbar 與 topbar 的「🎨 LoRA」鈕開的是同一個。 ── */
 #lora-pick-btn { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #lora-pick-btn.has { border-color: var(--amber); color: var(--ink); }
-.lora-pop { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 40;
-  width: 340px; max-width: 78vw; background: var(--panel); border: 1px solid var(--line-2);
-  border-radius: 12px; box-shadow: var(--shadow); padding: 10px; display: flex; flex-direction: column; gap: 8px; }
-.lora-pop input { width: 100%; }
-.lora-list { max-height: 44vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+/* .lora-row/.lora-cat-head/.lora-pager 等清單樣式沿用給 #lm-list（大面板左欄）用，
+   不用重寫一份——原本是底部彈出小選單的清單項目樣式，換到大面板照樣適用。 */
 .lora-row { display: flex; align-items: center; gap: 9px; padding: 6px 8px; border-radius: 8px;
   cursor: pointer; text-align: left; border: 0; background: transparent; color: var(--ink); }
 .lora-row:hover, .lora-row.on { background: var(--amber-soft); }
@@ -625,38 +622,29 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
   transition: opacity var(--d-ui) var(--ease-entrance), transform var(--d-ui) var(--ease-entrance); }
 .lora-hover img { display: block; width: 100%; height: auto; }
 @media (prefers-reduced-motion: reduce) { .lora-hover, .lora-hover.show { transition: none; } }
-.gen-strength { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--dim); }
-.gen-strength input[type=range] { width: 96px; }
-.gen-strength output { font-family: var(--mono); min-width: 34px; }
-.gen-tw { display: flex; gap: 6px; flex-wrap: wrap; max-width: 40vw; overflow: hidden; }
-.gen-tw .tw-chip { border: 1px solid var(--line-2); background: var(--sunk); color: var(--dim);
-  padding: 3px 9px; border-radius: 999px; font-size: 11px; cursor: pointer; white-space: nowrap;
-  max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
-.gen-tw .tw-chip.on { border-color: var(--amber); background: var(--amber-soft); color: var(--ink); }
-
 /* ---- 生成圖庫視圖：由「🖼 圖庫」鈕切換，蓋掉詞庫格線；本次生成、新→舊 ---- */
 .gallery-btn.on { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 55%, transparent);
                   background: color-mix(in srgb, var(--amber) 12%, transparent); }
 .gallery-n { margin-left: 6px; font-family: var(--mono); font-size: 11px; opacity: .85; }
+/* 只在生圖模式顯示的 topbar 鈕（LoRA 大面板入口）：用 visibility 而非 display——保留版位、
+   切模式時不會擠動旁邊「圖庫/分段/抽卡/重掃/連線」那排固定不動的共用按鈕（CLAUDE.md 記過
+   這排按鈕位置不能位移，用 display:none 會讓它們跟著跳動）。 */
+.lora-panel-btn { visibility: hidden; pointer-events: none; padding: 0 12px; font-size: 15px; }
+body[data-mode="gen"] .lora-panel-btn { visibility: visible; pointer-events: auto; }
 
 #gallery-view { display: none; }
-body.gallery-open #gallery-view { display: flex; flex-direction: column; }
+body.gallery-open #gallery-view { display: block; }
 body.gallery-open #grid,
 body.gallery-open #coverbar,
 body.gallery-open #rarity-bar,
 body.gallery-open .main-head { display: none; }
-body.gallery-open #tagbar { transform: translateY(130%); }   /* 打標底部列圖庫視圖不顯示；
-  #genbar 不在這裡列——它開圖庫時會被搬進 #gallery-lora-panel，脫離 .tagbar 固定列語境 */
+body.gallery-open #genbar,
+body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不顯示底部操作列 */
 
 .gallery-head { display: flex; align-items: baseline; gap: 10px; margin: 2px 2px 14px; }
 .gallery-head h2 { font-size: 18px; font-weight: 650; }
 .gallery-sub { font-family: var(--mono); font-size: 12px; color: var(--faint); }
 .gallery-empty { color: var(--faint); text-align: center; padding: 64px 20px; font-size: 14px; line-height: 1.9; }
-
-/* 主格線＋LoRA 面板並排：面板固定寬、格線吃剩下空間（min-width:0 讓 grid 能在 flex 裡正常收縮，
-   不然 grid-template-columns 的 auto-fill 會撐爆容器）。窄螢幕改上下堆疊，見下方 860px 斷點。 */
-.gallery-body { display: flex; align-items: flex-start; gap: 22px; }
-.gallery-main { flex: 1; min-width: 0; }
 
 .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; padding: 0 2px 48px; }
 .gcard { display: flex; flex-direction: column; gap: 5px;
@@ -670,55 +658,57 @@ body.gallery-open #tagbar { transform: translateY(130%); }   /* 打標底部列�
 @keyframes gcardIn { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .gcard { animation: none; } }
 
-/* ---- 圖庫旁的 LoRA 面板：只在生圖模式開圖庫時出現（body.gallery-open[data-mode="gen"]，
-   純 CSS 組合選擇器判斷，不用額外 JS 邏輯）。內容是 #genbar 整個節點被 JS 搬進來（見
-   darkroom.js openGallery/closeGallery），不是重造一份 UI——事件監聽器都還在、狀態只有一份。
-   效能：只用 transform/opacity 做進場（GPU 合成、不觸發 layout），搬 DOM 節點是 O(1) 操作，
-   不會重建或重掃格線；尊重 prefers-reduced-motion。 */
-#gallery-lora-panel { display: none; width: 264px; flex: none; }
-body.gallery-open[data-mode="gen"] #gallery-lora-panel {
-  display: flex; flex-direction: column; gap: 12px;
-  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 16px; box-shadow: var(--shadow);
-  animation: galleryPanelIn var(--d-pop) var(--ease-entrance) both;
-}
-@keyframes galleryPanelIn { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { body.gallery-open[data-mode="gen"] #gallery-lora-panel { animation: none; } }
+/* ---- LoRA 大面板：置中彈窗（跟 #modal 同一種視覺語言），左欄搜尋＋翻頁清單、
+   右欄目前選的 LoRA＋每段 trainedWords 完整攤開（不截斷）＋強度。由 topbar「🎨 LoRA」
+   或 genbar「🎨 選 LoRA」開啟，同一個面板、選擇即時生效，關閉只是收起檢視。 ---- */
+.lora-modal { position: fixed; inset: 0; z-index: 140; display: none;
+  align-items: center; justify-content: center; padding: 24px;
+  background: rgba(8,8,11,.8); backdrop-filter: blur(6px); }
+.lora-modal.open { display: flex; animation: fadeIn var(--d-pop) var(--ease-out); }
+.lora-modal-inner { position: relative; width: min(920px, 94vw); height: min(680px, 86vh);
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius);
+  box-shadow: var(--shadow); display: grid; grid-template-columns: 320px 1fr; overflow: hidden;
+  animation: modalPop var(--d-pop) var(--ease-entrance); }
+@media (prefers-reduced-motion: reduce) { .lora-modal.open, .lora-modal-inner { animation: none; } }
+.lora-modal-close { position: absolute; top: 10px; right: 10px; z-index: 2;
+  width: 32px; height: 32px; border-radius: 8px; border: 0; background: var(--sunk); color: var(--dim);
+  cursor: pointer; font-size: 15px; transition: color var(--d-micro) var(--ease-out), background var(--d-micro) var(--ease-out); }
+.lora-modal-close:hover { color: var(--ink); background: var(--line-2); }
 
-.glp-head { display: flex; align-items: center; justify-content: space-between; }
-.glp-title { font-size: 13px; font-weight: 700; color: var(--ink); letter-spacing: .3px; }
-.glp-toggle { display: none; }   /* 只在窄螢幕（見下方 860px 斷點）顯示收合鈕 */
+.lm-left { display: flex; flex-direction: column; border-right: 1px solid var(--line); background: var(--rail); min-width: 0; }
+.lm-search-wrap { position: relative; padding: 14px 14px 10px; flex: none; }
+.lm-search-wrap svg { position: absolute; left: 24px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--faint); pointer-events: none; }
+.lm-search-wrap input { width: 100%; box-sizing: border-box; padding: 8px 10px 8px 32px; }
+.lm-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 10px; display: flex; flex-direction: column; gap: 2px; }
 
-/* #genbar 搬進面板後：從「固定底部橫向列」改成「面板內直向堆疊」。用 2 個 id 選擇器
-   （specificity 高於 body.gallery-open #genbar 那條 1 class+1 id 的滑出規則），不用 !important。 */
-#gallery-lora-panel #genbar {
-  position: static; transform: none; pointer-events: auto;
-  flex-direction: column; align-items: stretch; gap: 12px;
-  padding: 0; background: none; border: 0; box-shadow: none;
-  -webkit-backdrop-filter: none; backdrop-filter: none;
-  overflow: visible;
-}
-#gallery-lora-panel #genbar .spacer { display: none; }        /* 橫向排版推擠用，直向堆疊不需要 */
-#gallery-lora-panel #gen-run { width: 100%; }
-#gallery-lora-panel .lora-pop { bottom: auto; top: calc(100% + 8px); }  /* 面板不在畫面最底，改往下彈出 */
-#gallery-lora-panel .gen-tw { max-width: none; }
+.lm-right { padding: 20px 22px; overflow-y: auto; min-width: 0; }
+.lm-right-head { font-size: 11px; color: var(--faint); font-family: var(--mono); letter-spacing: .5px; margin-bottom: 10px; }
+.lm-none { color: var(--faint); font-size: 13px; padding: 40px 0; text-align: center; }
+.lm-cur-head { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.lm-cur-head img, .lm-cur-head .ph { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; flex: none; background: var(--sunk); }
+.lm-cur-title { font-size: 15px; font-weight: 700; color: var(--ink); }
+.lm-cur-folder { font-size: 11px; color: var(--faint); font-family: var(--mono); margin-top: 2px; }
 
-@media (max-width: 860px) {
-  /* 窄螢幕：面板從側欄改成格線上方一整條、可收合（省垂直空間，格線才是主角）。
-     沿用 app.js renderCatBar 同一招——JS 量實際內容高度設 max-height，而非猜一個
-     很大的數字，收合/展開過渡才準。 */
-  .gallery-body { flex-direction: column; }
-  #gallery-lora-panel { width: auto; animation: none; }   /* 上下堆疊時不用側滑進場，改單純淡入交給 switchView 的 root 交叉淡 */
-  .glp-toggle { display: inline-flex; align-items: center; justify-content: center;
-    width: 26px; height: 26px; border: 0; background: transparent; color: var(--faint);
-    font-size: 13px; cursor: pointer; border-radius: 6px; transition: transform var(--d-ui) var(--ease-out); }
-  .glp-toggle:hover { color: var(--ink); background: var(--sunk); }
-  #gallery-lora-panel.collapsed .glp-toggle { transform: rotate(-90deg); }
-  /* max-height 的實際數值由 JS 量 scrollHeight 設成 inline style（見 darkroom.js
-     setGalleryPanelCollapsed）——CSS 转場 to/from `none` 不會動畫，要有精確像素值才能
-     順順展開/收合，跟 app.js renderCatBar 收合分類同一招。 */
-  #gallery-lora-panel #genbar { overflow: hidden; transition: max-height var(--d-pop) var(--ease-out), opacity var(--d-ui) var(--ease-out); }
-  #gallery-lora-panel.collapsed #genbar { opacity: 0; }
+/* 每段 trainedWords 各自一張完整文字卡——這是這個面板存在的目的：不截斷、一眼看完整段。
+   用原生 checkbox（最不用學的互動元件）決定要不要用這段，跟現有 GEN_TW_PICKS 狀態同步。 */
+.lm-tw-label { font-size: 12px; color: var(--dim); margin-bottom: 8px; }
+.lm-tw-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+.lm-tw-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--line-2); background: var(--sunk); cursor: pointer;
+  transition: border-color var(--d-micro) var(--ease-out), background var(--d-micro) var(--ease-out); }
+.lm-tw-item:hover { border-color: var(--line-2); background: color-mix(in srgb, var(--sunk) 70%, var(--amber-soft)); }
+.lm-tw-item.on { border-color: var(--amber); background: var(--amber-soft); }
+.lm-tw-item input { margin-top: 3px; accent-color: var(--amber); flex: none; }
+.lm-tw-item .lm-tw-idx { font-family: var(--mono); font-size: 10.5px; color: var(--faint); flex: none; margin-top: 2px; }
+.lm-tw-item .lm-tw-text { font-size: 13px; line-height: 1.6; color: var(--ink); white-space: normal; word-break: break-word; }
+
+.lm-strength { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--dim); margin-bottom: 6px; }
+.lm-strength input[type=range] { flex: 1; }
+.lm-strength output { font-family: var(--mono); min-width: 36px; text-align: right; }
+
+@media (max-width: 760px) {
+  .lora-modal-inner { grid-template-columns: 1fr; height: 90vh; }
+  .lm-left { border-right: 0; border-bottom: 1px solid var(--line); max-height: 40vh; }
 }
 
 /* 圖庫卡聚光（跟格線縮圖 .thumb::after 同一招）：hover 時方形圖上一圈跟著游標的琥珀柔光。
