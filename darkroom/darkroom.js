@@ -1187,20 +1187,21 @@ function renderGenLoraList(filter, resetPage) {
   }
 }
 
-// 滑鼠移到 LoRA 列上浮出大一點的預覽圖（沿用主面板 KLEIN 的 #lora-hover 樣式與定位邏輯）。
+// 滑鼠移到 LoRA 列上浮出大一點的預覽圖（沿用主面板 KLEIN 的 #lora-hover 定位邏輯，
+// 但用 .show 切 opacity/transform 過渡而非 display，讓退場有淡出、換列時平滑接上）。
 function showLoraHover(l, row) {
   let h = document.getElementById('lora-hover');
   if (!h) { h = document.createElement('div'); h.id = 'lora-hover'; h.className = 'lora-hover'; document.body.appendChild(h); }
-  if (!l.preview) return;
+  if (!l.preview) { h.classList.remove('show'); return; }
   h.innerHTML = ''; const im = document.createElement('img'); im.src = loraPreviewUrl(l); h.appendChild(im);
   const r = row.getBoundingClientRect(), w = 180;
   let left = r.right + 10;
   if (left + w > window.innerWidth) left = r.left - w - 10;   // 右側放不下改放左側
   h.style.left = Math.max(8, left) + 'px';
   h.style.top = Math.min(r.top, window.innerHeight - 240) + 'px';
-  h.style.display = 'block';
+  h.classList.add('show');
 }
-function hideLoraHover() { const h = document.getElementById('lora-hover'); if (h) h.style.display = 'none'; }
+function hideLoraHover() { const h = document.getElementById('lora-hover'); if (h) h.classList.remove('show'); }
 
 function selectGenLora(l) {
   GEN_LORA = l;

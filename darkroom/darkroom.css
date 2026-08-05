@@ -613,13 +613,18 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 .lora-page-btn:hover:not(:disabled) { border-color: var(--amber); color: var(--amber); background: var(--amber-soft); }
 .lora-page-btn:disabled { opacity: .4; cursor: default; }
 .lora-page-info { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
-/* 滑鼠移到有預覽的 LoRA 列上，浮出稍大一點的預覽圖（不擋互動，pointer-events:none） */
-.lora-hover { display: none; position: fixed; z-index: 60; width: 180px; border-radius: 10px; overflow: hidden;
+/* 滑鼠移到有預覽的 LoRA 列上，浮出稍大一點的預覽圖（不擋互動，pointer-events:none）。
+   用 opacity/transform 過渡而非 display 硬切——進場慢收（--d-ui + ease-entrance）、
+   退場快走（--d-micro + ease-in，時長比進場短），跟專案其他浮層退場的節奏一致。
+   換列快速滑過時（先 mouseleave 舊列再 mouseenter 新列）過渡會平滑反向接上，不會閃爍。 */
+.lora-hover { position: fixed; z-index: 60; width: 180px; border-radius: 10px; overflow: hidden;
   border: 1px solid var(--line-2); box-shadow: var(--shadow); background: var(--panel); pointer-events: none;
-  animation: loraHoverIn var(--d-ui) var(--ease-entrance); }
+  opacity: 0; transform: translateY(-6px);
+  transition: opacity var(--d-micro) var(--ease-in), transform var(--d-micro) var(--ease-in); }
+.lora-hover.show { opacity: 1; transform: none;
+  transition: opacity var(--d-ui) var(--ease-entrance), transform var(--d-ui) var(--ease-entrance); }
 .lora-hover img { display: block; width: 100%; height: auto; }
-@keyframes loraHoverIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .lora-hover { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .lora-hover, .lora-hover.show { transition: none; } }
 .gen-strength { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--dim); }
 .gen-strength input[type=range] { width: 96px; }
 .gen-strength output { font-family: var(--mono); min-width: 34px; }

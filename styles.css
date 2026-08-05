@@ -1314,16 +1314,24 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .lora-words:focus { outline: none; border-color: var(--accent); background: var(--panel); box-shadow: var(--focus-ring); }
 .lora-none { font-size: var(--fs-xs); color: var(--text-faint); }
 
-/* hover 浮出的預覽小圖（不用太大） */
+/* hover 浮出的預覽小圖（不用太大）。用 opacity/transform 過渡而非 display 硬切——
+   進場慢收（--dur-2 + ease-entrance）、退場快走（--dur-1 + ease-out，時長比進場短），
+   換列快速滑過時（先 mouseleave 舊列再 mouseenter 新列）過渡會平滑反向接上、不閃爍。 */
 .lora-hover {
-  display: none; position: fixed; z-index: 60; width: 180px;
+  position: fixed; z-index: 60; width: 180px;
   border-radius: var(--radius-sm); overflow: hidden;
   border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg);
   background: var(--panel); pointer-events: none;
-  animation: loraMenuIn var(--dur-2) var(--ease-entrance);
+  opacity: 0; transform: translateY(-6px);
+  transition: opacity var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+}
+.lora-hover.show {
+  opacity: 1; transform: none;
+  transition: opacity var(--dur-2) var(--ease-entrance), transform var(--dur-2) var(--ease-entrance);
 }
 .lora-hover img { display: block; width: 100%; height: auto; }
 
 @media (prefers-reduced-motion: reduce) {
   .lora-menu, .chip, .lora-hover { animation: none; }
+  .lora-hover, .lora-hover.show { transition: none; }
 }

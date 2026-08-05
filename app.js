@@ -793,16 +793,17 @@
   }
 
   function showLoraHover(l, row) {
-    const h = $('lora-hover'); if (!h || !l.preview) return;
+    const h = $('lora-hover'); if (!h) return;
+    if (!l.preview) { h.classList.remove('show'); return; }
     h.innerHTML = `<img src="${loraPreviewUrl(l)}" alt="">`;
     const r = row.getBoundingClientRect(), w = 180;
     let left = r.right + 10;
     if (left + w > window.innerWidth) left = r.left - w - 10;   // 右側放不下改放左側
     h.style.left = Math.max(8, left) + 'px';
     h.style.top = Math.min(r.top, window.innerHeight - 240) + 'px';
-    h.style.display = 'block';
+    h.classList.add('show');
   }
-  function hideLoraHover() { const h = $('lora-hover'); if (h) h.style.display = 'none'; }
+  function hideLoraHover() { const h = $('lora-hover'); if (h) h.classList.remove('show'); }
 
   /* ---------------- 詞庫（Illustrious 專用，單選；沿用 LoRA 選單樣式） ---------------- */
   const libPreviewUrl = (l) => '/panel/prompt-preview?cat=' + encodeURIComponent(l.folder || '') + '&file=' + encodeURIComponent((l.name || '') + '.webp');
@@ -952,14 +953,15 @@
   }
 
   function showLibHover(l, row) {
-    const h = $('lora-hover'); if (!h || !l.preview) return;   // 沿用同一個浮框元素
+    const h = $('lora-hover'); if (!h) return;   // 沿用同一個浮框元素
+    if (!l.preview) { h.classList.remove('show'); return; }
     h.innerHTML = `<img src="${libPreviewUrl(l)}" alt="">`;
     const r = row.getBoundingClientRect(), w = 180;
     let left = r.right + 10;
     if (left + w > window.innerWidth) left = r.left - w - 10;
     h.style.left = Math.max(8, left) + 'px';
     h.style.top = Math.min(r.top, window.innerHeight - 240) + 'px';
-    h.style.display = 'block';
+    h.classList.add('show');
   }
 
   function onPickImage(nodeId, file, dropEl) {
