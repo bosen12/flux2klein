@@ -38,6 +38,8 @@
   <button class="ghost browse-only" id="review-btn" title="進入選取模式：點卡片標記不優質（紅叉）">🚩 篩選<span id="flag-count" class="flag-count"></span></button>
   <div class="spacer"></div>
   <!-- 以下為兩模式共用、位置固定：切模式時寬度不變、不位移 -->
+  <!-- 生成圖庫：獨立於模式分段（放左邊、不混進分段）。本次生成、刷新即清空。 -->
+  <button class="ghost gallery-btn" id="gallery-btn" title="生成圖庫（本次生成的圖，刷新／關頁即清空）">🖼 圖庫<span class="gallery-n" id="gallery-n"></span></button>
   <div class="seg mode-seg" id="mode-seg" role="group" aria-label="模式">
     <span class="seg-pill" id="mode-pill" aria-hidden="true"></span>
     <button data-mode="browse" class="on" title="瀏覽與生成預覽圖">✦ 瀏覽</button>
@@ -97,6 +99,15 @@
     <div class="coverbar" id="coverbar"><span style="width:0"></span></div>
     <div class="rarity-bar" id="rarity-bar" aria-label="稀有度篩選"></div>
     <div id="grid" class="grid"></div>
+    <!-- 生成圖庫視圖（本次生成，新→舊）：由「🖼 圖庫」鈕切換，蓋掉詞庫格線 -->
+    <div id="gallery-view" class="gallery-view">
+      <div class="gallery-head">
+        <h2>🖼 生成圖庫</h2>
+        <span class="gallery-sub" id="gallery-sub"></span>
+      </div>
+      <div id="gallery-grid" class="gallery-grid"></div>
+      <div id="gallery-empty" class="gallery-empty">還沒有生成任何圖 —— 到「🎨 生圖」選詞庫按生圖，或按「✦ 抽卡」隨機生一批。<br>（圖庫是本次生成的暫存，刷新或關頁就清空）</div>
+    </div>
   </main>
 </div>
 
@@ -127,11 +138,8 @@
   </label>
   <div class="gen-tw" id="gen-tw"></div>
   <div class="spacer"></div>
-  <button class="ghost" id="gen-results-btn" title="看/收合生成結果">結果 <span id="gen-results-n"></span></button>
   <button class="primary" id="gen-run" disabled>🎨 生圖</button>
 </div>
-<!-- 生圖結果區（累加，新的在前）：Stage 3 生成後填入 -->
-<div class="gen-results" id="gen-results" aria-label="生圖結果"></div>
 <div id="toast" class="toast"></div>
 
 <div id="modal" class="modal">

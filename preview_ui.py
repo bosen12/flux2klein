@@ -1018,7 +1018,9 @@ def _gen_one_worker(gid, rel, lora_name, strength, trigger):
             with _gen_lock:
                 _gen_results[gid] = {"bytes": data, "ctype": "image/webp"}
                 _gen_preview.pop(gid, None)
-                _gen_status[gid].update(status="done", seed=seed)
+                # seed 以字串回傳：seed 可達 2^63，超過 JS Number.MAX_SAFE_INTEGER（2^53），
+                # 用數字會在前端 JSON.parse 掉精度（末幾位變 0），資訊面板顯示的 seed 會失真。
+                _gen_status[gid].update(status="done", seed=str(seed))
                 while len(_gen_results) > _GEN_MAX:
                     old = next(iter(_gen_results))
                     _gen_results.pop(old, None)

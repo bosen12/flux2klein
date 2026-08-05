@@ -446,11 +446,12 @@ input[type=text]::placeholder { color: var(--faint); }
 .tarot-noimg { aspect-ratio: 1 / 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
                gap: 6px; color: var(--faint); font-size: 12px; background: var(--sunk); }
 .tarot-noimg svg { width: 28px; height: 28px; opacity: .5; }
-/* 生圖抽卡牌面：方形區顯示採樣中的即時預覽（初始無 src → 深底 + 載入動畫，預覽到就淡入） */
-.gen-front .gen-live { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block;
-                       position: relative; z-index: 2; background: var(--sunk); }
-/* 載入動畫容器：剛好覆蓋「方形圖」區（非整張牌，含下方文字），用 grid 置中 loader */
-.gen-front .gen-spin {
+/* 生圖方形圖（抽卡牌面 .gen-front 與圖庫卡 .gc-square 共用）：顯示採樣中的即時預覽
+   （初始無 src → 深底 + 載入動畫，預覽到就淡入） */
+.gen-live { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block;
+            position: relative; z-index: 2; background: var(--sunk); }
+/* 載入動畫容器：剛好覆蓋方形圖區，用 grid 置中 loader */
+.gen-spin {
   position: absolute; top: 0; left: 0; width: 100%; aspect-ratio: 1 / 1; z-index: 3;
   display: grid; place-items: center; pointer-events: none;
 }
@@ -468,8 +469,8 @@ input[type=text]::placeholder { color: var(--faint); }
 }
 .gen-loader::after { animation-duration: 4s; }
 @keyframes gen-l24 { 100% { transform: rotate(1turn); } }
-.gen-card:not(.pending) .gen-spin { display: none; }   /* 生完不再顯示 */
-.gen-card.gr-err .gen-spin { display: none; }
+.gen-card:not(.pending) .gen-spin, .gcard:not(.pending) .gen-spin { display: none; }   /* 生完不再顯示 */
+.gen-card.gr-err .gen-spin, .gcard.gr-err .gen-spin { display: none; }
 .tarot-name { padding: 8px 9px 2px; font-size: 12.5px; font-weight: 600; line-height: 1.3;
               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tarot-folder { padding: 0 9px 9px; font-family: var(--mono); font-size: 10px; color: var(--amber);
@@ -612,18 +613,43 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
   max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .gen-tw .tw-chip.on { border-color: var(--amber); background: var(--amber-soft); color: var(--ink); }
 
-/* 生圖結果區：固定在 genbar 上方，累加（新的在前）。預設收合、點「結果」展開。 */
-.gen-results { position: fixed; left: 0; right: 0; bottom: 60px; z-index: 25; display: none;
-  max-height: 46vh; overflow-y: auto; padding: 14px 18px;
-  background: color-mix(in srgb, var(--bg) 96%, transparent); border-top: 1px solid var(--line);
-  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
-.gen-results.open { display: grid; }
-.gen-results .gr-card { display: flex; flex-direction: column; gap: 4px; }
-.gen-results .gr-card img { width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius: 10px; background: var(--sunk); cursor: pointer; }
-.gen-results .gr-name { font-size: 11px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gen-results .gr-card.pending img { animation: pulse 1.4s ease-in-out infinite; }
-.gen-results .gr-card.gr-err .gr-name { color: var(--err); }
+/* ---- 生成圖庫視圖：由「🖼 圖庫」鈕切換，蓋掉詞庫格線；本次生成、新→舊 ---- */
+.gallery-btn.on { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 55%, transparent);
+                  background: color-mix(in srgb, var(--amber) 12%, transparent); }
+.gallery-n { margin-left: 6px; font-family: var(--mono); font-size: 11px; opacity: .85; }
+
+#gallery-view { display: none; }
+body.gallery-open #gallery-view { display: block; }
+body.gallery-open #grid,
+body.gallery-open #coverbar,
+body.gallery-open #rarity-bar,
+body.gallery-open .main-head,
+body.gallery-open #draw-cards { display: none; }
+body.gallery-open #genbar,
+body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不顯示底部操作列 */
+
+.gallery-head { display: flex; align-items: baseline; gap: 10px; margin: 2px 2px 14px; }
+.gallery-head h2 { font-size: 18px; font-weight: 650; }
+.gallery-sub { font-family: var(--mono); font-size: 12px; color: var(--faint); }
+.gallery-empty { color: var(--faint); text-align: center; padding: 64px 20px; font-size: 14px; line-height: 1.9; }
+
+.gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; padding: 0 2px 48px; }
+.gcard { display: flex; flex-direction: column; gap: 5px;
+         animation: gcardIn .34s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 28ms); }
+.gc-square { position: relative; border-radius: 10px; overflow: hidden; background: var(--sunk); }
+.gcard .gen-live { border-radius: 10px; }
+.gcard:not(.pending) .gen-live { cursor: zoom-in; }
+.gcard.pending .gen-live { animation: pulse 1.4s ease-in-out infinite; }
+.gc-name { font-size: 12px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 2px; }
+.gcard.gr-err .gc-name { color: var(--err); }
+@keyframes gcardIn { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .gcard { animation: none; } }
+
+/* 圖庫大圖的資訊面板（modal 右欄，沿用 modal 兩欄版面） */
+.gi-info { display: flex; flex-direction: column; gap: 9px; }
+.gi-row { display: flex; gap: 10px; font-size: 13px; align-items: baseline; }
+.gi-k { flex: 0 0 52px; color: var(--faint); font-size: 12px; }
+.gi-v { color: var(--ink); word-break: break-word; }
 @keyframes pulse { 0%,100% { opacity: .5; } 50% { opacity: .9; } }
 .toast { position: fixed; left: 50%; bottom: 92px; transform: translate(-50%, 12px);
   background: var(--panel); border: 1px solid var(--line-2); color: var(--ink);

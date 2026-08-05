@@ -596,18 +596,26 @@ function applyMode(mode) {
   if (h1) h1.textContent = MODE_TITLE[MODE] || '詞庫暗房';
   moveModePill();
 }
-$('mode-seg').addEventListener('click', e => {
-  const btn = e.target.closest('button'); if (!btn) return;
-  if (btn.dataset.mode === MODE) return;
-  // 切模式**不重建格線、不走 VT**：各模式的卡片 DOM 相同（只差 CSS 顯隱與點擊行為，
-  // 由 body[data-mode] 控制），所以只要切 body[data-mode]＋更新標頭統計＋清選取即可。
-  // 不動格線 = 不重建 <img> = 圖片不會重繪暗一下；不碰 VT = 不會閃。
+// 切模式**不重建格線、不走 VT**：各模式的卡片 DOM 相同（只差 CSS 顯隱與點擊行為，由
+// body[data-mode] 控制），所以只要切 body[data-mode]＋更新標頭統計＋清選取即可。
+// 不動格線 = 不重建 <img> = 圖片不會重繪暗一下；不碰 VT = 不會閃。
+function switchMode(mode) {
   document.querySelectorAll('#grid .card.selected').forEach(c => c.classList.remove('selected'));
   SEL.clear();
-  applyMode(btn.dataset.mode);
+  applyMode(mode);
   updateStats();
   updateTagbar();
   updateGenbar();
+}
+$('mode-seg').addEventListener('click', e => {
+  const btn = e.target.closest('button'); if (!btn) return;
+  if (!GALLERY_OPEN && btn.dataset.mode === MODE) return;
+  const apply = () => {
+    if (GALLERY_OPEN) { GALLERY_OPEN = false; document.body.classList.remove('gallery-open'); $('gallery-btn').classList.remove('on'); }
+    switchMode(btn.dataset.mode);
+  };
+  if (GALLERY_OPEN) switchView(apply);   // 從圖庫切回某模式：交叉淡入
+  else apply();
 });
 applyMode(MODE);
 addEventListener('resize', moveModePill);
@@ -1204,8 +1212,86 @@ $('gen-strength').addEventListener('input', (e) => {
   GEN_STRENGTH = parseFloat(e.target.value);
   $('gen-strength-out').textContent = GEN_STRENGTH.toFixed(2);
 });
-$('gen-results-btn').onclick = () => $('gen-results').classList.toggle('open');
 $('gen-run').onclick = () => runGen();
+
+/* ---------------- 生成圖庫（本 session、記憶體、刷新即清空） ----------------
+   生成的圖不落地磁碟：前端維護 GALLERY 清單（含 metadata），後端仍記憶體暫存供圖。
+   刷新/關頁 → 清單消失 → 圖庫空。用獨立「🖼 圖庫」鈕切換視圖，蓋掉詞庫格線。 */
+const GALLERY = [];          // {id, name, rel, folder, lora:{folder,file,title}|null, strength, trigger, ts, done, err, seed}
+let GALLERY_OPEN = false;
+
+function switchView(fn) {     // 視圖切換交叉淡入（root VT）；窗格隱藏/減動時直接切
+  if (!document.startViewTransition || REDUCE_MOTION || document.visibilityState !== 'visible') { fn(); return; }
+  document.startViewTransition(fn);
+}
+function galleryLoraText(g) { return g.lora ? ((g.lora.folder ? g.lora.folder + '\\' : '') + g.lora.file) : '（無 LoRA）'; }
+function updateGalleryHead() {
+  const n = GALLERY.length;
+  const sub = $('gallery-sub'); if (sub) sub.textContent = n ? `${n} 張` : '';
+  const badge = $('gallery-n'); if (badge) badge.textContent = n ? String(n) : '';
+  const empty = $('gallery-empty'); if (empty) empty.style.display = n ? 'none' : '';
+}
+function buildGalleryCard(g, i) {
+  const card = document.createElement('div');
+  card.className = 'gcard' + (g.done ? '' : ' pending') + (g.err ? ' gr-err' : '');
+  card.dataset.gid = g.id;
+  card.style.setProperty('--i', i || 0);
+  const sq = document.createElement('div'); sq.className = 'gc-square';
+  const img = document.createElement('img'); img.className = 'gen-live'; img.alt = ''; img.decoding = 'async';
+  img.onload = () => img.classList.add('ld');
+  if (g.done) img.src = '/api/gen-result?id=' + g.id;
+  img.onclick = () => { const gg = GALLERY.find(x => x.id === g.id); if (gg && gg.done) { MODAL_FROM_TAROT = false; openGalleryItem(g.id); } };
+  const spin = document.createElement('div'); spin.className = 'gen-spin'; spin.innerHTML = '<i class="gen-loader"></i>';
+  sq.append(img, spin);
+  const nm = document.createElement('div'); nm.className = 'gc-name'; nm.textContent = g.name;
+  card.append(sq, nm);
+  return card;
+}
+function renderGallery() {
+  const grid = $('gallery-grid'); if (!grid) return;
+  grid.innerHTML = '';
+  for (let k = GALLERY.length - 1, i = 0; k >= 0; k--, i++) grid.appendChild(buildGalleryCard(GALLERY[k], i));   // 新→舊
+  updateGalleryHead();
+}
+function openGallery() {
+  if (GALLERY_OPEN) return;
+  switchView(() => { GALLERY_OPEN = true; document.body.classList.add('gallery-open'); $('gallery-btn').classList.add('on'); renderGallery(); });
+}
+function closeGallery() {
+  if (!GALLERY_OPEN) return;
+  switchView(() => { GALLERY_OPEN = false; document.body.classList.remove('gallery-open'); $('gallery-btn').classList.remove('on'); });
+}
+$('gallery-btn').onclick = () => (GALLERY_OPEN ? closeGallery() : openGallery());
+
+// 點圖庫（或抽卡塔羅）縮圖看大圖＋資訊。MODAL_FROM_TAROT 由呼叫端設：塔羅來的關掉回牌、圖庫來的正常關。
+function openGalleryItem(gid) {
+  const g = GALLERY.find(x => x.id === gid);
+  const inner = $('modal-inner'); if (!inner) return;
+  delete inner.dataset.rel;
+  inner.innerHTML = '';
+  const left = document.createElement('div');
+  const img = document.createElement('img');
+  img.style.cssText = 'max-width:100%;border-radius:10px;background:#000';
+  img.src = '/api/gen-result?id=' + encodeURIComponent(gid);
+  left.appendChild(img);
+  const right = document.createElement('div'); right.className = 'gi-info';
+  const rows = g ? [
+    ['詞庫', g.name], ['資料夾', g.folder || '(根目錄)'],
+    ['LoRA', galleryLoraText(g)],
+    ['強度', g.lora ? (+g.strength).toFixed(2) : '—'],
+    ['觸發詞', g.trigger || '（無）'],
+    ['seed', g.seed != null ? String(g.seed) : '—'],
+    ['時間', new Date(g.ts).toLocaleString()],
+  ] : [];
+  for (const [k, v] of rows) {
+    const row = document.createElement('div'); row.className = 'gi-row';
+    const kk = document.createElement('span'); kk.className = 'gi-k'; kk.textContent = k;
+    const vv = document.createElement('span'); vv.className = 'gi-v'; vv.textContent = v;
+    row.append(kk, vv); right.appendChild(row);
+  }
+  inner.append(left, right);
+  $('modal').classList.add('open');
+}
 
 // 抽卡生圖：從目前資料夾/搜尋範圍隨機抽 8 個詞庫，翻塔羅牌呈現、邊生成邊在牌面顯示即時預覽。
 function drawGenTarot() {
@@ -1215,42 +1301,37 @@ function drawGenTarot() {
   runGen(picks.map(x => x.rel), picks);
 }
 
-// 起一批生圖並在結果區建卡；若傳入 tarotItems 則同時開塔羅覆蓋層發牌呈現。
-// rels 省略時用目前選取（生圖鈕）。回傳的每張圖 gid 同時掛在結果卡與（有的話）塔羅卡上，
-// 由 startGenPoll 統一更新：pending 期間抓 /api/gen-preview 顯示採樣中畫面，done 換成成品。
+// 起一批生圖：每張推進 GALLERY（帶 metadata），並掛 gid 到卡片上；抽卡另開塔羅浮層、
+// 手動生圖則切到圖庫視圖。startGenPoll 統一更新卡片：pending 抓 /api/gen-preview 顯示採樣
+// 中畫面、done 換成品；同時把 seed/done 回填進 GALLERY 供大圖資訊用。
 let _genPoll = null;
 async function runGen(rels, tarotItems) {
   rels = rels || [...SEL];
   if (!rels.length) return;
-  const payload = {
-    rels,
-    lora: GEN_LORA ? { folder: GEN_LORA.folder, file: GEN_LORA.file } : null,
-    strength: GEN_STRENGTH,
-    trigger: genTriggerText(),
-    client: GEN_CLIENT,
-  };
+  const lora = GEN_LORA ? { folder: GEN_LORA.folder, file: GEN_LORA.file, title: GEN_LORA.title || GEN_LORA.name } : null;
+  const strength = GEN_STRENGTH, trigger = genTriggerText();
+  const payload = { rels, lora: lora && { folder: lora.folder, file: lora.file }, strength, trigger, client: GEN_CLIENT };
   let res;
   try {
     res = await fetch('/api/gen', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(r => r.json());
   } catch (e) { toast('生圖失敗：' + e.message); return; }
   if (res.error) { toast(res.error); return; }
   const items = res.items || [];
-  const box = $('gen-results');
-  box.classList.add('open');
-  // prepend（新的在前）；同一批內維持選取順序，所以 reverse 後逐一插到最前
-  for (const it of items.slice().reverse()) {
-    const card = document.createElement('div');
-    card.className = 'gr-card pending';
-    card.dataset.gid = it.id;
-    const img = document.createElement('img'); img.alt = '';
-    img.onclick = () => { if (!card.classList.contains('pending')) { MODAL_FROM_TAROT = false; openGenResult(it.id); } };   // 結果區開的大圖：正常關閉
-    const nm = document.createElement('div'); nm.className = 'gr-name'; nm.textContent = it.name;
-    card.append(img, nm);
-    box.insertBefore(card, box.firstChild);
+  const ts = Date.now();
+  for (const it of items) {
+    GALLERY.push({ id: it.id, name: it.name, rel: it.rel, folder: (VISIBLE.find(x => x.rel === it.rel) || {}).folder || '',
+                   lora, strength, trigger, ts, done: false, err: false, seed: null });
   }
-  updateGenResultsN();
-  if (tarotItems) openGenTarot(items, tarotItems);
-  else toast(`生圖 ${items.length} 張，生成中…`);
+  updateGalleryHead();
+  if (tarotItems) {
+    openGenTarot(items, tarotItems);          // 抽卡：塔羅浮層（圖同時已進圖庫）
+    if (GALLERY_OPEN) renderGallery();
+  } else if (GALLERY_OPEN) {
+    renderGallery();                          // 已在圖庫：直接重繪把新卡帶進來
+  } else {
+    openGallery();                            // 手動生圖：切到圖庫，新卡在最上方即時長出
+  }
+  toast(`生圖 ${items.length} 張…`);
   startGenPoll(items.map(x => x.id));
 }
 
@@ -1283,7 +1364,7 @@ function openGenTarot(items, picks) {
        </div>`;
     card.querySelector('.tarot-name').textContent = item.display_name || item.name || it.name;
     card.querySelector('.tarot-folder').textContent = item.folder || '(根目錄)';
-    card.addEventListener('click', () => { if (!card.classList.contains('pending')) { MODAL_FROM_TAROT = true; openGenResult(it.id); } });   // 疊上層，關掉回到這批牌
+    card.addEventListener('click', () => { if (!card.classList.contains('pending')) { MODAL_FROM_TAROT = true; openGalleryItem(it.id); } });   // 疊上層，關掉回到這批牌
     if (!REDUCE) {
       card.addEventListener('mousemove', e => tiltCard(card, e));
       card.addEventListener('mouseleave', () => { card.style.transform = ''; });
@@ -1297,14 +1378,14 @@ function openGenTarot(items, picks) {
   cards.forEach((c, i) => setTimeout(() => c.classList.add('revealed'), dealDone + i * 80));
 }
 
-function updateGenResultsN() {
-  const el = $('gen-results-n'); if (!el) return;
-  const n = $('gen-results').querySelectorAll('.gr-card').length;
-  el.textContent = n ? `(${n})` : '';
-}
-
-// 更新某 gid 的所有卡片（結果區＋塔羅），pending 顯示即時預覽、done 換成品、error 標記。
+// 更新某 gid 的所有卡片（圖庫＋塔羅），pending 顯示即時預覽、done 換成品、error 標記；
+// 並把 done/seed/err 回填進 GALLERY 資料，供大圖資訊面板用。
 function applyGenState(gid, s) {
+  const g = GALLERY.find(x => x.id === gid);
+  if (g) {
+    if (s.status === 'done') { g.done = true; g.seed = s.seed; }
+    else if (s.status === 'error' || s.status === 'cancelled') { g.err = true; }
+  }
   const cards = document.querySelectorAll(`[data-gid="${cssAttr(gid)}"]`);
   cards.forEach(card => {
     const img = card.querySelector('img');
@@ -1313,7 +1394,7 @@ function applyGenState(gid, s) {
       if (img) img.src = '/api/gen-result?id=' + gid;
     } else if (s.status === 'error' || s.status === 'cancelled') {
       card.classList.remove('pending'); card.classList.add('gr-err');
-      const nm = card.querySelector('.gr-name');
+      const nm = card.querySelector('.gc-name, .gr-name, .tarot-name');
       if (nm && !nm.dataset.tag) { nm.dataset.tag = '1'; nm.textContent += s.status === 'cancelled' ? ' · 已取消' : (' ✕ ' + (s.err || '失敗')); }
     } else if (img && (s.pv || 0) > (+card.dataset.pv || 0)) {
       // 有新的採樣預覽才換 src（pv 遞增），避免每 2s 無謂重載
@@ -1349,14 +1430,6 @@ window.addEventListener('pagehide', () => {
   if (!_genPoll) return;
   try { navigator.sendBeacon('/api/gen-cancel', new Blob([JSON.stringify({ client: GEN_CLIENT })], { type: 'application/json' })); } catch (e) {}
 });
-
-// 點結果縮圖看大圖（沿用 modal；清掉 dataset.rel 讓方向鍵的 modalStep 不誤動詞庫）
-function openGenResult(gid) {
-  const inner = $('modal-inner'); if (!inner) return;
-  delete inner.dataset.rel;
-  inner.innerHTML = `<div><img style="max-width:100%;border-radius:10px;background:#000" src="/api/gen-result?id=${encodeURIComponent(gid)}"></div>`;
-  $('modal').classList.add('open');
-}
 
 function hideBoot() {
   const b = document.getElementById('boot');
