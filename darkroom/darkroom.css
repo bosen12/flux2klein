@@ -652,13 +652,33 @@ body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不�
 .gcard { display: flex; flex-direction: column; gap: 5px;
          animation: gcardIn .34s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 28ms); }
 .gc-square { position: relative; border-radius: 10px; overflow: hidden; background: var(--sunk); }
-.gcard .gen-live { border-radius: 10px; }
+.gcard .gen-live { border-radius: 10px; transition: transform var(--d-ui) var(--ease-out); }
 .gcard:not(.pending) .gen-live { cursor: zoom-in; }
 .gcard.pending .gen-live { animation: pulse 1.4s ease-in-out infinite; }
 .gc-name { font-size: 12px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 2px; }
 .gcard.gr-err .gc-name { color: var(--err); }
 @keyframes gcardIn { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .gcard { animation: none; } }
+
+/* 圖庫卡聚光（跟格線縮圖 .thumb::after 同一招）：hover 時方形圖上一圈跟著游標的琥珀柔光。
+   --mx/--my 由 JS 在 pointermove 設定；只在完成（非 pending）的卡片上啟用，跟可點看大圖的
+   狀態一致——生成中 hover 一顆會動的光點在轉圈上方沒有意義。 */
+.gc-square::after { content: ""; position: absolute; inset: 0; z-index: 5; pointer-events: none; mix-blend-mode: screen;
+  opacity: 0; transition: opacity var(--d-ui) var(--ease-out);
+  background: radial-gradient(150px circle at var(--mx, 50%) var(--my, 50%), rgba(234,173,87,.28), transparent 62%); }
+.gcard:not(.pending):hover .gc-square::after { opacity: 1; }
+.gcard:not(.pending):hover .gen-live { transform: scale(1.04); }
+
+/* 生成完成的「收成」瞬間：pending→done 那一刻在方形圖上跑一圈短促的琥珀光暈脈動＋
+   微彈跳，讓「生完了」有反饋感，而不是圖片默默换掉。抽卡塔羅（.gen-front）與圖庫卡
+   （.gc-square）共用同一個 .just-done 觸發點；只播一次、由 JS 在動畫結束後拿掉 class。 */
+@keyframes genFinishPop {
+  0%   { box-shadow: 0 0 0 0 rgba(234,173,87,.55); transform: scale(1); }
+  55%  { box-shadow: 0 0 0 9px rgba(234,173,87,0); transform: scale(1.02); }
+  100% { box-shadow: 0 0 0 0 rgba(234,173,87,0); transform: scale(1); }
+}
+.gc-square.just-done, .gen-front.just-done { animation: genFinishPop .6s var(--ease-out); }
+@media (prefers-reduced-motion: reduce) { .gc-square.just-done, .gen-front.just-done { animation: none; } }
 
 /* 圖庫大圖的資訊面板（modal 右欄，沿用 modal 兩欄版面） */
 .gi-info { display: flex; flex-direction: column; gap: 9px; }

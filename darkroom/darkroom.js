@@ -635,6 +635,14 @@ $('grid').addEventListener('pointermove', e => {
   thumb.style.setProperty('--mx', (e.clientX - r.left) + 'px');
   thumb.style.setProperty('--my', (e.clientY - r.top) + 'px');
 });
+// 圖庫卡同一招聚光（見 .gc-square::after）
+$('gallery-grid').addEventListener('pointermove', e => {
+  const sq = e.target.closest('.gc-square');
+  if (!sq) return;
+  const r = sq.getBoundingClientRect();
+  sq.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+  sq.style.setProperty('--my', (e.clientY - r.top) + 'px');
+});
 // 資料夾排序方向切換（升冪 ↑ / 降冪 ↓），記住選擇
 function updateRailSortLabel() {
   const b = $('rail-sort'); if (b) b.textContent = RAIL_DESC ? '降冪 ↓' : '升冪 ↑';
@@ -1423,6 +1431,17 @@ function openGenTarot(items, picks) {
 
 // 更新某 gid 的所有卡片（圖庫＋塔羅），pending 顯示即時預覽、done 換成品、error 標記；
 // 並把 done/seed/err 回填進 GALLERY 資料，供大圖資訊面板用。
+// 生成完成的「收成」瞬間：方形圖上短促跑一圈 CSS 動畫（見 .just-done/genFinishPop）。
+// 只播一次，不需要 remove→reflow→add 那套（CLAUDE.md 提過重複觸發不可靠，但這裡本來
+// 就是單次事件，直接加 class＋setTimeout 收尾即可；respect REDUCE_MOTION）。
+function triggerFinishFlourish(card) {
+  if (REDUCE_MOTION) return;
+  const target = card.querySelector('.gc-square, .gen-front');
+  if (!target) return;
+  target.classList.add('just-done');
+  setTimeout(() => target.classList.remove('just-done'), 650);
+}
+
 function applyGenState(gid, s) {
   const g = GALLERY.find(x => x.id === gid);
   if (g) {
@@ -1433,8 +1452,10 @@ function applyGenState(gid, s) {
   cards.forEach(card => {
     const img = card.querySelector('img');
     if (s.status === 'done') {
+      const wasPending = card.classList.contains('pending');
       card.classList.remove('pending');
       if (img) img.src = '/api/gen-result?id=' + gid;
+      if (wasPending) triggerFinishFlourish(card);   // 「收成」瞬間：只在真的從生成中轉為完成時播
     } else if (s.status === 'error' || s.status === 'cancelled') {
       card.classList.remove('pending'); card.classList.add('gr-err');
       const nm = card.querySelector('.gc-name, .gr-name, .tarot-name');
