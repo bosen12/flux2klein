@@ -592,9 +592,19 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 #lora-pick-btn.has { border-color: var(--amber); color: var(--ink); }
 /* .lora-row/.lora-cat-head/.lora-pager 等清單樣式沿用給 #lm-list（大面板左欄）用，
    不用重寫一份——原本是底部彈出小選單的清單項目樣式，換到大面板照樣適用。 */
+/* 用新 DOM 節點的進場動畫（每次 renderLmList 都是重新 createElement，不是重用舊節點，
+   跟 CLAUDE.md 記過的「class 加減重啟動畫不可靠」是不同情境——這裡本來就是全新元素，
+   動畫穩定會播）。翻頁/換分類/打字搜尋時，一整批新的列淡入，讓「內容換了」有感覺。 */
 .lora-row { display: flex; align-items: center; gap: 9px; padding: 6px 8px; border-radius: 8px;
-  cursor: pointer; text-align: left; border: 0; background: transparent; color: var(--ink); }
-.lora-row:hover, .lora-row.on { background: var(--amber-soft); }
+  cursor: pointer; text-align: left; border: 0; background: transparent; color: var(--ink);
+  transition: background var(--d-micro) var(--ease-out), box-shadow var(--d-micro) var(--ease-out);
+  animation: lmRowIn .22s var(--ease-out) both; }
+.lora-row:hover { background: color-mix(in srgb, var(--amber-soft) 55%, transparent); }
+/* 選中要跟單純滑過去有明顯差別，不然分不清「游標剛好在上面」跟「這個就是選中的」。
+   選中用左側琥珀色細條（inset box-shadow，不佔版位、不會讓文字跳動）常駐標示。 */
+.lora-row.on { background: var(--amber-soft); box-shadow: inset 3px 0 0 var(--amber); }
+@keyframes lmRowIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .lora-row { animation: none; } }
 .lora-row .rn { flex: 1; min-width: 0; }
 .lora-row .rt { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lora-row .rf { font-size: 10px; color: var(--faint); font-family: var(--mono); }
@@ -657,10 +667,15 @@ body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不�
   box-shadow: var(--shadow); display: grid; grid-template-columns: 320px 1fr; overflow: hidden;
   animation: modalPop var(--d-pop) var(--ease-entrance); }
 @media (prefers-reduced-motion: reduce) { .lora-modal.open, .lora-modal-inner { animation: none; } }
+/* display:grid + place-items:center 是這專案讓單一符號在按鈕正中間的既定做法（跟
+   .fav-btn 同一招）——純文字按鈕若只靠預設 line-height/padding 置中，"✕" 這類符號
+   的字型量度天生不對稱，看起來會偏一邊。padding:0 避免預設 button padding 把它推歪。 */
 .lora-modal-close { position: absolute; top: 10px; right: 10px; z-index: 2;
-  width: 32px; height: 32px; border-radius: 8px; border: 0; background: var(--sunk); color: var(--dim);
-  cursor: pointer; font-size: 15px; transition: color var(--d-micro) var(--ease-out), background var(--d-micro) var(--ease-out); }
+  width: 32px; height: 32px; padding: 0; border-radius: 8px; border: 0; background: var(--sunk); color: var(--dim);
+  display: grid; place-items: center; cursor: pointer; font-size: 15px; line-height: 1;
+  transition: color var(--d-micro) var(--ease-out), background var(--d-micro) var(--ease-out), transform var(--d-micro) var(--ease-out); }
 .lora-modal-close:hover { color: var(--ink); background: var(--line-2); }
+.lora-modal-close:active { transform: scale(.9); }
 
 /* min-height:0 是關鍵：.lm-left 是 CSS Grid 的格子（跟 .lm-right 並排），Grid/Flex 項目
    預設 min-height 是 auto（＝內容自然高度），沒有這行的話 80 幾列的清單會把 .lm-left
@@ -683,30 +698,53 @@ body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不�
 /* 清單縮圖直接夠大就看得清楚，不用另外 hover 才跳一張大圖出來——少一層互動、更直觀。 */
 .lora-row img, .lora-row .ph { width: 52px; height: 52px; border-radius: 8px; object-fit: cover; flex: none; background: var(--sunk); }
 
-.lm-right { padding: 20px 22px; overflow-y: auto; min-width: 0; }
+.lm-right { padding: 20px 46px 24px 22px; overflow-y: auto; min-width: 0; }   /* 右邊多留白，別讓內容擠到浮動的 ✕ */
 .lm-right-head { font-size: 11px; color: var(--faint); font-family: var(--mono); letter-spacing: .5px; margin-bottom: 10px; }
 .lm-none { color: var(--faint); font-size: 13px; padding: 40px 0; text-align: center; }
-.lm-cur-head { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+
+/* 選了一個 LoRA、右欄整塊內容重繪時的進場節奏（呼應 animation-systems 的「hero 先動、
+   次要元素跟著、小 stagger 建立閱讀順序」）：縮圖/標題先淡入，每段 trainedWords 卡片
+   接著小 stagger 依序浮現（--i 由 JS 設，見 renderLmCurrent），強度列跟大預覽圖殿後
+   （delay 由 JS 依段數算，段數愈多、後面的元素愈晚出場，順序感才對）。 */
+.lm-cur-head { display: flex; align-items: center; gap: 12px; margin-bottom: 18px;
+  animation: lmFadeUp var(--d-pop) var(--ease-entrance) both; }
 .lm-cur-head img, .lm-cur-head .ph { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; flex: none; background: var(--sunk); }
 .lm-cur-title { font-size: 15px; font-weight: 700; color: var(--ink); }
 .lm-cur-folder { font-size: 11px; color: var(--faint); font-family: var(--mono); margin-top: 2px; }
 
 /* 每段 trainedWords 各自一張完整文字卡——這是這個面板存在的目的：不截斷、一眼看完整段。
    用原生 checkbox（最不用學的互動元件）決定要不要用這段，跟現有 GEN_TW_PICKS 狀態同步。 */
-.lm-tw-label { font-size: 12px; color: var(--dim); margin-bottom: 8px; }
+.lm-tw-label { font-size: 12px; color: var(--dim); margin-bottom: 8px;
+  animation: lmFadeUp var(--d-pop) var(--ease-entrance) both; animation-delay: 60ms; }
 .lm-tw-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
 .lm-tw-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 10px;
   border: 1px solid var(--line-2); background: var(--sunk); cursor: pointer;
-  transition: border-color var(--d-micro) var(--ease-out), background var(--d-micro) var(--ease-out); }
+  transition: border-color var(--d-micro) var(--ease-out), background var(--d-micro) var(--ease-out);
+  animation: lmFadeUp var(--d-pop) var(--ease-entrance) both;
+  animation-delay: calc(90ms + var(--i, 0) * 45ms); }
 .lm-tw-item:hover { border-color: var(--line-2); background: color-mix(in srgb, var(--sunk) 70%, var(--amber-soft)); }
 .lm-tw-item.on { border-color: var(--amber); background: var(--amber-soft); }
 .lm-tw-item input { margin-top: 3px; accent-color: var(--amber); flex: none; }
 .lm-tw-item .lm-tw-idx { font-family: var(--mono); font-size: 10.5px; color: var(--faint); flex: none; margin-top: 2px; }
 .lm-tw-item .lm-tw-text { font-size: 13px; line-height: 1.6; color: var(--ink); white-space: normal; word-break: break-word; }
 
-.lm-strength { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--dim); margin-bottom: 6px; }
+/* animation-delay 由 JS 依 trainedWords 段數算（見 renderLmCurrent）——段數愈多，
+   後面的強度列/大圖愈晚出場，順序感才對；CSS 這裡不寫死數字。 */
+.lm-strength { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--dim); margin-bottom: 18px;
+  animation: lmFadeUp var(--d-pop) var(--ease-entrance) both; }
 .lm-strength input[type=range] { flex: 1; }
 .lm-strength output { font-family: var(--mono); min-width: 36px; text-align: right; }
+
+/* 大預覽圖：強度列下方，整段訓練詞讀完後最後出場（呼應「hero 先動、其餘跟隨」——這裡
+   反過來，文字是重點先看，圖片是補充放最後）。用 contain 而非 cover：這是參考圖，使用者
+   要看完整構圖判斷風格，裁掉一部分反而失去意義。 */
+.lm-preview { border-radius: 12px; overflow: hidden; background: var(--sunk); border: 1px solid var(--line);
+  animation: lmFadeUp var(--d-pop) var(--ease-entrance) both; }
+.lm-preview img { display: block; width: 100%; max-height: 320px; object-fit: contain; }
+@keyframes lmFadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .lm-cur-head, .lm-tw-label, .lm-tw-item, .lm-strength, .lm-preview { animation: none; }
+}
 
 @media (max-width: 760px) {
   .lora-modal-inner { grid-template-columns: 1fr; height: 90vh; }

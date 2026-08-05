@@ -1260,6 +1260,7 @@ function renderLmCurrent() {
     tw.forEach((w, i) => {
       const item = document.createElement('label');
       item.className = 'lm-tw-item' + (GEN_TW_PICKS.has(i) ? ' on' : '');
+      item.style.setProperty('--i', i);   // 進場 stagger 用（見 darkroom.css .lm-tw-item）
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = GEN_TW_PICKS.has(i); cb.dataset.i = i;
       const idx = document.createElement('span'); idx.className = 'lm-tw-idx'; idx.textContent = (i + 1) + '.';
       const txt = document.createElement('span'); txt.className = 'lm-tw-text'; txt.textContent = w;
@@ -1269,13 +1270,28 @@ function renderLmCurrent() {
     box.appendChild(list);
   }
 
+  // 段落卡片依序浮現完之後，強度列跟大預覽圖才出場——段數愈多，這兩個愈晚出現，順序感
+  // 才對（呼應 animation-systems「hero 先動、次要元素跟隨」，這裡文字段落是重點）。
+  const tailDelay = 90 + tw.length * 45 + 70;
+
   const strengthRow = document.createElement('div'); strengthRow.className = 'lm-strength';
+  strengthRow.style.animationDelay = tailDelay + 'ms';
   const sLabel = document.createElement('span'); sLabel.textContent = '強度';
   const sInput = document.createElement('input'); sInput.type = 'range'; sInput.id = 'lm-strength';
   sInput.min = '0'; sInput.max = '1'; sInput.step = '0.05'; sInput.value = String(GEN_STRENGTH);
   const sOut = document.createElement('output'); sOut.id = 'lm-strength-out'; sOut.textContent = GEN_STRENGTH.toFixed(2);
   strengthRow.append(sLabel, sInput, sOut);
   box.appendChild(strengthRow);
+
+  // 大預覽圖：強度列下方，不用另外 hover 才跳出來——直接看得到整張參考圖。
+  if (GEN_LORA.preview) {
+    const pv = document.createElement('div'); pv.className = 'lm-preview';
+    pv.style.animationDelay = (tailDelay + 60) + 'ms';
+    const im = document.createElement('img'); im.loading = 'lazy'; im.alt = '';
+    im.src = loraPreviewUrl(GEN_LORA);
+    pv.appendChild(im);
+    box.appendChild(pv);
+  }
 }
 
 // 目前選的 LoRA 觸發詞（依 GEN_TW_PICKS 組合，供生成時注入正向）
