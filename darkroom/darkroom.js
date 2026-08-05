@@ -611,7 +611,7 @@ $('mode-seg').addEventListener('click', e => {
   const btn = e.target.closest('button'); if (!btn) return;
   if (!GALLERY_OPEN && btn.dataset.mode === MODE) return;
   const apply = () => {
-    if (GALLERY_OPEN) { GALLERY_OPEN = false; document.body.classList.remove('gallery-open'); $('gallery-btn').classList.remove('on'); }
+    if (GALLERY_OPEN) { GALLERY_OPEN = false; closeGalleryDom(); }
     switchMode(btn.dataset.mode);
   };
   if (GALLERY_OPEN) switchView(apply);   // 從圖庫切回某模式：交叉淡入
@@ -1116,6 +1116,9 @@ let GEN_STRENGTH = 0.8;
 const GEN_TW_PICKS = new Set();       // 選中的觸發詞組索引
 // 這個分頁的識別碼：生圖時帶給後端，讓「刷新/關閉這個分頁」只取消自己送的生圖，別的分頁不受影響。
 const GEN_CLIENT = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now());
+// #genbar 原本在 DOM 裡的位置（開圖庫時會被整個搬進 #gallery-lora-panel，關閉時要搬回這裡）。
+// 開機時只記一次，之後不管搬去哪裡都能準確搬回來。
+const GENBAR_HOME = { parent: $('genbar').parentNode, next: $('genbar').nextSibling };
 
 async function fetchGenLoras() {
   if (GEN_LORAS) return GEN_LORAS;
@@ -1302,13 +1305,41 @@ function renderGallery() {
   for (let k = GALLERY.length - 1, i = 0; k >= 0; k--, i++) grid.appendChild(buildGalleryCard(GALLERY[k], i));   // 新→舊
   updateGalleryHead();
 }
+const GALLERY_NARROW = () => matchMedia('(max-width: 860px)').matches;
+
+// 窄螢幕收合面板（省垂直空間，格線才是主角）：max-height 的數字用 scrollHeight 量實際內容
+// 高度，不是隨便設一個很大的值——CSS transition 轉場 to/from `none` 不會動畫，要精確像素值
+// 才能順順展開/收合（跟 app.js renderCatBar 收合分類同一招）。桌面版不受影響（沒設 inline style）。
+function setGalleryPanelCollapsed(collapsed) {
+  const panel = $('gallery-lora-panel'), bar = $('genbar');
+  if (!panel || !bar) return;
+  panel.classList.toggle('collapsed', collapsed);
+  if (!GALLERY_NARROW()) { bar.style.maxHeight = ''; return; }
+  bar.style.maxHeight = collapsed ? '0px' : bar.scrollHeight + 'px';
+}
+$('glp-toggle').onclick = () => setGalleryPanelCollapsed(!$('gallery-lora-panel').classList.contains('collapsed'));
+
+// 開圖庫：把 #genbar 整個搬進面板（只在生圖模式會顯示，見 CSS 的
+// body.gallery-open[data-mode="gen"] #gallery-lora-panel；其他模式面板 display:none，
+// genbar 待在裡面不影響任何東西）。窄螢幕預設收合，桌面預設展開。
 function openGallery() {
   if (GALLERY_OPEN) return;
-  switchView(() => { GALLERY_OPEN = true; document.body.classList.add('gallery-open'); $('gallery-btn').classList.add('on'); renderGallery(); });
+  switchView(() => {
+    GALLERY_OPEN = true; document.body.classList.add('gallery-open'); $('gallery-btn').classList.add('on');
+    $('gallery-lora-panel').appendChild($('genbar'));
+    updateGenbar();
+    setGalleryPanelCollapsed(GALLERY_NARROW());
+    renderGallery();
+  });
+}
+// 關圖庫：把 #genbar 搬回原本的底部列位置（GENBAR_HOME 開機時記錄的座標）。
+function closeGalleryDom() {
+  document.body.classList.remove('gallery-open'); $('gallery-btn').classList.remove('on');
+  GENBAR_HOME.parent.insertBefore($('genbar'), GENBAR_HOME.next);
 }
 function closeGallery() {
   if (!GALLERY_OPEN) return;
-  switchView(() => { GALLERY_OPEN = false; document.body.classList.remove('gallery-open'); $('gallery-btn').classList.remove('on'); });
+  switchView(() => { GALLERY_OPEN = false; closeGalleryDom(); });
 }
 $('gallery-btn').onclick = () => (GALLERY_OPEN ? closeGallery() : openGallery());
 

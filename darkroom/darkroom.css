@@ -640,18 +640,23 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 .gallery-n { margin-left: 6px; font-family: var(--mono); font-size: 11px; opacity: .85; }
 
 #gallery-view { display: none; }
-body.gallery-open #gallery-view { display: block; }
+body.gallery-open #gallery-view { display: flex; flex-direction: column; }
 body.gallery-open #grid,
 body.gallery-open #coverbar,
 body.gallery-open #rarity-bar,
 body.gallery-open .main-head { display: none; }
-body.gallery-open #genbar,
-body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不顯示底部操作列 */
+body.gallery-open #tagbar { transform: translateY(130%); }   /* 打標底部列圖庫視圖不顯示；
+  #genbar 不在這裡列——它開圖庫時會被搬進 #gallery-lora-panel，脫離 .tagbar 固定列語境 */
 
 .gallery-head { display: flex; align-items: baseline; gap: 10px; margin: 2px 2px 14px; }
 .gallery-head h2 { font-size: 18px; font-weight: 650; }
 .gallery-sub { font-family: var(--mono); font-size: 12px; color: var(--faint); }
 .gallery-empty { color: var(--faint); text-align: center; padding: 64px 20px; font-size: 14px; line-height: 1.9; }
+
+/* 主格線＋LoRA 面板並排：面板固定寬、格線吃剩下空間（min-width:0 讓 grid 能在 flex 裡正常收縮，
+   不然 grid-template-columns 的 auto-fill 會撐爆容器）。窄螢幕改上下堆疊，見下方 860px 斷點。 */
+.gallery-body { display: flex; align-items: flex-start; gap: 22px; }
+.gallery-main { flex: 1; min-width: 0; }
 
 .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; padding: 0 2px 48px; }
 .gcard { display: flex; flex-direction: column; gap: 5px;
@@ -664,6 +669,57 @@ body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不�
 .gcard.gr-err .gc-name { color: var(--err); }
 @keyframes gcardIn { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .gcard { animation: none; } }
+
+/* ---- 圖庫旁的 LoRA 面板：只在生圖模式開圖庫時出現（body.gallery-open[data-mode="gen"]，
+   純 CSS 組合選擇器判斷，不用額外 JS 邏輯）。內容是 #genbar 整個節點被 JS 搬進來（見
+   darkroom.js openGallery/closeGallery），不是重造一份 UI——事件監聽器都還在、狀態只有一份。
+   效能：只用 transform/opacity 做進場（GPU 合成、不觸發 layout），搬 DOM 節點是 O(1) 操作，
+   不會重建或重掃格線；尊重 prefers-reduced-motion。 */
+#gallery-lora-panel { display: none; width: 264px; flex: none; }
+body.gallery-open[data-mode="gen"] #gallery-lora-panel {
+  display: flex; flex-direction: column; gap: 12px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 16px; box-shadow: var(--shadow);
+  animation: galleryPanelIn var(--d-pop) var(--ease-entrance) both;
+}
+@keyframes galleryPanelIn { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { body.gallery-open[data-mode="gen"] #gallery-lora-panel { animation: none; } }
+
+.glp-head { display: flex; align-items: center; justify-content: space-between; }
+.glp-title { font-size: 13px; font-weight: 700; color: var(--ink); letter-spacing: .3px; }
+.glp-toggle { display: none; }   /* 只在窄螢幕（見下方 860px 斷點）顯示收合鈕 */
+
+/* #genbar 搬進面板後：從「固定底部橫向列」改成「面板內直向堆疊」。用 2 個 id 選擇器
+   （specificity 高於 body.gallery-open #genbar 那條 1 class+1 id 的滑出規則），不用 !important。 */
+#gallery-lora-panel #genbar {
+  position: static; transform: none; pointer-events: auto;
+  flex-direction: column; align-items: stretch; gap: 12px;
+  padding: 0; background: none; border: 0; box-shadow: none;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  overflow: visible;
+}
+#gallery-lora-panel #genbar .spacer { display: none; }        /* 橫向排版推擠用，直向堆疊不需要 */
+#gallery-lora-panel #gen-run { width: 100%; }
+#gallery-lora-panel .lora-pop { bottom: auto; top: calc(100% + 8px); }  /* 面板不在畫面最底，改往下彈出 */
+#gallery-lora-panel .gen-tw { max-width: none; }
+
+@media (max-width: 860px) {
+  /* 窄螢幕：面板從側欄改成格線上方一整條、可收合（省垂直空間，格線才是主角）。
+     沿用 app.js renderCatBar 同一招——JS 量實際內容高度設 max-height，而非猜一個
+     很大的數字，收合/展開過渡才準。 */
+  .gallery-body { flex-direction: column; }
+  #gallery-lora-panel { width: auto; animation: none; }   /* 上下堆疊時不用側滑進場，改單純淡入交給 switchView 的 root 交叉淡 */
+  .glp-toggle { display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; border: 0; background: transparent; color: var(--faint);
+    font-size: 13px; cursor: pointer; border-radius: 6px; transition: transform var(--d-ui) var(--ease-out); }
+  .glp-toggle:hover { color: var(--ink); background: var(--sunk); }
+  #gallery-lora-panel.collapsed .glp-toggle { transform: rotate(-90deg); }
+  /* max-height 的實際數值由 JS 量 scrollHeight 設成 inline style（見 darkroom.js
+     setGalleryPanelCollapsed）——CSS 转場 to/from `none` 不會動畫，要有精確像素值才能
+     順順展開/收合，跟 app.js renderCatBar 收合分類同一招。 */
+  #gallery-lora-panel #genbar { overflow: hidden; transition: max-height var(--d-pop) var(--ease-out), opacity var(--d-ui) var(--ease-out); }
+  #gallery-lora-panel.collapsed #genbar { opacity: 0; }
+}
 
 /* 圖庫卡聚光（跟格線縮圖 .thumb::after 同一招）：hover 時方形圖上一圈跟著游標的琥珀柔光。
    --mx/--my 由 JS 在 pointermove 設定；只在完成（非 pending）的卡片上啟用，跟可點看大圖的

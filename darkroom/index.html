@@ -105,8 +105,21 @@
         <h2>🖼 生成圖庫</h2>
         <span class="gallery-sub" id="gallery-sub"></span>
       </div>
-      <div id="gallery-grid" class="gallery-grid"></div>
-      <div id="gallery-empty" class="gallery-empty">還沒有生成任何圖 —— 到「🎨 生圖」選詞庫按生圖，或按「✦ 抽卡」隨機生一批。<br>（圖庫是本次生成的暫存，刷新或關頁就清空）</div>
+      <div class="gallery-body">
+        <div class="gallery-main">
+          <div id="gallery-grid" class="gallery-grid"></div>
+          <div id="gallery-empty" class="gallery-empty">還沒有生成任何圖 —— 到「🎨 生圖」選詞庫按生圖，或按「✦ 抽卡」隨機生一批。<br>（圖庫是本次生成的暫存，刷新或關頁就清空）</div>
+        </div>
+        <!-- 只在生圖模式開圖庫時出現（見 darkroom.css 的 body.gallery-open[data-mode="gen"] 選擇器）。
+             #genbar 開圖庫時會被 JS 整個搬進來（見 openGallery），關閉時搬回原本的底部列位置——
+             同一份 DOM／事件監聽器，不重複維護兩份 LoRA 狀態。 -->
+        <div id="gallery-lora-panel" class="gallery-lora-panel">
+          <div class="glp-head">
+            <span class="glp-title">🎨 生圖設定</span>
+            <button type="button" class="glp-toggle" id="glp-toggle" aria-label="收合／展開" title="收合／展開">︾</button>
+          </div>
+        </div>
+      </div>
     </div>
   </main>
 </div>
