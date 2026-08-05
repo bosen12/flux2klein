@@ -192,7 +192,7 @@ Windows 雙擊即可（會自動啟動 Groq 多 key 代理）：
 用**詞庫 + LoRA** 生圖來試效果的模式，跟瀏覽/打標**在同一頁**（頂列「✦ 瀏覽 · 🏷 打標 · 🎨 生圖」切換）。
 
 - **多選詞庫**：點縮圖多選（跟打標一樣，可全選/清除）。
-- **選 LoRA（大面板）**：topbar「🧩」鈕（**只在生圖模式顯示**，位置緊接在「🖼 圖庫」右邊）或 genbar「🧩 選 LoRA」都會開同一個**置中大面板**——左欄**資料夾分類晶片**（全部／各分類＋張數，先粗篩）＋搜尋（再細篩）＋**翻頁**（每頁 80 個，總數上百不會卡也不會截斷丟資料，清單可正常滾動）＋預覽縮圖清單（縮圖直接放大顯示在列上，不用 hover 才跳一張大圖；**選中的那列會有左側琥珀色細條**常駐標示，跟單純滑鼠移過去的效果分得清楚）；右欄是選中 LoRA 的**每段觸發詞各自一張完整文字卡**（**不截斷**，長的段落也整段讀得完，一眼看懂哪段在講什麼）＋勾選要用哪幾段＋強度滑桿＋**放大版參考圖**（在強度滑桿下方，完整顯示不裁切，不用另外點開或 hover）。選一個 LoRA 時，縮圖/標題→每段觸發詞卡（小 stagger 依序浮現）→強度／參考圖 依序淡入，讀起來有層次而不是整塊瞬間換掉；清單本身翻頁/篩選/搜尋切換也有淡入。選擇即時生效，關閉（✕／Esc／點背景）只是收起檢視。LoRA 清單/預覽由 `darkroom/preview_ui.py` 直接讀 ComfyUI 的 `loras` 資料夾（同 `serve.py` 的路徑，`LORA_ROOT` 可覆寫）。
+- **選 LoRA（大面板）**：topbar「🧩」鈕（**只在生圖模式顯示**，位置緊接在「🖼 圖庫」右邊）或 genbar「🧩 選 LoRA」都會開同一個**置中大面板**——左欄**資料夾分類晶片**（全部／各分類＋張數，先粗篩）＋搜尋（再細篩）＋**翻頁**（每頁 80 個，總數上百不會卡也不會截斷丟資料，清單可正常滾動）＋預覽縮圖清單（縮圖直接放大顯示在列上，不用 hover 才跳一張大圖；**選中的那列會有左側琥珀色細條**常駐標示，跟單純滑鼠移過去的效果分得清楚）；右欄是選中 LoRA 的**每段觸發詞各自一張完整文字卡**（**不截斷**，長的段落也整段讀得完，一眼看懂哪段在講什麼）＋勾選要用哪幾段＋強度滑桿＋**放大版參考圖**（在強度滑桿下方，完整顯示不裁切，不用另外點開或 hover）。選一個 LoRA 時，縮圖/標題→每段觸發詞卡（小 stagger 依序浮現）→強度／參考圖 依序淡入，讀起來有層次而不是整塊瞬間換掉；清單本身翻頁/篩選/搜尋切換也有淡入。選擇即時生效，關閉（✕／Esc／點背景）只是收起檢視。LoRA 清單/預覽由 `darkroom/preview_ui.py` 直接讀 ComfyUI 的 `loras` 資料夾（同 `serve.py` 的路徑，`LORA_ROOT` 可覆寫）。左欄清單下方有一顆「🧰 用 LoRA Manager 管理」連結，開新分頁跳去更完整的管理工具（見下方「LoRA Manager」一節）；在那邊點「送到 workflow」會自動推進回這個面板、選好 LoRA。
 - **生圖**：點「🎨 生圖」→ 對每個選中詞庫，用其正/負向 +（選的）LoRA 觸發詞、**注入一個 LoraLoader** 到暗房工作流（底模就是 `waiIllustriousSDXL_v170`，Illustrious LoRA 相容）送 ComfyUI 生成。
 - **抽卡生圖**：先選好 LoRA，點「✦ 抽卡」→ 從**全分類**（不限目前資料夾/搜尋範圍）**隨機抽 8 個詞庫**（手機一張），用**塔羅發牌動畫**呈現（跟瀏覽抽卡同一套），每張牌面**即時顯示生成中的採樣畫面**、生完換成成品；點卡片看大圖（大圖疊在牌上，關掉回到那批牌、不會消失），`R` 重抽新的一批來生。
 - **鍵盤 `R` 抽卡**：任何模式下（焦點不在輸入框、未開大圖/抽卡浮層時）按 `R` 就直接抽卡——依目前模式：瀏覽=看圖、打標=逐張標、生圖=抽詞庫來生。
@@ -217,6 +217,18 @@ Windows 雙擊即可（會自動啟動 Groq 多 key 代理）：
 **打標覆蓋率**：打標頁左側資料夾列的進度條顯示各分類**已打標比例**（全部標完＝綠色滿格），頂列顯示**全域打標 %**；資料夾排序鈕可切「名稱↑／名稱↓／**未標多優先**」，一眼看出哪些分類還沒標完、優先去標。
 
 改名會**連同旁邊的預覽圖 `.webp`／`.png` 一起改名**，並把該詞庫的旗標／收藏記錄遷到新檔名；重新標記會**替換**既有前綴而非疊加。
+
+---
+
+## LoRA Manager（完整的 LoRA 瀏覽／標記／下載工具）
+
+`lora-manager/` 是 vendor 進來的第三方專案（[willmiao/ComfyUI-Lora-Manager](https://github.com/willmiao/ComfyUI-Lora-Manager)，GPLv3），比暗房的 LoRA 大面板更完整：搜尋、tag、CivitAI 抓 metadata／下載、找重複檔案、統計等。跑在**自己的獨立埠**（預設 **7861**），跟面板（7801）、暗房（7860）、ComfyUI（8188）都不衝突，可以同時開好幾個分頁。
+
+- **啟動**：雙擊 `lora-manager/start_lora_manager.bat`（第一次會 `pip install` 幾個輕量套件如 aiohttp，之後很快），開啟 `http://localhost:7861/loras`。
+- **跟 KLEIN／暗房共用同一份 LoRA 收藏**：啟動時會自動把設定檔的掃描路徑同步成 `LORA_ROOT` 環境變數（跟 `darkroom/preview_ui.py`、`serve.py` 用同一個變數、同一個預設值），看到的是同一批檔案，不用另外設定兩份。
+- **「送到 workflow」改送去暗房**：這是**唯一被改過的功能**——原版的「送到 workflow」是靠同源 ComfyUI 網頁即時改 LiteGraph 節點，standalone 模式下這條路本來就走不通（只會跳一個沒用的警告）。改成點了直接**推進你目前開著的暗房分頁**：暗房自動切到生圖模式、開大面板、選進那個 LoRA——不用手動找、不用複製貼上。右鍵選單的「送到 workflow」也是同一套。
+- 暗房的 LoRA 大面板裡也有一顆「🧰 用 LoRA Manager 管理」連結，開新分頁直接過去（互相連通）。
+- 改了什麼、vendor 的細節見 [`lora-manager/VENDORED.md`](lora-manager/VENDORED.md)。其餘功能（CivitAI 下載、統計、recipes、checkpoint／embedding 管理⋯）都是上游原樣，沒有動。
 
 ---
 
@@ -298,6 +310,16 @@ Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188
 | `.darkroom_meta/` | 依 dataset 分檔的旗標／收藏／稀有度側檔（已 gitignore） |
 | `.thumb_cache/` | 縮圖快取（已 gitignore） |
 | `flags.json` / `favorites.json` | 舊版共用檔，僅供首次遷移用（現行資料在 `.darkroom_meta/`，這兩份已是歷史遺留、不影響功能） |
+
+### `lora-manager/`（vendor 的第三方 LoRA 管理工具，見上「LoRA Manager」一節）
+
+| 檔案 | 用途 |
+|------|------|
+| （上游原始檔） | 整份 [ComfyUI-Lora-Manager](https://github.com/willmiao/ComfyUI-Lora-Manager) 原始碼，vendor 進來（無 `.git`，用 flux2klein 自己的版控） |
+| `VENDORED.md` | 來源 commit、GPLv3 授權提醒、對照上游改了什麼（只動「送到 workflow」那條路） |
+| `start_lora_manager.bat` | 啟動腳本（flux2klein 自己加的，不是上游帶的） |
+| `write_settings.py` | 每次啟動前把 `settings.json` 的 `loras` 路徑同步成 `LORA_ROOT` 環境變數（flux2klein 自己加的） |
+| `settings.json` | 本機設定（已 gitignore，由 `write_settings.py` 每次啟動自動產生／更新） |
 
 ### `voice-assistant/`（語音助理／LiveTalking 數字人）
 

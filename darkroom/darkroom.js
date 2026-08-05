@@ -1332,6 +1332,35 @@ $('lm-current').addEventListener('change', (e) => {
 });
 $('gen-run').onclick = () => runGen();
 
+/* ---------------------------------------------------------------------------
+   2026-08 lora-manager 整合：LoRA Manager（vendor 在 ../lora-manager/，獨立埠 7861）
+   點「送到 workflow」會 POST 到 /api/lora-push（見 preview_ui.py），這裡每 ~1s 輪詢
+   一次版本號，偵測到新推送就自動切生圖模式、選進大面板——「推進目前開著的分頁」。
+   自排程 setTimeout（不用 setInterval）：等前一次抓完才排下一次，跟生圖預覽輪詢
+   同一套節奏，慢速環境不會疊請求；沒人在跑 LoRA Manager 時這支請求也很輕量。
+--------------------------------------------------------------------------- */
+let LORA_PUSH_VER = 0;
+async function pollLoraPush() {
+  try {
+    const st = await fetch('/api/lora-push?since=' + LORA_PUSH_VER).then(r => r.json());
+    if (st.ver > LORA_PUSH_VER) {
+      LORA_PUSH_VER = st.ver;
+      if (st.data) await applyLoraPush(st.data);
+    }
+  } catch (e) { /* 靜默；下一輪再試，不用整個工具連得上才能用 */ }
+  setTimeout(pollLoraPush, 1000);
+}
+async function applyLoraPush(d) {
+  if (GALLERY_OPEN) { GALLERY_OPEN = false; document.body.classList.remove('gallery-open'); $('gallery-btn').classList.remove('on'); }
+  if (MODE !== 'gen') switchMode('gen');
+  await openLoraModal();
+  const match = (GEN_LORAS || []).find(l => l.name === d.name && (!d.folder || l.folder === d.folder));
+  if (!match) { toast(`LoRA Manager 送來的「${d.name}」在這裡的清單找不到——按「重掃」也許有幫助`); return; }
+  selectGenLora(match);
+  toast(`已從 LoRA Manager 選入「${match.title || match.name}」`);
+}
+pollLoraPush();
+
 /* ---------------- 生成圖庫（本 session、記憶體、刷新即清空） ----------------
    生成的圖不落地磁碟：前端維護 GALLERY 清單（含 metadata），後端仍記憶體暫存供圖。
    刷新/關頁 → 清單消失 → 圖庫空。用獨立「🖼 圖庫」鈕切換視圖，蓋掉詞庫格線。 */

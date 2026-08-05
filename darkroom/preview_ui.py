@@ -815,6 +815,15 @@ _gen_status = {}       # gid -> {"status", "rel", "name", "err", "seed", "pv"}
 _gen_lock = threading.Lock()
 _GEN_MAX = 240         # 結果快取上限，超過砍最舊
 
+# ---------------------------------------------------------------------------
+# 2026-08 lora-manager 整合：LoRA Manager（standalone、獨立埠，見 ../lora-manager/）
+# 點「送到 workflow」時，因為 standalone 模式本來就連不到真正的 ComfyUI 網頁（那條路
+# 是靠同源 LiteGraph 即時改節點，見 lora-manager/VENDORED.md），改成直接 POST 這裡，
+# 暗房前端輪詢偵測到新版本就自動選進生圖大面板。單一 slot（不排隊、後到蓋掉先到）——
+# 這是「推進目前開著的分頁」的單次動作，不是佇列。
+_lora_push = {"ver": 0, "data": None}   # {"ver": int, "data": {"folder","name"}|None}
+_lora_push_lock = threading.Lock()
+
 
 class _WSHandshakeError(Exception):
     """WS 握手失敗——呼叫端可據此退化成純 HTTP 輪詢（無即時預覽）。"""
@@ -1128,10 +1137,12 @@ class Handler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(body)
 
-    def _send_json(self, obj, code: int = 200):
+    def _send_json(self, obj, code: int = 200, extra: dict | None = None):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
-        self._write_body(body, "application/json; charset=utf-8", code,
-                         {"Cache-Control": "no-store"})
+        headers = {"Cache-Control": "no-store"}
+        if extra:
+            headers.update(extra)
+        self._write_body(body, "application/json; charset=utf-8", code, headers)
 
     def _send_bytes(self, body: bytes, content_type: str = "application/octet-stream", code: int = 200):
         self._write_body(body, content_type, code, {"Cache-Control": "no-store"})
@@ -1257,9 +1268,35 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 self._send_cacheable(p["bytes"], p["ctype"], f"{gid}:{pv}")
                 return
+            if u.path == "/api/lora-push":
+                # 前端每 ~1s 輪詢一次；帶 since 才回新資料，版本沒變就只回 ver（省流量）。
+                since = int(qs.get("since", ["0"])[0] or 0)
+                with _lora_push_lock:
+                    ver, data = _lora_push["ver"], _lora_push["data"]
+                out = {"ver": ver}
+                if ver > since:
+                    out["data"] = data
+                self._send_json(out)
+                return
             self._send_bytes(b"not found", "text/plain", 404)
         except Exception as e:
             self._send_json({"error": f"{type(e).__name__}: {e}"}, 500)
+
+    def do_OPTIONS(self):
+        # 只有 lora-push 需要跨源（LoRA Manager 站在自己的 port 7861，POST 這裡）。
+        # application/json 的 POST 會先觸發瀏覽器的 CORS 預檢，這裡答覆放行。
+        u = urllib.parse.urlparse(self.path)
+        if u.path == "/api/lora-push":
+            self.send_response(204)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        self.send_response(404)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def do_POST(self):
         u = urllib.parse.urlparse(self.path)
@@ -1352,6 +1389,22 @@ class Handler(BaseHTTPRequestHandler):
                 # 該分頁刷新/關閉時由 sendBeacon 打來：只停掉這個 client 自己在途的生圖，別動別的分頁。
                 n = cancel_client_gen(data.get("client") or "")
                 self._send_json({"ok": True, "cancelled_queued": n})
+                return
+            if u.path == "/api/lora-push":
+                # LoRA Manager（獨立埠 7861）點「送到 workflow」時 POST 這裡。folder/name
+                # 對應 /api/loras 回應的 folder/name（name 不含副檔名）。單一 slot、版本號
+                # 遞增，暗房前端輪詢偵測到新版本就自動選進生圖大面板——見 darkroom.js。
+                folder = str(data.get("folder") or "").strip()
+                name = str(data.get("name") or "").strip()
+                if not name:
+                    self._send_json({"error": "缺少 name"}, 400, {"Access-Control-Allow-Origin": "*"})
+                    return
+                with _lora_push_lock:
+                    _lora_push["ver"] += 1
+                    _lora_push["data"] = {"folder": folder, "name": name}
+                    ver = _lora_push["ver"]
+                plog(f"[lora-push] {folder}/{name} (ver={ver})")
+                self._send_json({"ok": True, "ver": ver}, extra={"Access-Control-Allow-Origin": "*"})
                 return
             if u.path == "/api/generate":
                 rel = data.get("rel") or ""

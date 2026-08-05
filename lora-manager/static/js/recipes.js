@@ -1,0 +1,409 @@
+// Recipe manager module
+import { appCore } from './core.js';
+import { ImportManager } from './managers/ImportManager.js';
+import { BatchImportManager } from './managers/BatchImportManager.js';
+import { RecipeModal } from './components/RecipeModal.js';
+import { state, getCurrentPageState } from './state/index.js';
+import { getStorageItem, setStorageItem, getSessionItem, removeSessionItem } from './utils/storageHelpers.js';
+import { RecipeContextMenu } from './components/ContextMenu/index.js';
+import { DuplicatesManager } from './components/DuplicatesManager.js';
+import { refreshVirtualScroll } from './utils/infiniteScroll.js';
+import { refreshRecipes, RecipeSidebarApiClient } from './api/recipeApi.js';
+import { sidebarManager } from './components/SidebarManager.js';
+import { initSortDropdown } from './components/controls/SortDropdown.js';
+
+class RecipePageControls {
+    constructor() {
+        this.pageType = 'recipes';
+        this.pageState = getCurrentPageState();
+        this.sidebarApiClient = new RecipeSidebarApiClient();
+    }
+
+    async resetAndReload() {
+        await refreshVirtualScroll();
+    }
+
+    async refreshModels(fullRebuild = false) {
+        await refreshRecipes(fullRebuild);
+
+        await sidebarManager.refresh();
+    }
+
+    getSidebarApiClient() {
+        return this.sidebarApiClient;
+    }
+}
+
+class RecipeManager {
+    constructor() {
+        // Get page state
+        this.pageState = getCurrentPageState();
+
+        // Page controls for shared sidebar behaviors
+        this.pageControls = new RecipePageControls();
+
+        // Initialize ImportManager
+        this.importManager = new ImportManager();
+
+        // Initialize BatchImportManager and make it globally accessible
+        this.batchImportManager = new BatchImportManager();
+        window.batchImportManager = this.batchImportManager;
+
+        // Initialize RecipeModal
+        this.recipeModal = new RecipeModal();
+
+        // Initialize DuplicatesManager
+        this.duplicatesManager = new DuplicatesManager(this);
+
+        // Add state tracking for infinite scroll
+        this.pageState.isLoading = false;
+        this.pageState.hasMore = true;
+
+        // Custom filter state - move to pageState for compatibility with virtual scrolling
+        this.pageState.customFilter = {
+            active: false,
+            loraName: null,
+            loraHash: null,
+            checkpointName: null,
+            checkpointHash: null,
+            recipeId: null
+        };
+    }
+
+    async initialize() {
+        // Initialize event listeners
+        this.initEventListeners();
+
+        // Set default search options if not already defined
+        this._initSearchOptions();
+
+        // Initialize context menu
+        new RecipeContextMenu();
+
+        // Check for custom filter parameters in session storage
+        this._checkCustomFilter();
+
+        // Expose necessary functions to the page
+        this._exposeGlobalFunctions();
+
+        // Initialize sidebar navigation
+        await this._initSidebar();
+
+        // Initialize common page features
+        appCore.initializePageFeatures();
+    }
+
+    async _initSidebar() {
+        try {
+            sidebarManager.setHostPageControls(this.pageControls);
+            await sidebarManager.initialize(this.pageControls);
+        } catch (error) {
+            console.error('Failed to initialize recipe sidebar:', error);
+        }
+    }
+
+    _initSearchOptions() {
+        // Ensure recipes search options are properly initialized
+        if (!this.pageState.searchOptions) {
+            this.pageState.searchOptions = {
+                title: true,       // Recipe title
+                tags: true,        // Recipe tags
+                loraName: true,    // LoRA file name
+                loraModel: true,   // LoRA model name
+                prompt: true,      // Prompt search
+                recursive: true
+            };
+        }
+    }
+
+    _exposeGlobalFunctions() {
+        // Only expose what's needed for the page
+        window.recipeManager = this;
+        window.importManager = this.importManager;
+    }
+
+    _checkCustomFilter() {
+        // Check for Lora filter
+        const filterLoraName = getSessionItem('lora_to_recipe_filterLoraName');
+        const filterLoraHash = getSessionItem('lora_to_recipe_filterLoraHash');
+        const filterCheckpointName = getSessionItem('checkpoint_to_recipe_filterCheckpointName');
+        const filterCheckpointHash = getSessionItem('checkpoint_to_recipe_filterCheckpointHash');
+
+        // Check for specific recipe ID
+        const viewRecipeId = getSessionItem('viewRecipeId');
+
+        // Set custom filter if any parameter is present
+        if (filterLoraName || filterLoraHash || filterCheckpointName || filterCheckpointHash || viewRecipeId) {
+            this.pageState.customFilter = {
+                active: true,
+                loraName: filterLoraName,
+                loraHash: filterLoraHash,
+                checkpointName: filterCheckpointName,
+                checkpointHash: filterCheckpointHash,
+                recipeId: viewRecipeId
+            };
+
+            // Show custom filter indicator
+            this._showCustomFilterIndicator();
+        }
+    }
+
+    _showCustomFilterIndicator() {
+        const indicator = document.getElementById('customFilterIndicator');
+        if (!indicator) return;
+        const textElement = indicator.querySelector('.customFilterText');
+
+        if (!textElement) return;
+
+        // Update text based on filter type
+        let filterText = '';
+
+        if (this.pageState.customFilter.recipeId) {
+            filterText = 'Viewing specific recipe';
+        } else if (this.pageState.customFilter.loraName) {
+            // Format with Lora name
+            const loraName = this.pageState.customFilter.loraName;
+            const displayName = loraName.length > 25 ?
+                loraName.substring(0, 22) + '...' :
+                loraName;
+
+            filterText = `<span>Recipes using: <span class="lora-name">${displayName}</span></span>`;
+        } else if (this.pageState.customFilter.checkpointName) {
+            const checkpointName = this.pageState.customFilter.checkpointName;
+            const displayName = checkpointName.length > 25 ?
+                checkpointName.substring(0, 22) + '...' :
+                checkpointName;
+
+            filterText = `<span>Recipes using checkpoint: <span class="lora-name">${displayName}</span></span>`;
+        } else {
+            filterText = 'Filtered recipes';
+        }
+
+        // Update indicator text and show it
+        textElement.innerHTML = filterText;
+        // Add title attribute to show the lora name as a tooltip
+        if (this.pageState.customFilter.loraName) {
+            textElement.setAttribute('title', this.pageState.customFilter.loraName);
+        } else if (this.pageState.customFilter.checkpointName) {
+            textElement.setAttribute('title', this.pageState.customFilter.checkpointName);
+        } else {
+            textElement.removeAttribute('title');
+        }
+        indicator.classList.remove('hidden');
+
+        // Add pulse animation
+        const filterElement = indicator.querySelector('.filter-active');
+        if (filterElement) {
+            filterElement.classList.add('animate');
+            setTimeout(() => filterElement.classList.remove('animate'), 600);
+        }
+
+        // Add click handler for clear filter button
+        const clearFilterBtn = indicator.querySelector('.clear-filter');
+        if (clearFilterBtn) {
+            clearFilterBtn.addEventListener('click', (e) => {
+                e.stopPropagation();  // Prevent button click from triggering
+                this._clearCustomFilter();
+            });
+        }
+    }
+
+    _clearCustomFilter() {
+        // Reset custom filter
+        this.pageState.customFilter = {
+            active: false,
+            loraName: null,
+            loraHash: null,
+            checkpointName: null,
+            checkpointHash: null,
+            recipeId: null
+        };
+
+        // Hide indicator
+        const indicator = document.getElementById('customFilterIndicator');
+        if (indicator) {
+            indicator.classList.add('hidden');
+        }
+
+        // Clear any session storage items
+        removeSessionItem('lora_to_recipe_filterLoraName');
+        removeSessionItem('lora_to_recipe_filterLoraHash');
+        removeSessionItem('checkpoint_to_recipe_filterCheckpointName');
+        removeSessionItem('checkpoint_to_recipe_filterCheckpointHash');
+        removeSessionItem('viewRecipeId');
+
+        // Reset and refresh the virtual scroller
+        refreshVirtualScroll();
+    }
+
+    initEventListeners() {
+        // Sort select — load saved preference, persist on change
+        const sortSelect = document.getElementById('sortSelect');
+        if (sortSelect) {
+            const savedSort = getStorageItem('recipes_sort');
+            if (savedSort) {
+                this.pageState.sortBy = savedSort;
+            }
+            initSortDropdown(sortSelect);
+            sortSelect.value = this.pageState.sortBy || 'date:desc';
+            sortSelect.addEventListener('change', () => {
+                this.pageState.sortBy = sortSelect.value;
+                setStorageItem('recipes_sort', sortSelect.value);
+                refreshVirtualScroll();
+            });
+        }
+
+        const bulkButton = document.querySelector('[data-action="bulk"]');
+        if (bulkButton) {
+            bulkButton.addEventListener('click', () => window.bulkManager?.toggleBulkMode());
+        }
+
+        const duplicatesButton = document.querySelector('[data-action="find-duplicates"]');
+        if (duplicatesButton) {
+            duplicatesButton.addEventListener('click', () => this.findDuplicateRecipes());
+        }
+
+        const favoriteFilterBtn = document.getElementById('favoriteFilterBtn');
+        if (favoriteFilterBtn) {
+            favoriteFilterBtn.addEventListener('click', () => {
+                this.pageState.showFavoritesOnly = !this.pageState.showFavoritesOnly;
+                favoriteFilterBtn.classList.toggle('active', this.pageState.showFavoritesOnly);
+                refreshVirtualScroll();
+            });
+        }
+
+        // Initialize dropdown functionality for refresh button
+        this.initDropdowns();
+    }
+
+    initDropdowns() {
+        // Handle dropdown toggles
+        const dropdownToggles = document.querySelectorAll('.dropdown-toggle');
+        dropdownToggles.forEach(toggle => {
+            toggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const dropdownGroup = toggle.closest('.dropdown-group');
+                
+                // Close all other open dropdowns first
+                document.querySelectorAll('.dropdown-group.active').forEach(group => {
+                    if (group !== dropdownGroup) {
+                        group.classList.remove('active');
+                    }
+                });
+                
+                dropdownGroup.classList.toggle('active');
+            });
+        });
+
+        // Handle full rebuild option (Rebuild Cache)
+        const fullRebuildOption = document.querySelector('[data-action="full-rebuild"]');
+        if (fullRebuildOption) {
+            fullRebuildOption.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.pageControls.refreshModels(true);
+                this.closeDropdowns();
+            });
+        }
+
+        // Handle main refresh button (default: sync changes)
+        const refreshBtn = document.querySelector('[data-action="refresh"]');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => {
+                this.pageControls.refreshModels(false);
+            });
+        }
+
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.dropdown-group')) {
+                this.closeDropdowns();
+            }
+        });
+    }
+
+    closeDropdowns() {
+        document.querySelectorAll('.dropdown-group.active').forEach(group => {
+            group.classList.remove('active');
+        });
+    }
+
+    normalizeLoadRecipesOptions(options = true) {
+        if (typeof options === 'boolean') {
+            return {
+                resetPage: options,
+                preserveScroll: false
+            };
+        }
+
+        return {
+            resetPage: options?.resetPage !== false,
+            preserveScroll: options?.preserveScroll === true
+        };
+    }
+
+    // This method is kept for compatibility but now uses virtual scrolling
+    async loadRecipes(options = true) {
+        // Skip loading if in duplicates mode
+        const pageState = getCurrentPageState();
+        if (pageState.duplicatesMode) {
+            return;
+        }
+
+        const { resetPage, preserveScroll } = this.normalizeLoadRecipesOptions(options);
+
+        if (resetPage) {
+            await refreshVirtualScroll({ preserveScroll });
+        }
+    }
+
+    /**
+     * Refreshes the recipe list by first rebuilding the cache and then loading recipes
+     */
+    async refreshRecipes() {
+        return refreshRecipes();
+    }
+
+    showRecipeDetails(recipe) {
+        this.recipeModal.showRecipeDetails(recipe);
+    }
+
+    // Duplicate detection and management methods
+    async findDuplicateRecipes() {
+        return await this.duplicatesManager.findDuplicates();
+    }
+
+    selectLatestDuplicates() {
+        this.duplicatesManager.selectLatestDuplicates();
+    }
+
+    deleteSelectedDuplicates() {
+        this.duplicatesManager.deleteSelectedDuplicates();
+    }
+
+    confirmDeleteDuplicates() {
+        this.duplicatesManager.confirmDeleteDuplicates();
+    }
+
+    exitDuplicateMode() {
+        // Clear the grid first to prevent showing old content temporarily
+        const recipeGrid = document.getElementById('recipeGrid');
+        if (recipeGrid) {
+            recipeGrid.innerHTML = '';
+        }
+
+        this.duplicatesManager.exitDuplicateMode();
+    }
+}
+
+// Initialize components
+document.addEventListener('DOMContentLoaded', async () => {
+    // Initialize core application
+    await appCore.initialize();
+
+    // Initialize recipe manager
+    const recipeManager = new RecipeManager();
+    await recipeManager.initialize();
+});
+
+// Export for use in other modules
+export { RecipeManager };

@@ -154,6 +154,9 @@
         <input type="text" id="lm-search" placeholder="搜尋 LoRA…" autocomplete="off">
       </div>
       <div id="lm-list" class="lm-list"></div>
+      <!-- LoRA Manager（獨立埠，vendor 在 ../lora-manager/）：完整的瀏覽/標記/下載管理工具。
+           在那邊點「送到 workflow」會自動推進這個面板，見 darkroom.js pollLoraPush。 -->
+      <a class="lm-manager-link" id="lm-manager-link" href="http://127.0.0.1:7861/loras" target="_blank" rel="noopener">🧰 用 LoRA Manager 管理（新分頁）</a>
     </div>
     <div class="lm-right">
       <div class="lm-right-head">目前選擇</div>
