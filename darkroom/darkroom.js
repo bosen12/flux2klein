@@ -1091,6 +1091,8 @@ let GEN_LORAS = null;                 // /api/loras 的 items（快取）
 let GEN_LORA = null;                  // 選中的 LoRA
 let GEN_STRENGTH = 0.8;
 const GEN_TW_PICKS = new Set();       // 選中的觸發詞組索引
+// 這個分頁的識別碼：生圖時帶給後端，讓「刷新/關閉這個分頁」只取消自己送的生圖，別的分頁不受影響。
+const GEN_CLIENT = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now());
 
 async function fetchGenLoras() {
   if (GEN_LORAS) return GEN_LORAS;
@@ -1225,6 +1227,7 @@ async function runGen(rels, tarotItems) {
     lora: GEN_LORA ? { folder: GEN_LORA.folder, file: GEN_LORA.file } : null,
     strength: GEN_STRENGTH,
     trigger: genTriggerText(),
+    client: GEN_CLIENT,
   };
   let res;
   try {
@@ -1308,9 +1311,10 @@ function applyGenState(gid, s) {
     if (s.status === 'done') {
       card.classList.remove('pending');
       if (img) img.src = '/api/gen-result?id=' + gid;
-    } else if (s.status === 'error') {
+    } else if (s.status === 'error' || s.status === 'cancelled') {
       card.classList.remove('pending'); card.classList.add('gr-err');
-      const nm = card.querySelector('.gr-name'); if (nm) nm.textContent += ' ✕ ' + (s.err || '失敗');
+      const nm = card.querySelector('.gr-name');
+      if (nm && !nm.dataset.tag) { nm.dataset.tag = '1'; nm.textContent += s.status === 'cancelled' ? ' · 已取消' : (' ✕ ' + (s.err || '失敗')); }
     } else if (img && (s.pv || 0) > (+card.dataset.pv || 0)) {
       // 有新的採樣預覽才換 src（pv 遞增），避免每 2s 無謂重載
       card.dataset.pv = s.pv;
@@ -1330,13 +1334,21 @@ function startGenPoll(ids) {
     for (const gid of [...pending]) {
       const s = st[gid]; if (!s) continue;
       applyGenState(gid, s);
-      if (s.status === 'done' || s.status === 'error') pending.delete(gid);
+      if (s.status === 'done' || s.status === 'error' || s.status === 'cancelled') pending.delete(gid);
     }
     if (!pending.size) { clearInterval(_genPoll); _genPoll = null; }
   };
   tick();
   _genPoll = setInterval(tick, 2000);
 }
+
+// 刷新/關閉這個分頁時，只停掉「這個分頁自己」在途的生圖（帶 GEN_CLIENT），別的分頁照跑。
+// 用 sendBeacon 才保證 unload 期間送得出去；只有還有生圖在跑（_genPoll 未清）才送。
+// pagehide 不像 visibilitychange 會在切分頁時誤觸。
+window.addEventListener('pagehide', () => {
+  if (!_genPoll) return;
+  try { navigator.sendBeacon('/api/gen-cancel', new Blob([JSON.stringify({ client: GEN_CLIENT })], { type: 'application/json' })); } catch (e) {}
+});
 
 // 點結果縮圖看大圖（沿用 modal；清掉 dataset.rel 讓方向鍵的 modalStep 不誤動詞庫）
 function openGenResult(gid) {
