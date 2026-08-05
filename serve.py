@@ -103,6 +103,11 @@ LORA_ROOT = os.environ.get(
     r"C:\ComfyUI\ComfyUI_windows_portable_nvidia\ComfyUI_windows_portable\ComfyUI\models\loras",
 )
 LORA_FOLDERS = ["style", "Character", "HENTAI", "illus"]
+# LoRA Manager（獨立埠 7861，見 lora-manager/）點「送到 workflow」時 POST 這裡；
+# 暗房（darkroom/preview_ui.py 的 /api/lora-push）已經有一份一模一樣的機制，這裡
+# 是 KLEIN 面板自己的版本——單一格、版本號遞增、最新覆蓋前一個（不排隊）。
+_LORA_PUSH = {"ver": 0, "data": None}   # {"ver": int, "data": {"folder","name"}|None}
+_LORA_PUSH_LOCK = threading.Lock()
 # Illustrious 的「詞庫」來源：special_prompts（C:\projects\special_prompts），底下是數十個分類子夾，
 # 每個 .py 是一組情境提示詞（REQUIRED_POSITIVE / POSITIVE / NEGATIVE 三個 list），
 # 旁邊可能有同名 .webp 預覽圖。面板用 ast 安全解析（只取那三個 list，不 import／不執行）。
@@ -389,6 +394,89 @@ def serve_lora_preview(client, raw_path):
         "Connection: close\r\n\r\n"
     ).encode("utf-8")
     client.sendall(header + body)
+
+
+def _lora_push_json(client, obj, status=200):
+    """跟 send_body() 類似但可指定狀態碼、固定帶 CORS 標頭——只有 /panel/lora-push
+    需要（LoRA Manager 站在 7861 跨源打過來，瀏覽器要看到 Access-Control-Allow-Origin
+    才會把回應交給呼叫端的 JS；GET 是面板自己同源輪詢用不到，但一起帶不影響行為，
+    兩支共用一個 helper 比較簡單）。"""
+    import json as _json
+    body = _json.dumps(obj, ensure_ascii=False).encode("utf-8")
+    status_line = "200 OK" if status == 200 else "400 Bad Request"
+    header = (
+        f"HTTP/1.1 {status_line}\r\n"
+        "Content-Type: application/json; charset=utf-8\r\n"
+        f"Content-Length: {len(body)}\r\n"
+        "Access-Control-Allow-Origin: *\r\n"
+        "Cache-Control: no-store\r\n"
+        "Connection: close\r\n\r\n"
+    ).encode("utf-8")
+    client.sendall(header + body)
+
+
+def serve_lora_push_get(client, raw_path):
+    """前端每 ~1s 輪詢一次；帶 since 才回新資料，版本沒變就只回 ver（省流量）。"""
+    from urllib.parse import urlparse, parse_qs
+    q = parse_qs(urlparse(raw_path).query)
+    try:
+        since = int((q.get("since", ["0"])[0]) or 0)
+    except ValueError:
+        since = 0
+    with _LORA_PUSH_LOCK:
+        ver, data = _LORA_PUSH["ver"], _LORA_PUSH["data"]
+    out = {"ver": ver}
+    if ver > since:
+        out["data"] = data
+    _lora_push_json(client, out)
+
+
+def serve_lora_push_post(client, initial):
+    """LoRA Manager（獨立埠 7861）POST 這裡推送一個 LoRA。initial 是 recv_headers()
+    回傳的位元組，標頭後面可能已經帶了部分／全部 body——先從這裡切開，不夠再從
+    socket 補讀到 Content-Length 指定的長度。LoRA Manager 固定會帶 Content-Length，
+    不用處理 chunked transfer encoding。"""
+    import json as _json
+    head, _, body = initial.partition(b"\r\n\r\n")
+    length = 0
+    for line in head.split(b"\r\n")[1:]:
+        if line.lower().startswith(b"content-length:"):
+            try:
+                length = int(line.split(b":", 1)[1].strip())
+            except ValueError:
+                length = 0
+            break
+    while len(body) < length:
+        chunk = client.recv(min(65536, length - len(body)))
+        if not chunk:
+            break
+        body += chunk
+    try:
+        data = _json.loads(body.decode("utf-8")) if body else {}
+    except Exception:
+        data = {}
+    folder = str(data.get("folder") or "").strip()
+    name = str(data.get("name") or "").strip()
+    if not name:
+        _lora_push_json(client, {"error": "缺少 name"}, 400)
+        return
+    with _LORA_PUSH_LOCK:
+        _LORA_PUSH["ver"] += 1
+        _LORA_PUSH["data"] = {"folder": folder, "name": name}
+        ver = _LORA_PUSH["ver"]
+    print(f"[lora-push] {folder}/{name} (ver={ver})")
+    _lora_push_json(client, {"ok": True, "ver": ver})
+
+
+def serve_lora_push_options(client):
+    """CORS 預檢：7861 跨源打 7801，application/json 的 POST 瀏覽器一定先送 OPTIONS。"""
+    client.sendall(
+        b"HTTP/1.1 204 No Content\r\n"
+        b"Access-Control-Allow-Origin: *\r\n"
+        b"Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n"
+        b"Access-Control-Allow-Headers: Content-Type\r\n"
+        b"Content-Length: 0\r\n\r\n"
+    )
 
 
 def _prompt_folders():
@@ -713,6 +801,15 @@ def handle(client, ssl_ctx=None):
             client.close()
         elif method == "GET" and path == "/panel/lora-preview" and not is_ws:
             serve_lora_preview(client, raw_path)
+            client.close()
+        elif method == "GET" and path == "/panel/lora-push" and not is_ws:
+            serve_lora_push_get(client, raw_path)
+            client.close()
+        elif method == "POST" and path == "/panel/lora-push" and not is_ws:
+            serve_lora_push_post(client, initial)
+            client.close()
+        elif method == "OPTIONS" and path == "/panel/lora-push" and not is_ws:
+            serve_lora_push_options(client)
             client.close()
         elif method == "GET" and path == "/panel/prompts" and not is_ws:
             serve_prompt_list(client)
