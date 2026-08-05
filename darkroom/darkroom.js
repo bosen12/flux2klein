@@ -763,7 +763,13 @@ window.addEventListener('keydown', e => {
     }
     return;
   }
+  // 全域：任何模式（未開大圖/抽卡浮層、焦點不在輸入框）按 R 直接抽卡（依目前模式）
+  if ((e.key === 'r' || e.key === 'R') && !isTyping()) { e.preventDefault(); drawDispatch(); }
 });
+function isTyping() {
+  const el = document.activeElement;
+  return !!el && (/^(input|textarea|select)$/i.test(el.tagName) || el.isContentEditable);
+}
 
 /* ---------------- 抽卡（塔羅式發牌 + 翻牌） ---------------- */
 const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1293,11 +1299,13 @@ function openGalleryItem(gid) {
   $('modal').classList.add('open');
 }
 
-// 抽卡生圖：從目前資料夾/搜尋範圍隨機抽 8 個詞庫，翻塔羅牌呈現、邊生成邊在牌面顯示即時預覽。
+// 抽卡生圖：從**全分類**隨機抽 8 個詞庫（不限目前資料夾/搜尋範圍），翻塔羅牌呈現、
+// 邊生成邊在牌面顯示即時預覽。
 function drawGenTarot() {
-  if (!VISIBLE.length) { toast('目前沒有詞庫可抽'); return; }
+  const pool = ALL;
+  if (!pool.length) { toast('目前沒有詞庫可抽'); return; }
   const want = isMobile() ? 1 : 8;
-  const picks = sampleN(VISIBLE, Math.min(want, VISIBLE.length));
+  const picks = sampleN(pool, Math.min(want, pool.length));
   runGen(picks.map(x => x.rel), picks);
 }
 
