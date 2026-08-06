@@ -1403,12 +1403,20 @@ let CONCEPTS_KEY_STRENGTH = _readNum('yz-concepts-key-str', 0.8);
 // 調過就記住那個數字，之後不再依裝置改變——使用者的選擇優先於自動判斷的預設。
 let CONCEPTS_COUNT = _readNum('yz-concepts-count', isMobile() ? 1 : 8);
 let CONCEPTS_WITH_TEMPLATE = localStorage.getItem('yz-concepts-tpl') === '1';
+// 模板要不要鎖在左邊詞庫資料夾列表目前選中的那個（CUR_FOLDER）——不勾就跟原本一樣從
+// 全部詞庫（ALL）抽。刻意沿用 CUR_FOLDER 而不是另做一個詞庫分類選單：使用者已經在用
+// 左邊列表瀏覽/選資料夾了，不用為 Concepts 抽卡另外重複一套選擇 UI。
+let CONCEPTS_TPL_CUR_FOLDER = localStorage.getItem('yz-concepts-tpl-cur-folder') === '1';
 function setConceptsCharStrength(v) { CONCEPTS_CHAR_STRENGTH = v; localStorage.setItem('yz-concepts-char-str', v); }
 function setConceptsKeyStrength(v) { CONCEPTS_KEY_STRENGTH = v; localStorage.setItem('yz-concepts-key-str', v); }
 function setConceptsCount(v) { CONCEPTS_COUNT = v; localStorage.setItem('yz-concepts-count', v); }
 function setConceptsWithTemplate(v) {
   CONCEPTS_WITH_TEMPLATE = v;
   localStorage.setItem('yz-concepts-tpl', v ? '1' : '0');
+}
+function setConceptsTplCurFolder(v) {
+  CONCEPTS_TPL_CUR_FOLDER = v;
+  localStorage.setItem('yz-concepts-tpl-cur-folder', v ? '1' : '0');
 }
 // 這個分頁的識別碼：生圖時帶給後端，讓「刷新/關閉這個分頁」只取消自己送的生圖，別的分頁不受影響。
 const GEN_CLIENT = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now());
@@ -2116,10 +2124,12 @@ const $csCharStrength = $('cs-char-strength'), $csCharStrengthOut = $('cs-char-s
 const $csKeyStrength = $('cs-key-strength'), $csKeyStrengthOut = $('cs-key-strength-out');
 const $csCount = $('cs-count');
 const $csTpl = $('cs-tpl');
+const $csTplCurFolder = $('cs-tpl-cur-folder');
 $csCharStrength.value = CONCEPTS_CHAR_STRENGTH; $csCharStrengthOut.textContent = CONCEPTS_CHAR_STRENGTH.toFixed(2);
 $csKeyStrength.value = CONCEPTS_KEY_STRENGTH; $csKeyStrengthOut.textContent = CONCEPTS_KEY_STRENGTH.toFixed(2);
 $csCount.value = CONCEPTS_COUNT;
 $csTpl.checked = CONCEPTS_WITH_TEMPLATE;
+$csTplCurFolder.checked = CONCEPTS_TPL_CUR_FOLDER;
 $csCharStrength.addEventListener('input', () => {
   const v = parseFloat($csCharStrength.value);
   $csCharStrengthOut.textContent = v.toFixed(2);
@@ -2138,6 +2148,7 @@ $csCount.addEventListener('change', () => {
   setConceptsCount(v);
 });
 $csTpl.addEventListener('change', () => setConceptsWithTemplate($csTpl.checked));
+$csTplCurFolder.addEventListener('change', () => setConceptsTplCurFolder($csTplCurFolder.checked));
 // 鎖定狀態指示：讀 GEN_LORA_SLOTS 現在有沒有選到 Character/concepts 分類的 LoRA（見
 // conceptsLockLabel）。頁面剛載入時兩格都是空的，顯示「隨機 × 隨機」；之後每次
 // LoRA1/LoRA2 選擇變動（selectGenLora／清空／交換）都要重繪一次，不然按鈕旁的文字會
@@ -2228,7 +2239,16 @@ function drawConceptsTarotByCategory() {
 // withTemplate 由呼叫端明確傳入（不是這裡自己讀 CONCEPTS_WITH_TEMPLATE），因為 C／X
 // 對同一個開關的反應不一樣。
 function _runConceptsDraw(pickChar, pickConcept, withTemplate) {
-  if (withTemplate && !ALL.length) { toast('要同時抽詞庫模板，但目前沒有任何詞庫'); return; }
+  // CONCEPTS_TPL_CUR_FOLDER 開著就把模板池鎖在左邊詞庫資料夾列表目前選中的那個
+  // （CUR_FOLDER），不是整個 ALL——沿用 E 鍵「本分類」同一份 CUR_FOLDER 狀態，不用
+  // 另外做一套詞庫分類選單。
+  const tplPool = CONCEPTS_TPL_CUR_FOLDER
+    ? ALL.filter(x => (x.folder || '(根目錄)') === CUR_FOLDER)
+    : ALL;
+  if (withTemplate && !tplPool.length) {
+    toast(CONCEPTS_TPL_CUR_FOLDER ? `「${CUR_FOLDER || '(根目錄)'}」底下沒有詞庫可抽模板` : '要同時抽詞庫模板，但目前沒有任何詞庫');
+    return;
+  }
   CONCEPTS_TAROT = true;
   document.body.classList.add('concepts-tarot-open');
   const want = CONCEPTS_COUNT;
@@ -2245,7 +2265,7 @@ function _runConceptsDraw(pickChar, pickConcept, withTemplate) {
     let rel = '';
     let label = `${c.title || c.name} × ${k.title || k.name}`;
     if (withTemplate) {
-      const t = ALL[Math.floor(Math.random() * ALL.length)];
+      const t = tplPool[Math.floor(Math.random() * tplPool.length)];
       rel = t.rel;
       label += ` · ${t.name}`;
     }
