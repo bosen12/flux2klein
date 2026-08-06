@@ -2318,7 +2318,11 @@ function renderConceptsTplResults() {
     $csTplResults.appendChild(row);
   });
 }
-$csTplSearch.addEventListener('input', renderConceptsTplResults);
+let csTplSearchTimer = null;
+$csTplSearch.addEventListener('input', () => {
+  clearTimeout(csTplSearchTimer);
+  csTplSearchTimer = setTimeout(renderConceptsTplResults, 150);
+});
 $('cs-tpl-lock-clear').addEventListener('click', () => setConceptsLockedTemplate(null));
 updateConceptsTemplateLockUI();
 // 鎖定狀態指示：讀 GEN_LORA_SLOTS 現在有沒有選到 Character/concepts 分類的 LoRA（見
