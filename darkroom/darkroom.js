@@ -820,8 +820,10 @@ window.addEventListener('keydown', e => {
   // 打標模式時按 C 開了 Concepts 疊層，R/1~4 這些鍵會被下面通用分支誤判成打標快捷鍵。
   if (CONCEPTS_TAROT && $('tarot').classList.contains('open')) {
     if (e.key === 'Escape') { closeTarot(); return; }
-    if (e.key === 'r' || e.key === 'R' || e.key === 'Enter' || e.key === 'c' || e.key === 'C') {
-      e.preventDefault(); drawConceptsTarot(); return;
+    // R/C/X 在疊層內都是「沿用這次是哪個版本開的（CONCEPTS_REDRAW）重抽」，不是各自
+    // 切換成對應版本——切版本的邏輯只在「還沒開疊層」時的全域 C/X 觸發才有意義。
+    if (e.key === 'r' || e.key === 'R' || e.key === 'Enter' || e.key === 'c' || e.key === 'C' || e.key === 'x' || e.key === 'X') {
+      e.preventDefault(); CONCEPTS_REDRAW(); return;
     }
     return;
   }
@@ -871,11 +873,17 @@ window.addEventListener('keydown', e => {
   if ((e.key === 'e' || e.key === 'E') && !isTyping() && (MODE === 'browse' || MODE === 'gen')) {
     e.preventDefault(); drawCategoryDispatch(); return;
   }
-  // C：Concepts 抽卡，跟模式無關（不像 R/E 限定瀏覽/生圖）。走到這裡代表沒有任何大圖/
-  // 抽卡浮層／LoRA 大面板開著（前面幾個分支都會提早 return），所以不用再另外判斷。
+  // C：Concepts 抽卡（鎖定版），跟模式無關（不像 R/E 限定瀏覽/生圖）。走到這裡代表沒有
+  // 任何大圖/抽卡浮層／LoRA 大面板開著（前面幾個分支都會提早 return），所以不用再另外判斷。
   if ((e.key === 'c' || e.key === 'C') && !isTyping()) {
     e.preventDefault();
     fetchGenLoras().then(() => { updateConceptsLockLabel(); drawConceptsTarot(); });
+    return;
+  }
+  // X：Concepts 抽卡（分類縮小範圍版）——見 drawConceptsTarotByCategory。
+  if ((e.key === 'x' || e.key === 'X') && !isTyping()) {
+    e.preventDefault();
+    fetchGenLoras().then(() => { updateConceptsLockLabel(); drawConceptsTarotByCategory(); });
   }
 });
 function isTyping() {
@@ -989,6 +997,11 @@ let LORA_TAROT = false;
 // 收尾、z-index 拉高（body.concepts-tarot-open，見 darkroom.css）都要認得現在是這個
 // 情境，不然會被 MODE 判斷出來的一般抽卡邏輯誤觸（見 drawDispatch() 與 keydown 分支）。
 let CONCEPTS_TAROT = false;
+// Concepts 抽卡有兩個版本（C 鍵鎖定版／X 鍵分類縮小範圍版，見 drawConceptsTarot／
+// drawConceptsTarotByCategory），R 鍵重抽要沿用「這次疊層是哪個版本開的」，不能寫死
+// 呼叫其中一個——不然用 X 開的疊層按 R 會悄悄變成鎖定版，跟畫面上看到的不一致。
+// 兩個進入點各自的第一行都會把自己指派給這個變數。
+let CONCEPTS_REDRAW = drawConceptsTarot;
 // pool/label 可選（沿用 drawTarot/drawGenTarot 那套：不傳＝原本行為，全庫隨機）。
 // E 鍵重抽本分類靠 drawLoraCategoryDispatch() 帶 pool/label 進來。
 function drawLoraTarot(pool, label) {
@@ -1201,7 +1214,7 @@ function updateTarotProgress() {
 // 情境共用同一顆，原本沒檢查這兩個旗標，LoRA 隨機瀏覽／Concepts 抽卡疊層開著時點下去
 // 會誤觸目前 MODE 對應的一般抽卡（詞庫/生圖），不是重抽當下這種——鍵盤 R 走另一條
 // keydown 分支，同樣要各自補上判斷（見下方 window.addEventListener('keydown', …)）。
-const drawDispatch = () => (LORA_TAROT ? drawLoraTarot() : CONCEPTS_TAROT ? drawConceptsTarot() : MODE === 'gen' ? drawGenTarot() : MODE === 'tag' ? drawTagTarot() : drawTarot());
+const drawDispatch = () => (LORA_TAROT ? drawLoraTarot() : CONCEPTS_TAROT ? CONCEPTS_REDRAW() : MODE === 'gen' ? drawGenTarot() : MODE === 'tag' ? drawTagTarot() : drawTarot());
 $('draw-cards').onclick = drawDispatch;
 $('tarot-redraw').onclick = drawDispatch;
 $('tarot-close').onclick = closeTarot;
@@ -2042,12 +2055,43 @@ function openGalleryItem(gid) {
 // 不是這裡——那顆勾選框的初始 checked 狀態是在腳本載入當下就同步設定（見 lm-concepts-tpl
 // 事件綁定），如果宣告寫在這裡（比綁定晚很多行）會撞 TDZ：CLAUDE.md 記過的「state 初始化
 // 引用後面才宣告的 const/let」同一類坑，這次是直接踩到而不是提前發現，寫在這裡當提醒。
+// C 鍵版本：鎖定 LoRA1/LoRA2 面板現在選到的 Character／concepts LoRA（見
+// lockedCharacterSlot/lockedConceptSlot），另一側隨機；都沒鎖定就兩側都隨機。
 function drawConceptsTarot() {
   const lockedChar = lockedCharacterSlot(), lockedConcept = lockedConceptSlot();
   const cPool = lockedChar ? null : fullCharacterPool();
   const kPool = lockedConcept ? null : fullConceptsPool();
   if (!lockedChar && !cPool.length) { toast('Character 底下沒有 LoRA 可抽'); return; }
   if (!lockedConcept && !kPool.length) { toast('concepts 底下沒有 LoRA 可抽'); return; }
+  const pickChar = lockedChar
+    ? () => ({ lora: lockedChar.lora, strength: lockedChar.strength })
+    : () => ({ lora: cPool[Math.floor(Math.random() * cPool.length)], strength: GEN_LORA_SLOTS[0].strength });
+  const pickConcept = lockedConcept
+    ? () => ({ lora: lockedConcept.lora, strength: lockedConcept.strength })
+    : () => ({ lora: kPool[Math.floor(Math.random() * kPool.length)], strength: GEN_LORA_SLOTS[1].strength });
+  CONCEPTS_REDRAW = drawConceptsTarot;
+  _runConceptsDraw(pickChar, pickConcept);
+}
+
+// X 鍵版本：用 LoRA 大面板左欄目前停的分類/子資料夾晶片（GEN_LORA_CAT/GEN_LORA_SUBFOLDER，
+// 跟隨機瀏覽 LoRA 的 E 鍵、loraCatPool() 同一套狀態）縮小範圍，跟 C 鍵的「鎖定」完全獨立
+// ——C 看「LoRA1/2 選了哪顆」，X 看「篩選晶片停在哪」，互不影響。篩選停在 Character（可能
+// 已縮小到 Hanime/manhwa/other 某個子資料夾）就縮小 Character 池，停在 HENTAI 就縮小
+// concepts 池，沒對到就兩側都用全部預設。
+function drawConceptsTarotByCategory() {
+  const cPool = GEN_LORA_CAT === 'Character' ? loraCatPool() : fullCharacterPool();
+  const kPool = GEN_LORA_CAT === 'HENTAI' ? loraCatPool() : fullConceptsPool();
+  if (!cPool.length) { toast('目前範圍內 Character 沒有 LoRA 可抽'); return; }
+  if (!kPool.length) { toast('目前範圍內 concepts 沒有 LoRA 可抽'); return; }
+  const pickChar = () => ({ lora: cPool[Math.floor(Math.random() * cPool.length)], strength: GEN_LORA_SLOTS[0].strength });
+  const pickConcept = () => ({ lora: kPool[Math.floor(Math.random() * kPool.length)], strength: GEN_LORA_SLOTS[1].strength });
+  CONCEPTS_REDRAW = drawConceptsTarotByCategory;
+  _runConceptsDraw(pickChar, pickConcept);
+}
+
+// C／X 共用的抽卡核心：pickChar()/pickConcept() 各自決定「這張卡」要用哪個 LoRA＋強度
+// （每張卡各呼叫一次，讓隨機的一側可以每張卡都不一樣，鎖定的一側每次都回傳同一個）。
+function _runConceptsDraw(pickChar, pickConcept) {
   if (CONCEPTS_WITH_TEMPLATE && !ALL.length) { toast('要同時抽詞庫模板，但目前沒有任何詞庫'); return; }
   CONCEPTS_TAROT = true;
   document.body.classList.add('concepts-tarot-open');
@@ -2055,10 +2099,8 @@ function drawConceptsTarot() {
   const firstTw = (l) => (l.trainedWords || [])[0] || '';
   const jobs = [], picks = [];
   for (let i = 0; i < want; i++) {
-    const c = lockedChar ? lockedChar.lora : cPool[Math.floor(Math.random() * cPool.length)];
-    const cStrength = lockedChar ? lockedChar.strength : GEN_LORA_SLOTS[0].strength;
-    const k = lockedConcept ? lockedConcept.lora : kPool[Math.floor(Math.random() * kPool.length)];
-    const kStrength = lockedConcept ? lockedConcept.strength : GEN_LORA_SLOTS[1].strength;
+    const { lora: c, strength: cStrength } = pickChar();
+    const { lora: k, strength: kStrength } = pickConcept();
     const loras = [
       { folder: c.folder, file: c.file, title: c.title || c.name, strength: cStrength },
       { folder: k.folder, file: k.file, title: k.title || k.name, strength: kStrength },

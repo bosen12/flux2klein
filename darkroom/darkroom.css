@@ -766,6 +766,11 @@ body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不�
    LoRA 大面板已經沒有必然關係，但兩者剛好同時開著時（例如面板開著、按 C 鍵）一樣
    要蓋上去，所以套用同一招。 */
 body.lora-tarot-open #tarot, body.concepts-tarot-open #tarot { z-index: 145; }
+/* #tarot 拉到 145 之後，Concepts 抽卡點卡片看大圖用的 #modal（原本 130，設計成蓋過
+   #tarot 平常的 120 就好）就被蓋到底下了——同一招再往上加一層，#modal 也要跟著蓋過
+   拉高後的 #tarot。lora-tarot-open 目前不會開 #modal（LoRA 隨機瀏覽點卡是選中即關閉，
+   不是看大圖），但一起處理避免以後接了類似互動又忘記這個連動。 */
+body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 .lm-search-wrap { position: relative; padding: 12px 14px 10px; flex: none; }
 .lm-search-wrap svg { position: absolute; left: 24px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--faint); pointer-events: none; }
 .lm-search-wrap input { width: 100%; box-sizing: border-box; padding: 8px 10px 8px 32px; }
