@@ -201,6 +201,14 @@ input[type=text]::placeholder { color: var(--faint); }
 .main-title { display: flex; align-items: baseline; gap: 10px; }
 .main-title .num { font-family: var(--mono); font-size: 13px; color: var(--amber); }
 .main-title h2 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: .2px; }
+/* 標題旁「本分類抽卡」鈕：貼著分類名稱（含跨資料夾搜尋時的「搜尋「…」」標題），語意
+   自然對到「對這個分類動作」，不用另外說明；只在瀏覽/生圖顯示，打標模式隱藏（打標有自己
+   一套 R/S/Z 抽卡打標流程，跟分類抽卡是不同機制）。 */
+.cat-draw-btn { width: 26px; height: 26px; padding: 0; display: grid; place-items: center;
+  font-size: 13px; border-radius: 999px; flex: none; align-self: center;
+  transition: transform var(--d-micro) var(--ease-out), border-color var(--d-micro) var(--ease-out), color var(--d-micro) var(--ease-out); }
+.cat-draw-btn:hover { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 45%, var(--line)); transform: scale(1.08); }
+body[data-mode="tag"] .cat-draw-btn { display: none !important; }
 .main-sub { font-family: var(--mono); font-size: 12px; color: var(--dim); margin-top: 4px; }
 .head-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 /* 篩選段：滑動膠囊（比照主面板的分頁膠囊，換頁時滑過去而非瞬切） */

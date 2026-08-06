@@ -770,13 +770,19 @@ window.addEventListener('keydown', e => {
       }
       return;
     }
-    if (e.key === 'r' || e.key === 'R' || e.key === 'Enter') {   // R 重抽（生圖模式抽新的一批來生）
+    if (e.key === 'r' || e.key === 'R' || e.key === 'Enter') {   // R 重抽（生圖模式抽新的一批來生；一律抽全庫）
       e.preventDefault(); (MODE === 'gen' ? drawGenTarot : drawTarot)(); return;
+    }
+    if ((e.key === 'e' || e.key === 'E') && (MODE === 'browse' || MODE === 'gen')) {   // E 重抽本分類
+      e.preventDefault(); drawCategoryDispatch(); return;
     }
     return;
   }
-  // 全域：任何模式（未開大圖/抽卡浮層、焦點不在輸入框）按 R 直接抽卡（依目前模式）
-  if ((e.key === 'r' || e.key === 'R') && !isTyping()) { e.preventDefault(); drawDispatch(); }
+  // 全域：未開大圖/抽卡浮層、焦點不在輸入框時，R 抽全庫（依目前模式）、E 只在瀏覽/生圖抽本分類
+  if ((e.key === 'r' || e.key === 'R') && !isTyping()) { e.preventDefault(); drawDispatch(); return; }
+  if ((e.key === 'e' || e.key === 'E') && !isTyping() && (MODE === 'browse' || MODE === 'gen')) {
+    e.preventDefault(); drawCategoryDispatch();
+  }
 });
 function isTyping() {
   const el = document.activeElement;
@@ -799,18 +805,22 @@ function sampleN(arr, n) {
 const CN_NUM = ['零', '一', '二', '三', '四', '五', '六', '七', '八'];
 const isMobile = () => matchMedia('(max-width: 640px)').matches || matchMedia('(pointer: coarse)').matches;
 
-function drawTarot() {
-  const pool = ALL.filter(x => x.has_image);             // 只抽有 webp（旁邊有圖）的詞庫
-  if (!pool.length) { alert('目前沒有任何已生成預覽圖的詞庫可抽'); return; }
+// pool/label 未傳＝原本行為（全庫抽卡，R 鍵）；傳了就是分類抽卡（E 鍵／標題旁按鈕），
+// label 會併進塔羅標題與空池提示，讓使用者看得出這批是從哪裡抽的。
+function drawTarot(pool, label) {
+  pool = pool || ALL.filter(x => x.has_image);            // 只抽有 webp（旁邊有圖）的詞庫
+  if (!pool.length) { alert(label ? `「${label}」沒有已生成預覽圖的詞庫可抽` : '目前沒有任何已生成預覽圖的詞庫可抽'); return; }
   const want = isMobile() ? 1 : 8;                        // 手機一次一張，桌面 8 張（4+4）
   const picks = sampleN(pool, Math.min(want, pool.length));
   const n = picks.length;
   const title = document.querySelector('.tarot-title');
-  if (title) title.textContent = `✦ 抽選${CN_NUM[n] || n}張 ✦`;
+  if (title) title.textContent = label ? `✦ ${label}　抽選${CN_NUM[n] || n}張 ✦` : `✦ 抽選${CN_NUM[n] || n}張 ✦`;
   const wrap = $('tarot-cards');
   wrap.classList.remove('ttag');                          // 瀏覽抽卡：清掉打標抽卡的 5×3 排版
   $('tarot-stage').classList.remove('ttag-stage');
-  $('tarot-hint').textContent = '點任一張看大圖與提示詞；R 重抽一批、Esc 關閉';
+  $('tarot-hint').textContent = label
+    ? '點任一張看大圖與提示詞；E 重抽本分類、R 改抽全庫、Esc 關閉'
+    : '點任一張看大圖與提示詞；R 重抽一批、Esc 關閉';
   wrap.innerHTML = '';
   picks.forEach((it, i) => {
     const card = document.createElement('div');
@@ -997,6 +1007,23 @@ const drawDispatch = () => (MODE === 'gen' ? drawGenTarot() : MODE === 'tag' ? d
 $('draw-cards').onclick = drawDispatch;
 $('tarot-redraw').onclick = drawDispatch;
 $('tarot-close').onclick = closeTarot;
+
+// E 鍵／標題旁「✦」鈕：只在瀏覽／生圖模式，抽卡池換成「目前選中的分類」（跨資料夾搜尋時
+// 換成搜尋結果範圍）而不是整個詞庫。重用 baseList()（本來就是「只套資料夾/搜尋」，不含
+// 缺圖/已有、稀有度篩選——跟 R 的全庫抽卡一樣無視這兩層篩選，行為才會一致）。
+function catPool(requireImage) {
+  const list = baseList();
+  return requireImage ? list.filter(x => x.has_image) : list;
+}
+function categoryLabel() {
+  return SEARCH ? `搜尋「${SEARCH}」` : (CUR_FOLDER || '(根目錄)');
+}
+function drawCategoryDispatch() {
+  const label = categoryLabel();
+  if (MODE === 'gen') drawGenTarot(catPool(false), label);
+  else drawTarot(catPool(true), label);
+}
+$('draw-cat').onclick = drawCategoryDispatch;
 $('tarot').addEventListener('click', e => { if (e.target.id === 'tarot') closeTarot(); });
 
 /* ---------------- 生成步數（右上角，即時套用到之後的生成） ---------------- */
@@ -1567,14 +1594,14 @@ function openGalleryItem(gid) {
   $('modal').classList.add('open');
 }
 
-// 抽卡生圖：從**全分類**隨機抽 8 個詞庫（不限目前資料夾/搜尋範圍），翻塔羅牌呈現、
-// 邊生成邊在牌面顯示即時預覽。
-function drawGenTarot() {
-  const pool = ALL;
-  if (!pool.length) { toast('目前沒有詞庫可抽'); return; }
+// 抽卡生圖：pool/label 未傳＝原本行為（從**全分類**隨機抽 8 個詞庫，R 鍵）；傳了就是
+// 分類抽卡生圖（E 鍵／標題旁按鈕），label 會併進塔羅標題。
+function drawGenTarot(pool, label) {
+  pool = pool || ALL;
+  if (!pool.length) { toast(label ? `「${label}」沒有詞庫可抽` : '目前沒有詞庫可抽'); return; }
   const want = isMobile() ? 1 : 8;
   const picks = sampleN(pool, Math.min(want, pool.length));
-  runGen(picks.map(x => x.rel), picks);
+  runGen(picks.map(x => x.rel), picks, label);
 }
 
 // 起一批生圖：每張推進 GALLERY（帶 metadata），並掛 gid 到卡片上；抽卡另開塔羅浮層、
@@ -1582,7 +1609,7 @@ function drawGenTarot() {
 // 中畫面、done 換成品；同時把 seed/done 回填進 GALLERY 供大圖資訊用。
 let _genPoll = null;
 const GEN_PENDING = new Set();     // 所有還在生的 gid（跨批次共用一個輪詢，避免第二批把第一批的輪詢頂掉）
-async function runGen(rels, tarotItems) {
+async function runGen(rels, tarotItems, label) {
   rels = rels || [...SEL];
   if (!rels.length) return;
   const lora = GEN_LORA ? { folder: GEN_LORA.folder, file: GEN_LORA.file, title: GEN_LORA.title || GEN_LORA.name } : null;
@@ -1601,7 +1628,7 @@ async function runGen(rels, tarotItems) {
   }
   updateGalleryHead();
   if (tarotItems) {
-    openGenTarot(items, tarotItems);          // 抽卡：塔羅浮層（圖同時已進圖庫）
+    openGenTarot(items, tarotItems, label);   // 抽卡：塔羅浮層（圖同時已進圖庫）
     if (GALLERY_OPEN) renderGallery();
   } else if (GALLERY_OPEN) {
     renderGallery();                          // 已在圖庫：直接重繪把新卡帶進來
@@ -1613,14 +1640,16 @@ async function runGen(rels, tarotItems) {
 }
 
 // 生圖抽卡的塔羅呈現：沿用瀏覽抽卡的發牌／翻牌動畫，牌面是生成中的即時預覽而非既有圖。
-function openGenTarot(items, picks) {
+function openGenTarot(items, picks, label) {
   const n = items.length;
   const title = document.querySelector('.tarot-title');
-  if (title) title.textContent = `✦ 抽選${CN_NUM[n] || n}張生圖 ✦`;
+  if (title) title.textContent = label ? `✦ ${label}　抽選${CN_NUM[n] || n}張生圖 ✦` : `✦ 抽選${CN_NUM[n] || n}張生圖 ✦`;
   const wrap = $('tarot-cards');
   wrap.classList.remove('ttag');
   $('tarot-stage').classList.remove('ttag-stage');
-  $('tarot-hint').textContent = '牌面即時顯示生成中的採樣畫面；完成後點卡片看大圖，R 重抽、Esc 關閉';
+  $('tarot-hint').textContent = label
+    ? '牌面即時顯示生成中的採樣畫面；完成後點卡片看大圖，E 重抽本分類、R 改抽全庫、Esc 關閉'
+    : '牌面即時顯示生成中的採樣畫面；完成後點卡片看大圖，R 重抽、Esc 關閉';
   wrap.innerHTML = '';
   items.forEach((it, i) => {
     const item = picks[i] || {};
