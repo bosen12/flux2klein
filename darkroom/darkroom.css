@@ -124,6 +124,14 @@ input[type=text]::placeholder { color: var(--faint); }
 }
 .brand h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: .3px; }
 .brand .sub { font-family: var(--mono); font-size: 11px; color: var(--faint); letter-spacing: .5px; }
+/* 頂列「X/Y 已生成」滾動數字：用 CSS counter 補間（跟 @property --beam 同一招，不用
+   JS rAF 迴圈）。span 本身沒有文字節點，數字全部由 ::after 的 counter() 產生，
+   JS 只要 setProperty('--n', 值) 就會平滑補間；reduced-motion 關掉 transition 直接
+   跳到新值，counter 內容照樣正確渲染，不會有「兩套數字疊在一起」的問題。 */
+@property --n { syntax: '<integer>'; inherits: false; initial-value: 0; }
+.count-num { transition: --n var(--d-ui) var(--ease-out); }
+.count-num::after { counter-reset: num var(--n); content: counter(num); }
+@media (prefers-reduced-motion: reduce) { .count-num { transition: none; } }
 .search-wrap { position: relative; flex: 1; max-width: 420px; }
 .search-wrap svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
                    width: 14px; height: 14px; color: var(--faint); pointer-events: none; }
@@ -323,6 +331,8 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
 }
 
 .empty-state { padding: 80px 20px; text-align: center; color: var(--faint); }
+/* 超大資料夾的安全網按鈕（見 darkroom.js AUTO_LOAD_CAP），目前實際規模不會出現 */
+.load-more-btn { margin: 24px auto; display: block; padding: 10px 20px; }
 .empty-state .big { font-size: 15px; color: var(--dim); margin-bottom: 6px; }
 
 /* ── 大圖 modal ───────────────────────────────────────────────── */

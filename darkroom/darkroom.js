@@ -8,6 +8,8 @@ let VISIBLE = [];           // 目前 grid 呈現的清單(供 modal 前後導�
 const pollers = new Set();
 const REDUCE_MOTION = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const $ = id => document.getElementById(id);
+// 滾動數字：見 darkroom.css .count-num（CSS counter 補間，這裡只需要設 --n）。
+const setCount = (el, value) => { if (el) el.style.setProperty('--n', String(value)); };
 
 // 顯示目前操作的詞庫資料夾（兩個 bat 不同 special_dir 都開 7860，避免搞混改到別份）。
 // 顯示路徑尾兩段就足以分辨（…/projects/special_prompts vs …/animebot/special_prompts）。
@@ -28,13 +30,24 @@ async function loadAll(force = false) {
   conn.classList.toggle('on', !!j.comfy);
   $('conn-text').textContent = j.comfy ? `ComfyUI 就緒 · steps ${j.steps}` : 'ComfyUI 未連線';
   const total = ALL.length, have = ALL.filter(x => x.has_image).length;
-  $('total-tag').textContent = `${have}/${total} 已生成`;
+  setCount($('total-have'), have);
+  setCount($('total-all'), total);
   setDataset(j.special_dir);
   if (typeof j.steps === 'number' && document.activeElement !== $('steps-input')) $('steps-input').value = j.steps;
   updateReviewCount();
   if (CUR_FOLDER === null) {
     const folders = folderStats();
-    CUR_FOLDER = folders.length ? folders[0].name : '';
+    const saved = loadViewState();
+    if (saved) {
+      // 資料夾要先確認現在還存在才能還原（詞庫可能被刪掉/改名），其餘三個直接還原即可，
+      // 就算值已經不合法，buildRarityBar()/currentList() 本來就有各自的防呆邏輯。
+      if (folders.some(f => f.name === saved.folder)) CUR_FOLDER = saved.folder;
+      if (typeof saved.search === 'string') { SEARCH = saved.search; $('search').value = SEARCH; }
+      if (saved.view === 'all' || saved.view === 'missing' || saved.view === 'have') VIEW = saved.view;
+      if (typeof saved.rarity === 'string') RARITY_FILTER = saved.rarity;
+    }
+    if (CUR_FOLDER === null) CUR_FOLDER = folders.length ? folders[0].name : '';
+    syncViewSeg();
   }
   buildRail();
   render();
@@ -143,6 +156,13 @@ function buildRarityBar() {
     b.innerHTML = `<span class="rc-dot"></span><span class="rc-label"></span><span class="rc-count">${cnt[key]}</span>`;
     b.querySelector('.rc-label').textContent = label;
     b.onclick = () => withTransition(() => { RARITY_FILTER = key; render(); });
+    // hover 顯示這個等級佔目前範圍的比例，沿用觸發詞卡同一套浮動提示框（見
+    // showStatTip，跟 showTwTip 共用 .tw-tip 元素與定位邏輯，只是不用打翻譯 API）。
+    if (key !== 'all') {
+      const pct = base.length ? Math.round(cnt[key] / base.length * 100) : 0;
+      b.addEventListener('mouseenter', () => showStatTip(b, `佔目前範圍 ${pct}%（${cnt[key]}／${base.length}）`));
+      b.addEventListener('mouseleave', () => hideTwTip(b));
+    }
     bar.appendChild(b);
   });
 }
@@ -183,7 +203,28 @@ function updateStats() {
   return total;
 }
 
+// 狀態持久化：資料夾/搜尋/缺圖篩選/稀有度篩選記到 localStorage，重整後恢復（跟既有
+// yz-mode/yz-rail-desc 同一套慣例）。寫在 render() 最前面（唯一收斂點，每次狀態變動
+// 最後都會呼叫 render，不用在每個 onclick 各自補一行、容易漏）。
+function saveViewState() {
+  try {
+    localStorage.setItem('yz-view-state', JSON.stringify({ folder: CUR_FOLDER, search: SEARCH, view: VIEW, rarity: RARITY_FILTER }));
+  } catch (e) { /* 存取被封鎖或滿了，忽略即可，不影響核心功能 */ }
+}
+function loadViewState() {
+  try { return JSON.parse(localStorage.getItem('yz-view-state') || 'null'); }
+  catch (e) { return null; }
+}
+// 恢復 VIEW 的視覺狀態（RARITY_FILTER 由 buildRarityBar() 每次 render 自己讀變數重建，
+// 不用另外同步；VIEW 的分段按鈕是靠 click handler 手動切 class，重整時要補這一步）。
+function syncViewSeg() {
+  const seg = $('view-seg'); if (!seg) return;
+  seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === VIEW));
+  moveSegPill();
+}
+
 function render() {
+  saveViewState();
   const total = updateStats();
   const grid = $('grid');
   grid.innerHTML = '';
@@ -215,14 +256,43 @@ function render() {
     sentinel.style.cssText = 'grid-column:1/-1;height:1px;';
     grid.appendChild(sentinel);
     _io = new IntersectionObserver((es) => {
-      if (es[0].isIntersecting) appendPage();
+      if (!es[0].isIntersecting) return;
+      // 安全網：目前實際最大的資料夾約 400 筆，自動捲動完全撐得住。這個上限是給
+      // 「萬一某天有資料夾長到幾千筆」預留的——超過就改成手動按「載入更多」才繼續，
+      // 不再自動觸發，避免病態情況下 DOM 節點無上限疊加拖垮分頁。目前規模下完全不會
+      // 觸發，是 0 風險的預防性措施；不是真正的虛擬捲動（不移除已渲染卡片，不牽動
+      // 選取狀態/hover/點擊等既有邏輯，沒有重寫風險）。
+      if (_rendered >= AUTO_LOAD_CAP) { convertSentinelToLoadMoreButton(); return; }
+      appendPage();
     }, { root: $('main'), rootMargin: '800px 0px' });   // 提前 800px 預載
     _io.observe(sentinel);
   }
 }
 
 const PAGE = 120;
+const AUTO_LOAD_CAP = 600;
 let _rendered = 0, _io = null, _revealIO = null;
+
+function convertSentinelToLoadMoreButton() {
+  if (_io) { _io.disconnect(); _io = null; }
+  const old = $('scroll-sentinel');
+  if (!old) return;
+  const btn = document.createElement('button');
+  btn.id = 'scroll-sentinel';
+  btn.className = 'ghost load-more-btn';
+  btn.style.gridColumn = '1/-1';
+  btn.textContent = `載入更多（還有 ${VISIBLE.length - _rendered} 筆）`;
+  btn.onclick = () => {
+    appendPage();
+    // 全部載完：appendPage() 自己的清除邏輯只在 _io 還在時才會拿掉 sentinel，
+    // 這裡走的是手動按鈕、_io 已經是 null，要自己補移除，不然按鈕會留在格線最後面。
+    const now = $('scroll-sentinel');
+    if (!now) return;
+    if (_rendered >= VISIBLE.length) { now.remove(); return; }
+    if (now.tagName === 'BUTTON') now.textContent = `載入更多（還有 ${VISIBLE.length - _rendered} 筆）`;
+  };
+  old.replaceWith(btn);
+}
 
 function appendPage() {
   const grid = $('grid');
@@ -1247,6 +1317,15 @@ function hideTwTip(anchor) {
   if (TW_TIP_FOR !== anchor) return;
   TW_TIP_FOR = null;
   if (TW_TIP_EL) TW_TIP_EL.classList.remove('show');
+}
+// 靜態文字版：跟 showTwTip 共用同一個 .tw-tip 元素/定位/顯隱邏輯，差別只是不用打
+// 翻譯 API、文字立即顯示（給稀有度分布條 hover 用，見 buildRarityBar）。
+function showStatTip(anchor, text) {
+  TW_TIP_FOR = anchor;
+  const tip = ensureTwTip();
+  positionTwTip(anchor);
+  tip.textContent = text;
+  tip.classList.add('show');
 }
 
 // 有些 LoRA 的預覽檔是短片（.mp4/.webm）而不是圖片，要用 <video> 而不是 <img> 渲染。
