@@ -76,6 +76,17 @@
         <input type="checkbox" id="cs-tpl-cur-folder">
         <span>模板只抽左邊目前選中的資料夾（不勾＝從全部詞庫抽）</span>
       </label>
+      <!-- 鎖定一個固定模板：跟 LoRA1/LoRA2 選格同一套「搜尋→點選鎖定」互動，鎖定後
+           每張卡固定用這個模板，自動視同勾了上面「同時抽詞庫模板」，兩個控制項不衝突
+           （鎖定優先，checkbox 只在沒鎖定時才決定要不要隨機抽）。 -->
+      <div class="cs-tpl-lock" id="cs-tpl-lock">
+        <div class="cs-tpl-lock-current" id="cs-tpl-lock-current" hidden>
+          <span id="cs-tpl-lock-name"></span>
+          <button type="button" id="cs-tpl-lock-clear" title="取消鎖定模板">✕</button>
+        </div>
+        <input type="text" id="cs-tpl-search" placeholder="搜尋要鎖定的模板…" autocomplete="off">
+        <div class="cs-tpl-results" id="cs-tpl-results"></div>
+      </div>
     </div>
   </div>
   <!-- LoRA 大面板：只在生圖模式顯示（用 visibility 而非 display，切模式時不擠動旁邊固定的

@@ -1439,6 +1439,15 @@ function setConceptsTplCurFolder(v) {
   CONCEPTS_TPL_CUR_FOLDER = v;
   localStorage.setItem('yz-concepts-tpl-cur-folder', v ? '1' : '0');
 }
+// 鎖定一個固定的詞庫模板（見 Concepts 設定彈窗的搜尋清單）。跟 LoRA1/2 的鎖定同一種
+// 設計：不存 localStorage（session-only，跟 GEN_LORA_SLOTS 一致——詞庫內容可能隨掃描
+// 變動，跨分頁/重整保留一個可能已經不存在的 rel 沒有意義）。鎖定了就自動視同要抽模板，
+// 不需要另外勾「同時抽詞庫模板」；兩個控制項見 _runConceptsDraw 怎麼合併判斷。
+let CONCEPTS_LOCKED_TEMPLATE = null;
+function setConceptsLockedTemplate(item) {
+  CONCEPTS_LOCKED_TEMPLATE = item;
+  updateConceptsTemplateLockUI();
+}
 // 這個分頁的識別碼：生圖時帶給後端，讓「刷新/關閉這個分頁」只取消自己送的生圖，別的分頁不受影響。
 const GEN_CLIENT = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now());
 
@@ -2260,6 +2269,44 @@ $csCount.addEventListener('change', () => {
 });
 $csTpl.addEventListener('change', () => setConceptsWithTemplate($csTpl.checked));
 $csTplCurFolder.addEventListener('change', () => setConceptsTplCurFolder($csTplCurFolder.checked));
+
+// 鎖定模板小選擇器：跟 LoRA 面板搜尋同一套「輸入就篩選、點一項就選中」互動，但這裡是
+// 純文字清單（不用縮圖），畢竟重點是「選中哪個詞庫」。搜尋比對名稱/資料夾，跟
+// renderLmList() 的 nameHit/twHit 分級邏輯不同——詞庫沒有觸發詞可比對，用簡單的
+// includes 就夠，結果數量也用 30 筆封頂，不用全部渲染（詞庫可能上萬筆）。
+const $csTplLock = $('cs-tpl-lock');
+const $csTplLockCurrent = $('cs-tpl-lock-current');
+const $csTplLockName = $('cs-tpl-lock-name');
+const $csTplSearch = $('cs-tpl-search');
+const $csTplResults = $('cs-tpl-results');
+function updateConceptsTemplateLockUI() {
+  const locked = CONCEPTS_LOCKED_TEMPLATE;
+  if (locked) { $csTplLock.dataset.locked = '1'; } else { delete $csTplLock.dataset.locked; }
+  $csTplLockCurrent.hidden = !locked;
+  if (locked) $csTplLockName.textContent = locked.name;
+}
+function renderConceptsTplResults() {
+  const q = $csTplSearch.value.trim().toLowerCase();
+  $csTplResults.innerHTML = '';
+  if (!q) return;
+  const hits = ALL.filter(x => x.name.toLowerCase().includes(q) || (x.folder || '').toLowerCase().includes(q)).slice(0, 30);
+  if (!hits.length) { $csTplResults.innerHTML = '<div class="cs-tpl-empty">找不到符合的詞庫</div>'; return; }
+  hits.forEach(item => {
+    const row = document.createElement('button'); row.type = 'button'; row.className = 'cs-tpl-row';
+    const name = document.createElement('span'); name.className = 'ctr-name'; name.textContent = item.name;
+    const folder = document.createElement('span'); folder.className = 'ctr-folder'; folder.textContent = item.folder || '(根目錄)';
+    row.append(name, folder);
+    row.addEventListener('click', () => {
+      setConceptsLockedTemplate(item);
+      $csTplSearch.value = '';
+      $csTplResults.innerHTML = '';
+    });
+    $csTplResults.appendChild(row);
+  });
+}
+$csTplSearch.addEventListener('input', renderConceptsTplResults);
+$('cs-tpl-lock-clear').addEventListener('click', () => setConceptsLockedTemplate(null));
+updateConceptsTemplateLockUI();
 // 鎖定狀態指示：讀 GEN_LORA_SLOTS 現在有沒有選到 Character/concepts 分類的 LoRA（見
 // conceptsLockLabel）。頁面剛載入時兩格都是空的，顯示「隨機 × 隨機」；之後每次
 // LoRA1/LoRA2 選擇變動（selectGenLora／清空／交換）都要重繪一次，不然按鈕旁的文字會
@@ -2362,13 +2409,17 @@ function drawConceptsTarotByCategory() {
 // withTemplate 由呼叫端明確傳入（不是這裡自己讀 CONCEPTS_WITH_TEMPLATE），因為 C／X
 // 對同一個開關的反應不一樣。
 function _runConceptsDraw(pickChar, pickConcept, withTemplate) {
-  // CONCEPTS_TPL_CUR_FOLDER 開著就把模板池鎖在左邊詞庫資料夾列表目前選中的那個
+  // 鎖定了固定模板就不用管隨機池——鎖定自動視同「要抽模板」，checkbox 的狀態在這時候
+  // 不重要（不用強制連動去改 UI 上的勾選框，鎖定本身就是更高優先權的判斷）。
+  const lockedTpl = CONCEPTS_LOCKED_TEMPLATE;
+  const useTemplate = withTemplate || !!lockedTpl;
+  // CONCEPTS_TPL_CUR_FOLDER 開著就把隨機模板池鎖在左邊詞庫資料夾列表目前選中的那個
   // （CUR_FOLDER），不是整個 ALL——沿用 E 鍵「本分類」同一份 CUR_FOLDER 狀態，不用
-  // 另外做一套詞庫分類選單。
-  const tplPool = CONCEPTS_TPL_CUR_FOLDER
+  // 另外做一套詞庫分類選單。有鎖定固定模板時完全不需要這個池，略過檢查。
+  const tplPool = lockedTpl ? null : (CONCEPTS_TPL_CUR_FOLDER
     ? ALL.filter(x => (x.folder || '(根目錄)') === CUR_FOLDER)
-    : ALL;
-  if (withTemplate && !tplPool.length) {
+    : ALL);
+  if (useTemplate && !lockedTpl && !tplPool.length) {
     toast(CONCEPTS_TPL_CUR_FOLDER ? `「${CUR_FOLDER || '(根目錄)'}」底下沒有詞庫可抽模板` : '要同時抽詞庫模板，但目前沒有任何詞庫');
     return;
   }
@@ -2391,8 +2442,8 @@ function _runConceptsDraw(pickChar, pickConcept, withTemplate) {
     let trigger = joinTriggerParts([cTrigger ?? firstTw(c), kTrigger ?? firstTw(k)]);
     let rel = '';
     let label = `${c.title || c.name} × ${k.title || k.name}`;
-    if (withTemplate) {
-      const t = tplPool[Math.floor(Math.random() * tplPool.length)];
+    if (useTemplate) {
+      const t = lockedTpl || tplPool[Math.floor(Math.random() * tplPool.length)];
       rel = t.rel;
       label += ` · ${t.name}`;
     }

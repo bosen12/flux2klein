@@ -686,6 +686,29 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 .cs-row-check { cursor: pointer; }
 .cs-row-check span { width: auto; flex: 1; line-height: 1.4; }
 .cs-row-check input { accent-color: var(--amber); flex: none; }
+
+/* 鎖定模板小選擇器：跟 LoRA1/2「搜尋→點選鎖定」同一套心智模型，但縮小成塞得進設定
+   彈窗的迷你版——沒有縮圖，純文字列表，畢竟這裡的重點是「選中哪個詞庫」不是看預覽圖
+   （預覽圖已經在 genbar/面板 hover 預覽處理過了）。 */
+.cs-tpl-lock { display: flex; flex-direction: column; gap: 6px; padding-top: 4px; border-top: 1px solid var(--line); }
+.cs-tpl-lock-current { display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+  border-radius: 8px; background: var(--amber-soft); border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--line)); }
+.cs-tpl-lock-current span { flex: 1; min-width: 0; font-size: 11.5px; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-tpl-lock-current button { flex: none; width: 20px; height: 20px; padding: 0; border-radius: 6px; border: 0;
+  background: transparent; color: var(--dim); display: grid; place-items: center; cursor: pointer; font-size: 11px;
+  transition: background var(--d-micro) var(--ease-out), color var(--d-micro) var(--ease-out); }
+.cs-tpl-lock-current button:hover { background: var(--line-2); color: var(--ink); }
+.cs-tpl-lock[data-locked] #cs-tpl-search, .cs-tpl-lock[data-locked] .cs-tpl-results { display: none; }
+#cs-tpl-search { width: 100%; box-sizing: border-box; padding: 6px 9px; font-size: 12px; }
+.cs-tpl-results { max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.cs-tpl-row { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 5px 8px;
+  border-radius: 6px; border: 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer;
+  transition: background var(--d-micro) var(--ease-out); }
+.cs-tpl-row:hover { background: var(--sunk); }
+.cs-tpl-row .ctr-name { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.cs-tpl-row .ctr-folder { font-size: 10px; color: var(--faint); font-family: var(--mono); }
+.cs-tpl-empty { font-size: 11px; color: var(--faint); padding: 4px 8px; }
 /* 只在生圖模式顯示的 topbar 鈕（LoRA 大面板入口）：用 visibility 而非 display——保留版位、
    切模式時不會擠動旁邊「圖庫/分段/抽卡/重掃/連線」那排固定不動的共用按鈕（CLAUDE.md 記過
    這排按鈕位置不能位移，用 display:none 會讓它們跟著跳動）。 */
