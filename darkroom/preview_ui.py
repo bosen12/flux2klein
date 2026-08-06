@@ -825,6 +825,12 @@ _GEN_MAX = 240         # 結果快取上限，超過砍最舊
 # 這是「推進目前開著的分頁」的單次動作，不是佇列。
 _lora_push = {"ver": 0, "data": None}   # {"ver": int, "data": {"folder","name"}|None}
 _lora_push_lock = threading.Lock()
+# 開機 epoch：ver 只存在記憶體、伺服器一重啟就歸零，但瀏覽器 localStorage 記的
+# 「已看過的版本號」不會跟著清掉——重啟後新推送的 ver（1、2、3…）永遠小於瀏覽器
+# 記住的舊版本號，於是被永久當成「已看過」而略過（真實發生過：伺服器重啟後三次
+# 推送都收到了、前端卻完全沒反應）。epoch 每次啟動都不同，前端發現 epoch 變了
+# 就知道「這是新的伺服器行程，舊版本號作廢」，見 darkroom.js pollLoraPush。
+_lora_push_epoch = uuid.uuid4().hex
 
 
 class _WSHandshakeError(Exception):
@@ -1287,7 +1293,7 @@ class Handler(BaseHTTPRequestHandler):
                 since = int(qs.get("since", ["0"])[0] or 0)
                 with _lora_push_lock:
                     ver, data = _lora_push["ver"], _lora_push["data"]
-                out = {"ver": ver}
+                out = {"ver": ver, "epoch": _lora_push_epoch}
                 if ver > since:
                     out["data"] = data
                 self._send_json(out)

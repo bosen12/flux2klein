@@ -1508,11 +1508,26 @@ $('gen-run').onclick = () => runGen();
 // 0 開始輪詢，會把上次已經套用過的舊推送當成新推送再套一次——這就是「刷新網頁一直
 // 跳傳送的 LoRA」的成因。記住已看過的版本號，重整後只會忽略舊版本、不會重複套用；
 // 使用者真的再按一次「送到 workflow」時，伺服器 ver 會再遞增，仍然正確觸發。
+//
+// 但這帶出另一個問題（實際發生過：伺服器重啟後連推 3 次、暗房完全沒反應）：ver 只存在
+// 記憶體，伺服器一重啟就歸零；瀏覽器 localStorage 卻不會跟著清掉，於是重啟後的新 ver
+// （1、2、3…）永遠小於瀏覽器記住的舊版本號，被永久當成「已看過」而略過。後端加了開機
+// epoch（每次啟動一個新亂數）解決這個問題：epoch 變了就代表換了一個新的伺服器行程，
+// 舊版本號對新行程沒有意義，要重置。
+let LORA_PUSH_EPOCH = localStorage.getItem('yz-lora-push-epoch') || '';
 let LORA_PUSH_VER = +(localStorage.getItem('yz-lora-push-ver') || 0);
 async function pollLoraPush() {
   try {
     const st = await fetch('/api/lora-push?since=' + LORA_PUSH_VER).then(r => r.json());
-    if (st.ver > LORA_PUSH_VER) {
+    if (st.epoch && st.epoch !== LORA_PUSH_EPOCH) {
+      // 伺服器重啟過：重置成 0、記住新 epoch。這一輪的 since 是用重置前的舊值送出的，
+      // 伺服器可能因此沒附 data；不強行套用，下一輪（1s 後）用正確的 since=0 重新問，
+      // 自然會正確拿到並套用，只晚一輪、不會漏掉。
+      LORA_PUSH_EPOCH = st.epoch;
+      LORA_PUSH_VER = 0;
+      localStorage.setItem('yz-lora-push-epoch', LORA_PUSH_EPOCH);
+      localStorage.setItem('yz-lora-push-ver', '0');
+    } else if (st.ver > LORA_PUSH_VER) {
       LORA_PUSH_VER = st.ver;
       localStorage.setItem('yz-lora-push-ver', LORA_PUSH_VER);
       if (st.data) await applyLoraPush(st.data);
