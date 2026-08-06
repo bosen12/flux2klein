@@ -1493,12 +1493,18 @@ $('gen-run').onclick = () => runGen();
    自排程 setTimeout（不用 setInterval）：等前一次抓完才排下一次，跟生圖預覽輪詢
    同一套節奏，慢速環境不會疊請求；沒人在跑 LoRA Manager 時這支請求也很輕量。
 --------------------------------------------------------------------------- */
-let LORA_PUSH_VER = 0;
+// 版本號記到 localStorage、不從 0 起算：後端 _lora_push 是單一 slot、只增不減、
+// 存在記憶體直到伺服器重啟，重整頁面不會清掉「已經推送過」這件事。若每次重整都從
+// 0 開始輪詢，會把上次已經套用過的舊推送當成新推送再套一次——這就是「刷新網頁一直
+// 跳傳送的 LoRA」的成因。記住已看過的版本號，重整後只會忽略舊版本、不會重複套用；
+// 使用者真的再按一次「送到 workflow」時，伺服器 ver 會再遞增，仍然正確觸發。
+let LORA_PUSH_VER = +(localStorage.getItem('yz-lora-push-ver') || 0);
 async function pollLoraPush() {
   try {
     const st = await fetch('/api/lora-push?since=' + LORA_PUSH_VER).then(r => r.json());
     if (st.ver > LORA_PUSH_VER) {
       LORA_PUSH_VER = st.ver;
+      localStorage.setItem('yz-lora-push-ver', LORA_PUSH_VER);
       if (st.data) await applyLoraPush(st.data);
     }
   } catch (e) { /* 靜默；下一輪再試，不用整個工具連得上才能用 */ }
