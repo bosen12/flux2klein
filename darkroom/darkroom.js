@@ -807,6 +807,14 @@ $('modal').addEventListener('click', e => { if (e.target.id === 'modal') dismiss
 $('m-prev').onclick = () => modalStep(-1);
 $('m-next').onclick = () => modalStep(1);
 window.addEventListener('keydown', e => {
+  // 隨機瀏覽疊在 LoRA 大面板之上：優先處理，不能讓下面「lora-modal 開著時 Esc
+  // 關大面板」的分支把這個疊層的按鍵也吃掉（那樣 Esc 會直接關掉整個大面板，
+  // 而不是只關疊層回到大面板）。
+  if (LORA_TAROT && $('tarot').classList.contains('open')) {
+    if (e.key === 'Escape') { closeTarot(); return; }
+    if (e.key === 'r' || e.key === 'R' || e.key === 'Enter') { e.preventDefault(); drawLoraTarot(); return; }
+    return;
+  }
   if ($('lora-modal').classList.contains('open')) {
     if (e.key === 'Escape') closeLoraModal();
     return;
@@ -951,6 +959,61 @@ function closeTarot() {
   $('tarot').classList.remove('open');
   TAROT_FOCUS = -1;
   if (MODE === 'tag') { render(); updateTagbar(); }   // 反映剛標的
+  if (LORA_TAROT) { LORA_TAROT = false; document.body.classList.remove('lora-tarot-open'); }
+}
+
+// ── LoRA 大面板「隨機瀏覽」：沿用詞庫抽卡同一套塔羅發牌/翻牌，改抽 LoRA。跟瀏覽
+// 抽卡共用同一個 #tarot 覆蓋層與卡片動畫邏輯，只是牌面內容、點擊行為（選中而非
+// 開大圖）不同。LORA_TAROT 旗標讓 R/Esc 鍵盤處理與 closeTarot() 知道現在是這個
+// 情境（大面板本身保持開著、疊在它上面，見 body.lora-tarot-open 的 z-index 覆寫）。
+let LORA_TAROT = false;
+function drawLoraTarot() {
+  const pool = GEN_LORAS || [];
+  if (!pool.length) { toast('LoRA 清單還沒載入或是空的'); return; }
+  LORA_TAROT = true;
+  document.body.classList.add('lora-tarot-open');
+  const want = isMobile() ? 1 : 8;
+  const picks = sampleN(pool, Math.min(want, pool.length));
+  const n = picks.length;
+  const title = document.querySelector('.tarot-title');
+  if (title) title.textContent = `✦ 隨機瀏覽 ${CN_NUM[n] || n} 個 LoRA ✦`;
+  const wrap = $('tarot-cards');
+  wrap.classList.remove('ttag');
+  $('tarot-stage').classList.remove('ttag-stage');
+  $('tarot-hint').textContent = '點任一張直接選中並返回；R 重新抽一批、Esc 關閉';
+  wrap.innerHTML = '';
+  picks.forEach((l, i) => {
+    const card = document.createElement('div');
+    card.className = 'tarot-card';
+    card.style.animationDelay = REDUCE ? '0ms' : (i * 48) + 'ms';
+    const face = l.preview
+      ? (isLoraPreviewVideo(l)
+          ? `<video muted loop autoplay playsinline src="${loraPreviewUrl(l)}"></video>`
+          : `<img decoding="async" src="${loraPreviewUrl(l)}" alt="" onload="this.classList.add('ld');this.closest('.tarot-front').classList.remove('loading')" onerror="this.closest('.tarot-front').classList.remove('loading')">`)
+      : `<div class="tarot-noimg">${ICON_EMPTY}<span>尚無預覽</span></div>`;
+    card.innerHTML =
+      `<div class="tarot-inner">
+         <div class="tarot-back"><span class="tarot-emblem">✦</span></div>
+         <div class="tarot-front${l.preview ? ' loading' : ''}">${face}<div class="tarot-name"></div><div class="tarot-folder"></div><div class="tarot-glare"></div></div>
+       </div>`;
+    card.querySelector('.tarot-name').textContent = l.title || l.name;
+    card.querySelector('.tarot-folder').textContent = l.folder || '(根目錄)';
+    card.addEventListener('click', () => { selectGenLora(l); closeTarot(); });
+    if (!REDUCE) {
+      card.addEventListener('mousemove', e => tiltCard(card, e));
+      card.addEventListener('mouseleave', () => { card.style.transform = ''; });
+    }
+    wrap.appendChild(card);
+  });
+  $('tarot').classList.add('open');
+  const cards = [...wrap.children];
+  if (REDUCE) { cards.forEach(c => c.classList.add('revealed')); return; }
+  const dealDone = n * 48 + 220;
+  cards.forEach((c, i) => {
+    const media = c.querySelector('.tarot-front img, .tarot-front video');
+    if (media && (media.tagName === 'VIDEO' || (media.complete && media.naturalWidth))) c.querySelector('.tarot-front').classList.remove('loading');
+    setTimeout(() => c.classList.add('revealed'), dealDone + i * 80);
+  });
 }
 
 /* ── 抽卡打標（打標模式）：抽 15 張「有圖且尚未打標」的，逐張鍵盤/點按標稀有度，
@@ -1570,6 +1633,7 @@ function closeLoraModal() {
 $('lora-panel-btn').onclick = openLoraModal;   // topbar 入口（只在生圖模式看得到，見 CSS）
 $('lora-pick-btn').onclick = openLoraModal;    // genbar 摘要鈕，同一個面板
 $('lora-modal-close').onclick = closeLoraModal;
+$('lm-random-btn').onclick = () => { fetchGenLoras().then(drawLoraTarot); };
 $('lora-modal').addEventListener('click', e => { if (e.target.id === 'lora-modal') closeLoraModal(); });
 $('lm-search').addEventListener('input', () => renderLmList($('lm-search').value, true));
 // 強度滑桿／trainedWords 勾選都是動態生成（見 renderLmCurrent），用事件委派在容器上聽，

@@ -150,6 +150,9 @@
     <button class="lora-modal-close" id="lora-modal-close" aria-label="關閉 (Esc)" title="關閉 (Esc)">✕</button>
     <div class="lm-left">
       <div id="lm-cats" class="lm-cats"></div>
+      <!-- 隨機瀏覽：沿用詞庫抽卡同一套塔羅發牌/翻牌，改抽 LoRA。獨立一列（不塞進
+           #lm-cats，那個 div 每次 renderLmCats() 都會整個重建，塞進去會被清掉）。 -->
+      <button class="ghost lm-random-btn" id="lm-random-btn" title="隨機瀏覽 LoRA（塔羅式呈現，點一張直接選中）">🎲 隨機瀏覽</button>
       <div class="lm-search-wrap">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input type="text" id="lm-search" placeholder="搜尋 LoRA…" autocomplete="off">

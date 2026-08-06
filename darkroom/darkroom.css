@@ -727,6 +727,13 @@ body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不�
 .lm-cat:hover { border-color: var(--line-2); color: var(--ink); }
 .lm-cat.on { border-color: var(--amber); background: var(--amber-soft); color: var(--ink); }
 .lm-cat-n { font-family: var(--mono); font-size: 10px; opacity: .75; }
+.lm-random-btn { margin: 10px 14px 0; display: block; width: calc(100% - 28px); flex: none;
+  padding: 8px 10px; font-size: 12.5px; }
+.lm-random-btn:hover { border-color: color-mix(in srgb, var(--amber) 45%, var(--line)); color: var(--ink); }
+/* 從 LoRA 大面板開的塔羅疊層要蓋在面板之上（大面板 z-index:140 本來就比 #tarot
+   的 120 高，不加這個疊層會被面板蓋住看不到），只在這個特定情境才拉高，不動
+   #tarot 平常的 z-index（詞庫抽卡不受影響）。 */
+body.lora-tarot-open #tarot { z-index: 145; }
 .lm-search-wrap { position: relative; padding: 12px 14px 10px; flex: none; }
 .lm-search-wrap svg { position: absolute; left: 24px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--faint); pointer-events: none; }
 .lm-search-wrap input { width: 100%; box-sizing: border-box; padding: 8px 10px 8px 32px; }
