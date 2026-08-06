@@ -1901,7 +1901,7 @@ const SHORTCUT_GROUPS = [
     { keys: ['R'], desc: '重抽——依目前情境：一般抽卡（瀏覽/生圖/打標）、LoRA 隨機瀏覽、或 Concepts 疊層各自對應的重抽' },
     { keys: ['E'], desc: '重抽本分類（瀏覽/生圖模式看目前資料夾；LoRA 隨機瀏覽看左欄篩選晶片）' },
     { keys: ['C'], desc: '<b>Concepts 抽卡</b>——鎖定 LoRA1/LoRA2 面板目前選的 Character／concepts LoRA，另一側隨機' },
-    { keys: ['X'], desc: '<b>Concepts 抽卡</b>——改用 LoRA 面板左欄目前的分類篩選縮小範圍，跟 C 各自獨立' },
+    { keys: ['X'], desc: '<b>Concepts 抽卡</b>——跟 C 一樣尊重 LoRA1/2 鎖定，沒鎖定的那側改用 LoRA 面板左欄目前的分類篩選縮小範圍' },
   ]},
   { title: '打標模式', rows: [
     { keys: ['←', '→', '↑', '↓'], desc: '移動焦點到上／下一張或上／下一列' },
@@ -2197,9 +2197,10 @@ function openGalleryItem(gid) {
 // 沒開模板就只用該卡那組 LoRA 的 trainword 當 prompt（rel 送空字串，後端
 // _gen_one_worker 會跳過詞庫載入，只留品質標籤）。
 // C 鍵版本：鎖定 LoRA1/LoRA2 面板現在選到的 Character／concepts LoRA（見
-// lockedCharacterSlot/lockedConceptSlot），另一側隨機；都沒鎖定就兩側都隨機。
-// 唯一會抽詞庫模板的版本——CONCEPTS_WITH_TEMPLATE 開關對 C 有效、對 X 永遠無效（見
-// drawConceptsTarotByCategory 的說明）。
+// lockedCharacterSlot/lockedConceptSlot），另一側隨機；都沒鎖定就兩側都隨機。是否抽
+// 詞庫模板看 CONCEPTS_WITH_TEMPLATE 開關的實際狀態——X 鍵（drawConceptsTarotByCategory）
+// 對這個開關的反應完全一樣，兩鍵在「鎖定」跟「模板」這兩件事上是一致的，唯一差別只在
+// 沒鎖定那側的隨機池要不要先被左欄分類晶片縮小。
 function drawConceptsTarot() {
   const lockedChar = lockedCharacterSlot(), lockedConcept = lockedConceptSlot();
   const cPool = lockedChar ? null : fullCharacterPool();
@@ -2217,12 +2218,11 @@ function drawConceptsTarot() {
 }
 
 // X 鍵版本：跟 C 鍵一樣先看 LoRA1/2 有沒有鎖定（lockedCharacterSlot/lockedConceptSlot），
-// 鎖定的那側直接用鎖定的 LoRA（跟 C 鍵行為一致，使用者反映過「X 會忽略我選的 concepts
-// LoRA」——鎖定不該被 X 略過）；沒鎖定的那側才改用 LoRA 大面板左欄目前停的分類/子資料夾
+// 鎖定的那側直接用鎖定的 LoRA；沒鎖定的那側才改用 LoRA 大面板左欄目前停的分類/子資料夾
 // 晶片（GEN_LORA_CAT/GEN_LORA_SUBFOLDER，跟隨機瀏覽 LoRA 的 E 鍵、loraCatPool() 同一套
-// 狀態）縮小範圍。也就是說 X 是「C 的鎖定＋分類縮小範圍」疊加，不是跟 C 互斥的另一套。
-// X 固定不抽詞庫模板（不管「同時抽詞庫模板」開關有沒有勾，用 X 一律當作沒勾）——這點
-// 維持不變，模板開關只影響 C。
+// 狀態）縮小範圍。跟 C 鍵唯一的差別就是「沒鎖定那側的隨機池要不要先被分類晶片縮小」，
+// 「鎖定」與「同時抽詞庫模板」開關這兩件事兩鍵完全一致、互相獨立——鎖定看 LoRA1/2，
+// 模板看 CONCEPTS_WITH_TEMPLATE，跟你用 C 還是 X 抽無關。
 function drawConceptsTarotByCategory() {
   const lockedChar = lockedCharacterSlot(), lockedConcept = lockedConceptSlot();
   const cPool = lockedChar ? null : (GEN_LORA_CAT === 'Character' ? loraCatPool() : fullCharacterPool());
@@ -2236,7 +2236,7 @@ function drawConceptsTarotByCategory() {
     ? () => ({ lora: lockedConcept.lora, strength: CONCEPTS_KEY_STRENGTH })
     : () => ({ lora: kPool[Math.floor(Math.random() * kPool.length)], strength: CONCEPTS_KEY_STRENGTH });
   CONCEPTS_REDRAW = drawConceptsTarotByCategory;
-  _runConceptsDraw(pickChar, pickConcept, false);
+  _runConceptsDraw(pickChar, pickConcept, CONCEPTS_WITH_TEMPLATE);
 }
 
 // C／X 共用的抽卡核心：pickChar()/pickConcept() 各自決定「這張卡」要用哪個 LoRA＋強度
