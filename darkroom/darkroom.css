@@ -726,10 +726,11 @@ body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不�
 .ph::after { content: '🧩'; font-size: 1.5em; opacity: .35; filter: grayscale(1); }
 /* 開 LoRA Manager（獨立埠）的連結，貼在左欄底部——用原生 <a target=_blank>，不用 JS
    接手，右鍵「用新視窗開」這類瀏覽器原生行為也照樣可用。 */
-.lm-manager-link { flex: none; display: block; margin: 8px 8px 10px; padding: 9px 12px;
+.lm-manager-link { flex: none; display: flex; align-items: center; justify-content: center; margin: 8px 8px 10px; padding: 9px 12px;
   border-radius: 9px; border: 1px solid var(--line-2); background: var(--sunk);
   color: var(--dim); font-size: 12px; text-align: center; text-decoration: none;
   transition: border-color var(--d-micro) var(--ease-out), color var(--d-micro) var(--ease-out), background var(--d-micro) var(--ease-out); }
+.lm-manager-link img { display: inline-block; border-radius: 4px; vertical-align: -3px; }
 .lm-manager-link:hover { border-color: var(--amber); color: var(--ink); background: var(--amber-soft); }
 
 .lm-right { padding: 20px 46px 24px 22px; overflow-y: auto; min-width: 0; }   /* 右邊多留白，別讓內容擠到浮動的 ✕ */
