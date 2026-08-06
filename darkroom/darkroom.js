@@ -812,7 +812,8 @@ window.addEventListener('keydown', e => {
   // 而不是只關疊層回到大面板）。
   if (LORA_TAROT && $('tarot').classList.contains('open')) {
     if (e.key === 'Escape') { closeTarot(); return; }
-    if (e.key === 'r' || e.key === 'R' || e.key === 'Enter') { e.preventDefault(); drawLoraTarot(); return; }
+    if (e.key === 'r' || e.key === 'R' || e.key === 'Enter') { e.preventDefault(); drawLoraTarot(); return; }   // 全庫重抽
+    if (e.key === 'e' || e.key === 'E') { e.preventDefault(); drawLoraCategoryDispatch(); return; }             // 只抽目前左欄選的分類/子資料夾
     return;
   }
   if ($('lora-modal').classList.contains('open')) {
@@ -967,20 +968,22 @@ function closeTarot() {
 // 開大圖）不同。LORA_TAROT 旗標讓 R/Esc 鍵盤處理與 closeTarot() 知道現在是這個
 // 情境（大面板本身保持開著、疊在它上面，見 body.lora-tarot-open 的 z-index 覆寫）。
 let LORA_TAROT = false;
-function drawLoraTarot() {
-  const pool = GEN_LORAS || [];
-  if (!pool.length) { toast('LoRA 清單還沒載入或是空的'); return; }
+// pool/label 可選（沿用 drawTarot/drawGenTarot 那套：不傳＝原本行為，全庫隨機）。
+// E 鍵重抽本分類靠 drawLoraCategoryDispatch() 帶 pool/label 進來。
+function drawLoraTarot(pool, label) {
+  pool = pool || GEN_LORAS || [];
+  if (!pool.length) { toast(label ? `「${label}」底下沒有 LoRA` : 'LoRA 清單還沒載入或是空的'); return; }
   LORA_TAROT = true;
   document.body.classList.add('lora-tarot-open');
   const want = isMobile() ? 1 : 8;
   const picks = sampleN(pool, Math.min(want, pool.length));
   const n = picks.length;
   const title = document.querySelector('.tarot-title');
-  if (title) title.textContent = `✦ 隨機瀏覽 ${CN_NUM[n] || n} 個 LoRA ✦`;
+  if (title) title.textContent = label ? `✦ ${label} 隨機 ${CN_NUM[n] || n} 個 LoRA ✦` : `✦ 隨機瀏覽 ${CN_NUM[n] || n} 個 LoRA ✦`;
   const wrap = $('tarot-cards');
   wrap.classList.remove('ttag');
   $('tarot-stage').classList.remove('ttag-stage');
-  $('tarot-hint').textContent = '點任一張直接選中並返回；R 重新抽一批、Esc 關閉';
+  $('tarot-hint').textContent = '點任一張直接選中並返回；R 重抽全庫、E 重抽本分類、Esc 關閉';
   wrap.innerHTML = '';
   picks.forEach((l, i) => {
     const card = document.createElement('div');
@@ -1015,6 +1018,20 @@ function drawLoraTarot() {
     setTimeout(() => c.classList.add('revealed'), dealDone + i * 80);
   });
 }
+
+// LoRA 隨機瀏覽的「E 重抽本分類」：跟左欄篩選晶片（renderLmCats/renderLmSubcats）共用
+// 同一套 GEN_LORA_CAT/GEN_LORA_SUBFOLDER 狀態，池子跟清單畫面看到的完全一致——不是另外
+// 發明一套篩選邏輯，使用者選好分類/子資料夾再按 E，抽到的就是清單裡當下看得到的那些。
+function loraCatPool() {
+  return (GEN_LORAS || []).filter(l =>
+    (GEN_LORA_CAT === 'all' || l.category === GEN_LORA_CAT) &&
+    (!GEN_LORA_SUBFOLDER || l.folder === GEN_LORA_SUBFOLDER));
+}
+function loraCatLabel() {
+  if (GEN_LORA_SUBFOLDER) return GEN_LORA_SUBFOLDER === GEN_LORA_CAT ? GEN_LORA_CAT : GEN_LORA_SUBFOLDER;
+  return GEN_LORA_CAT === 'all' ? null : GEN_LORA_CAT;
+}
+function drawLoraCategoryDispatch() { drawLoraTarot(loraCatPool(), loraCatLabel()); }
 
 /* ── 抽卡打標（打標模式）：抽 15 張「有圖且尚未打標」的，逐張鍵盤/點按標稀有度，
    即時寫側檔。與瀏覽抽卡共用同一個 #tarot 覆蓋層，靠 .ttag class 切排版與卡片內容。 */
@@ -1136,7 +1153,10 @@ function updateTarotProgress() {
   const el = $('ttag-progress'); if (el) el.textContent = `已標 ${done} / ${cards.length}`;
 }
 
-const drawDispatch = () => (MODE === 'gen' ? drawGenTarot() : MODE === 'tag' ? drawTagTarot() : drawTarot());
+// LORA_TAROT 要排最前面：#tarot-redraw 鈕（「再抽一次 (R)」）在各種抽卡情境共用同一顆，
+// 原本沒檢查 LORA_TAROT，LoRA 隨機瀏覽疊層開著時點下去會誤觸目前 MODE 對應的一般抽卡
+// （詞庫/生圖），不是重抽 LoRA——鍵盤 R 走另一條 keydown 分支本來就正確，UI 按鈕沒有。
+const drawDispatch = () => (LORA_TAROT ? drawLoraTarot() : MODE === 'gen' ? drawGenTarot() : MODE === 'tag' ? drawTagTarot() : drawTarot());
 $('draw-cards').onclick = drawDispatch;
 $('tarot-redraw').onclick = drawDispatch;
 $('tarot-close').onclick = closeTarot;
