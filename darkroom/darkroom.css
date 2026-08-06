@@ -727,6 +727,17 @@ body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不�
 .lm-cat:hover { border-color: var(--line-2); color: var(--ink); }
 .lm-cat.on { border-color: var(--amber); background: var(--amber-soft); color: var(--ink); }
 .lm-cat-n { font-family: var(--mono); font-size: 10px; opacity: .75; }
+/* 子資料夾晶片：比 .lm-cat 小一號、色調更淡，表達「這是分類底下再細分」的次要層級。
+   沒有子資料夾可選時 renderLmSubcats() 讓容器維持 height:0（見 JS），animate() 淡入淡出
+   高度＋透明度，呼應本專案「用 element.animate() 取代加減 class」的慣例（CLAUDE.md）。 */
+.lm-subcats { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 14px; flex: none; overflow: hidden; }
+.lm-subcats:empty { padding: 0 14px; }
+.lm-subcat { display: inline-flex; align-items: center; gap: 4px; border: 1px solid transparent; background: transparent;
+  color: var(--faint); padding: 3px 9px; border-radius: 999px; font-size: 10.5px; cursor: pointer;
+  transition: border-color var(--d-micro) var(--ease-out), background var(--d-micro) var(--ease-out), color var(--d-micro) var(--ease-out); }
+.lm-subcat:hover { color: var(--dim); border-color: var(--line-2); }
+.lm-subcat.on { border-color: var(--line-2); background: var(--sunk); color: var(--ink); }
+.lm-subcat-n { font-family: var(--mono); font-size: 9.5px; opacity: .7; }
 .lm-random-btn { margin: 10px 14px 0; display: block; width: calc(100% - 28px); flex: none;
   padding: 8px 10px; font-size: 12.5px; }
 .lm-random-btn:hover { border-color: color-mix(in srgb, var(--amber) 45%, var(--line)); color: var(--ink); }

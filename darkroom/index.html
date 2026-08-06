@@ -150,6 +150,9 @@
     <button class="lora-modal-close" id="lora-modal-close" aria-label="關閉 (Esc)" title="關閉 (Esc)">✕</button>
     <div class="lm-left">
       <div id="lm-cats" class="lm-cats"></div>
+      <!-- 子資料夾晶片：只在選了非「全部」分類、且該分類底下真的有子資料夾（如
+           Character/other、Character/manhwa）時才出現。獨立容器，跟 #lm-cats 分開重建。 -->
+      <div id="lm-subcats" class="lm-subcats"></div>
       <!-- 隨機瀏覽：沿用詞庫抽卡同一套塔羅發牌/翻牌，改抽 LoRA。獨立一列（不塞進
            #lm-cats，那個 div 每次 renderLmCats() 都會整個重建，塞進去會被清掉）。 -->
       <button class="ghost lm-random-btn" id="lm-random-btn" title="隨機瀏覽 LoRA（塔羅式呈現，點一張直接選中）">🎲 隨機瀏覽</button>

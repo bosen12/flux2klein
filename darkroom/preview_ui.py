@@ -310,21 +310,30 @@ _LORA_TTL = 300.0   # LoRA 很少變動，快取 5 分鐘（每次要讀數百�
 
 def list_loras() -> dict:
     """列出各分類夾內每個 LoRA 的觸發詞與預覽圖檔名。trainedWords 保留為「多組」陣列。
-    讀數百個 metadata.json 很慢（約 5s），用 TTL 快取。"""
+    讀數百個 metadata.json 很慢（約 5s），用 TTL 快取。
+
+    用 rglob 遞迴掃描（不是只掃頂層）：LoRA Manager 那邊本來就允許在 style/Character/
+    HENTAI/illus 底下建子資料夾整理（例如 Character/other、Character/manhwa），舊版只掃
+    頂層會讓子資料夾裡的 LoRA 在暗房完全消失不見——LoRA Manager 點「送到 workflow」推送
+    時帶的 folder 是完整相對路徑（如 "Character/other"），暗房這邊的清單卻找不到對應項目、
+    比對永遠失敗，大面板開了卻是空的。item 的 "folder" 現在是完整相對路徑（用來跟推送比對、
+    顯示、組預覽/詳情連結），"category" 才是頂層四分類（用來給左欄篩選晶片分組計數）。"""
     if _lora_cache["data"] is not None and (time.time() - _lora_cache["at"]) < _LORA_TTL:
         return _lora_cache["data"]
     items, counts = [], {}
-    for folder in LORA_FOLDERS:
-        d = LORA_ROOT / folder
+    for category in LORA_FOLDERS:
+        base = LORA_ROOT / category
         try:
-            names = sorted(p.name for p in d.iterdir())
+            paths = sorted(base.rglob("*.safetensors"),
+                           key=lambda p: (p.parent.as_posix(), p.name))
         except OSError:
-            counts[folder] = 0
+            counts[category] = 0
             continue
         n = 0
-        for fn in names:
-            if not fn.lower().endswith(".safetensors"):
-                continue
+        for p in paths:
+            fn = p.name
+            d = p.parent
+            folder = d.relative_to(LORA_ROOT).as_posix()
             stem = fn[: -len(".safetensors")]
             words, title, base_model = [], stem, ""
             meta = d / (stem + ".metadata.json")
@@ -343,11 +352,11 @@ def list_loras() -> dict:
                 if (d / (stem + ext)).is_file():
                     preview = stem + ext
                     break
-            items.append({"folder": folder, "file": fn, "name": stem,
+            items.append({"folder": folder, "category": category, "file": fn, "name": stem,
                           "title": title, "trainedWords": words, "preview": preview,
                           "base_model": base_model})
             n += 1
-        counts[folder] = n
+        counts[category] = n
     data = {"items": items, "counts": counts, "folders": LORA_FOLDERS}
     _lora_cache["data"] = data
     _lora_cache["at"] = time.time()
@@ -355,10 +364,19 @@ def list_loras() -> dict:
 
 
 def lora_preview_path(folder: str, fn: str):
-    """回傳 LoRA 預覽圖的實體路徑；folder 須在白名單、fn 純檔名（擋目錄穿越）。"""
-    if folder not in LORA_FOLDERS or not fn or "/" in fn or "\\" in fn or ".." in fn:
+    """回傳 LoRA 預覽圖的實體路徑。folder 現在可能帶子資料夾（如 "Character/other"，見
+    list_loras()），所以驗證改成：第一段須在白名單、每一段不得是 ".."；fn 仍是純檔名
+    （擋目錄穿越），最後再確認解析後的路徑真的落在 LORA_ROOT 底下，雙重保險。"""
+    if not fn or "/" in fn or "\\" in fn or ".." in fn:
+        return None
+    parts = (folder or "").split("/")
+    if not parts or parts[0] not in LORA_FOLDERS or any(part in ("", "..") for part in parts) or "\\" in folder:
         return None
     p = LORA_ROOT / folder / fn
+    try:
+        p.resolve().relative_to(LORA_ROOT.resolve())
+    except ValueError:
+        return None
     return p if p.is_file() else None
 
 
@@ -1398,7 +1416,14 @@ class Handler(BaseHTTPRequestHandler):
                 lora = data.get("lora") or {}
                 lname = ""
                 if lora.get("file"):
-                    lname = (lora["folder"] + "\\" + lora["file"]) if lora.get("folder") else lora["file"]
+                    # lora["folder"] 現在可能是子資料夾的完整路徑，用 "/" 分隔（list_loras()
+                    # 用 as_posix() 產生，見上方）；但 ComfyUI 認的 lora_name 是全部用 "\\"
+                    # 分隔的相對路徑（Windows 上 os.sep）。folder 只有一段（無子資料夾）時
+                    # replace 是 no-op，行為跟改之前完全一樣；有子資料夾時才需要這次轉換，
+                    # 不然會變成 "Character/Hanime\\file.safetensors" 正反斜線混用，
+                    # ComfyUI 找不到這個檔名，生成整批 400 Bad Request。
+                    folder = (lora.get("folder") or "").replace("/", "\\")
+                    lname = (folder + "\\" + lora["file"]) if folder else lora["file"]
                 try:
                     strength = float(data.get("strength", 0.8))
                 except Exception:

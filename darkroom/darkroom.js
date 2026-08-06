@@ -1299,7 +1299,8 @@ function updateGenbar() {
 }
 
 const GEN_LORA_PAGE_SIZE = 80;          // 每頁列數（總數上百，全渲染會卡；改翻頁而非截斷丟資料）
-let GEN_LORA_CAT = 'all';               // 目前選的資料夾分類（見 renderLmCats）
+let GEN_LORA_CAT = 'all';               // 目前選的頂層分類（見 renderLmCats）
+let GEN_LORA_SUBFOLDER = '';            // 目前選的子資料夾完整路徑，''＝該分類全部（見 renderLmSubcats）
 function loraPreviewUrl(l) { return `/api/lora-preview?folder=${encodeURIComponent(l.folder)}&file=${encodeURIComponent(l.preview)}`; }
 
 /* ---------------- 觸發詞卡 hover 翻譯（Google 翻譯免費端點，不用 API key）----------------
@@ -1413,7 +1414,9 @@ function renderLmCats() {
   const box = $('lm-cats'); if (!box) return;
   const items = GEN_LORAS || [];
   const counts = {};
-  for (const l of items) counts[l.folder] = (counts[l.folder] || 0) + 1;
+  // 用 category（頂層四分類）分組，不是 folder——folder 現在可能是子資料夾的完整路徑
+  // （如 "Character/other"），照它分組會讓晶片暴增成一個子資料夾一顆,不是原本的四類。
+  for (const l of items) counts[l.category] = (counts[l.category] || 0) + 1;
   const folders = Object.keys(counts).sort();
   box.innerHTML = '';
   const mk = (key, label, n) => {
@@ -1422,11 +1425,47 @@ function renderLmCats() {
     const lb = document.createElement('span'); lb.textContent = label;
     const nb = document.createElement('span'); nb.className = 'lm-cat-n'; nb.textContent = n;
     b.append(lb, nb);
-    b.addEventListener('click', () => { GEN_LORA_CAT = key; renderLmCats(); renderLmList($('lm-search').value, true); });
+    b.addEventListener('click', () => {
+      GEN_LORA_CAT = key;
+      GEN_LORA_SUBFOLDER = '';   // 換頂層分類，子資料夾篩選跟著清掉——上次選的子資料夾對新分類沒意義
+      renderLmCats(); renderLmSubcats(); renderLmList($('lm-search').value, true);
+    });
     box.appendChild(b);
   };
   mk('all', '全部', items.length);
   folders.forEach(f => mk(f, f, counts[f]));
+}
+
+// 子資料夾晶片：只在選了非「全部」的頂層分類、且該分類底下確實有多個 folder 值時才顯示
+// （folder 是完整路徑，如 "Character/other"；folder === category 代表沒放進子資料夾）。
+// 只有一種 folder 值時代表這個分類根本沒細分，顯示晶片沒意義、直接清空容器。
+function renderLmSubcats() {
+  const box = $('lm-subcats'); if (!box) return;
+  box.innerHTML = '';
+  if (GEN_LORA_CAT === 'all') return;
+  const items = (GEN_LORAS || []).filter(l => l.category === GEN_LORA_CAT);
+  const counts = {};
+  for (const l of items) counts[l.folder] = (counts[l.folder] || 0) + 1;
+  const subfolders = Object.keys(counts).sort();
+  if (subfolders.length <= 1) return;   // 沒有子資料夾可挑，不用出現一顆「全部」孤零零杵著
+  const mk = (key, label, n) => {
+    const b = document.createElement('button'); b.type = 'button';
+    b.className = 'lm-subcat' + (GEN_LORA_SUBFOLDER === key ? ' on' : '');
+    const lb = document.createElement('span'); lb.textContent = label;
+    const nb = document.createElement('span'); nb.className = 'lm-subcat-n'; nb.textContent = n;
+    b.append(lb, nb);
+    b.addEventListener('click', () => {
+      GEN_LORA_SUBFOLDER = key;
+      renderLmSubcats(); renderLmList($('lm-search').value, true);
+    });
+    box.appendChild(b);
+  };
+  mk('', '全部', items.length);
+  subfolders.forEach(f => {
+    // f === GEN_LORA_CAT：直接放在分類頂層、沒再分子資料夾的那些；其餘去掉「分類/」前綴只顯示子資料夾名
+    const label = f === GEN_LORA_CAT ? '(根目錄)' : f.slice(GEN_LORA_CAT.length + 1);
+    mk(f, label, counts[f]);
+  });
 }
 
 // 大面板左欄：分類＋搜尋＋翻頁的 LoRA 清單（跟原本底部彈出小選單同一套渲染邏輯，只是容器
@@ -1437,7 +1476,9 @@ function renderLmList(filter, resetPage) {
   const q = (filter || '').toLowerCase().trim();
   // 名稱／標題有命中的排前面，只靠 trainedWords 命中的排後面——不然「查名稱完全不相關
   // 的東西」也會混進來，使用者以為搜尋壞了。無搜尋字串時維持原本依資料夾排序。
-  let items = (GEN_LORAS || []).filter(l => GEN_LORA_CAT === 'all' || l.folder === GEN_LORA_CAT);
+  let items = (GEN_LORAS || []).filter(l =>
+    (GEN_LORA_CAT === 'all' || l.category === GEN_LORA_CAT) &&
+    (!GEN_LORA_SUBFOLDER || l.folder === GEN_LORA_SUBFOLDER));
   if (q) {
     items = items
       .map(l => {
@@ -1620,6 +1661,7 @@ async function openLoraModal() {
   renderLmCurrent();
   await fetchGenLoras();
   renderLmCats();
+  renderLmSubcats();
   renderLmList($('lm-search').value, true);
   $('lm-search').focus();
 }
