@@ -29,6 +29,7 @@ import json
 import mimetypes
 import os
 import random
+import re
 import shutil
 import socket
 import subprocess
@@ -307,6 +308,20 @@ LORA_VIDEO_EXTS = (".mp4", ".webm")   # 有些 LoRA 的預覽是短片，前端�
 _lora_cache = {"data": None, "at": 0.0}
 _LORA_TTL = 300.0   # LoRA 很少變動，快取 5 分鐘（每次要讀數百個 metadata.json，約 5 秒）
 
+# 有些 LoRA 的 trainedWords 是直接從 CivitAI 頁面複製貼上的，會混進 A1111/Forge 用的
+# <lora:xxx:1> 語法（那邊的提示詞處理器認得這個、ComfyUI 不認得，送進去只是沒意義的
+# 文字 token）。這裡只是「讀取時清掉、不落地」——不改 metadata.json 本身，每次讀都重新
+# 過濾一次，之後 LoRA Manager 或使用者自己改了原始檔也不會被這裡卡住。
+_ANGLE_TAG_RE = re.compile(r"<[^<>]*>")
+
+
+def _strip_angle_tags(word: str) -> str:
+    """拿掉 <...> 這類標籤，並清掉因此留下的空白/多餘逗點（不然「, , 」這種空段會殘留）。"""
+    cleaned = _ANGLE_TAG_RE.sub("", word)
+    parts = [p.strip() for p in cleaned.split(",")]
+    parts = [p for p in parts if p]
+    return ", ".join(parts)
+
 
 def list_loras() -> dict:
     """列出各分類夾內每個 LoRA 的觸發詞與預覽圖檔名。trainedWords 保留為「多組」陣列。
@@ -340,7 +355,8 @@ def list_loras() -> dict:
             if meta.is_file():
                 try:
                     md = json.loads(meta.read_text(encoding="utf-8"))
-                    words = (md.get("civitai") or {}).get("trainedWords") or []
+                    raw_words = (md.get("civitai") or {}).get("trainedWords") or []
+                    words = [_strip_angle_tags(w) for w in raw_words]
                     title = md.get("model_name") or stem
                     # base_model 是頂層欄位(LoRA Manager 掃描時寫入)，civitai.baseModel
                     # 當備援(理論上兩者同值,防極少數 metadata.json 只有其中一個)。

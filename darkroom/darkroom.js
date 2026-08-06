@@ -1854,19 +1854,30 @@ function renderLmCurrent() {
 // 單一格（LoRA1 或 LoRA2）依 twPicks 組合出來的觸發詞——genTriggerText()、Concepts
 // 抽卡鎖定側（見 drawConceptsTarot/drawConceptsTarotByCategory）共用同一份邏輯，不要
 // 各自重寫一次「只取第一段」的簡化版，那樣使用者在面板勾的段落就白勾了。
-// 段落之間用空格接，不用逗點——每段 trainedWords 本身通常結尾就帶逗點（civitai metadata
-// 常見格式），用 ", " 接會變成連續逗點或看起來多一層分隔，直接讓每段自己的結尾逗點
-// 收尾就好。
+// 段落之間該不該加逗點是動態判斷、不是寫死加或寫死不加：每段 trainedWords 常常自己
+// 結尾就帶逗點（civitai metadata 常見格式），這種情況直接接空格就好，硬加 ", " 會變成
+// 連續逗點；但也有些段落沒有結尾逗點（純文字描述、或就是最後一段），這種不加分隔會讓
+// 兩段文字黏在一起變成一個詞，對 CLIP 來說語意整個跑掉。joinTriggerParts() 逐段檢查
+// 前一段結尾是不是逗點，決定要不要補一個。
+function joinTriggerParts(parts) {
+  parts = parts.filter(Boolean).map(p => p.trim()).filter(Boolean);
+  let out = '';
+  for (const p of parts) {
+    if (!out) { out = p; continue; }
+    out = out.endsWith(',') ? `${out} ${p}` : `${out}, ${p}`;
+  }
+  return out;
+}
 function slotTriggerText(slot) {
   if (!slot.lora) return '';
   const tw = slot.lora.trainedWords || [];
   if (tw.length <= 1) return tw[0] || '';
-  return [...slot.twPicks].sort((a, b) => a - b).map(i => tw[i]).filter(Boolean).join(' ');
+  return joinTriggerParts([...slot.twPicks].sort((a, b) => a - b).map(i => tw[i]));
 }
 // 目前兩格 LoRA 合併後的觸發詞（依各自 twPicks 組合，供生成時注入正向）。
 // LoRA 1 的詞在前、LoRA 2 的接在後面——跟兩者在畫面上由上到下的順序一致。
 function genTriggerText() {
-  return GEN_LORA_SLOTS.map(slotTriggerText).filter(Boolean).join(' ');
+  return joinTriggerParts(GEN_LORA_SLOTS.map(slotTriggerText));
 }
 
 async function openLoraModal() {
@@ -2279,7 +2290,7 @@ function _runConceptsDraw(pickChar, pickConcept, withTemplate) {
       { folder: c.folder, file: c.file, title: c.title || c.name, strength: cStrength },
       { folder: k.folder, file: k.file, title: k.title || k.name, strength: kStrength },
     ];
-    let trigger = [cTrigger ?? firstTw(c), kTrigger ?? firstTw(k)].filter(Boolean).join(' ');
+    let trigger = joinTriggerParts([cTrigger ?? firstTw(c), kTrigger ?? firstTw(k)]);
     let rel = '';
     let label = `${c.title || c.name} × ${k.title || k.name}`;
     if (withTemplate) {
