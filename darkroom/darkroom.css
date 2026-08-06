@@ -643,8 +643,13 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 /* visibility 保留版位（見上，不擠動旁邊按鈕），另外疊一層 opacity 做淡入淡出——單純
    visibility 沒有中間過渡（要嘛全有要嘛全無），配 opacity 才有真正的漸變手感，跟 tagbar/
    genbar 的滑入滑出、格線的 crossfade 是同一掛的柔和切換，不會是唯一一顆硬切的按鈕。 */
-.lora-panel-btn { visibility: hidden; opacity: 0; pointer-events: none; padding: 0 12px; font-size: 15px;
+/* padding 跟其餘頂列共用鈕（#gallery-btn/#draw-cards/#rescan）同一套 base button 7px
+   垂直內距——之前這裡寫死 padding:0 12px，只留水平內距，導致這顆鈕比旁邊矮了一截
+   （實測 22px vs 鄰居 33px），排在同一列看起來高度不合理。 */
+.lora-panel-btn { visibility: hidden; opacity: 0; pointer-events: none; padding: 7px 11px;
+  display: inline-flex; align-items: center;
   transition: opacity var(--d-ui) var(--ease-out), visibility var(--d-ui); }
+.lora-panel-btn .lora-logo { display: block; border-radius: 5px; }
 body[data-mode="gen"] .lora-panel-btn { visibility: visible; opacity: 1; pointer-events: auto; }
 
 #gallery-view { display: none; }

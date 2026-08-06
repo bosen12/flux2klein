@@ -42,9 +42,10 @@
   <button class="ghost gallery-btn" id="gallery-btn" title="生成圖庫（本次生成的圖，刷新／關頁即清空）">🖼 圖庫<span class="gallery-n" id="gallery-n"></span></button>
   <!-- LoRA 大面板：只在生圖模式顯示（用 visibility 而非 display，切模式時不擠動旁邊固定的
        圖庫/分段/抽卡/重掃/連線鈕——見 darkroom.css .lora-panel-btn）。圖示鈕、不帶文字，
-       盡量壓低寬度，減少極窄視窗下擠壓其他固定按鈕的風險。用拼圖圖示（LoRA＝可插拔的風格
-       模組），跟「🎨 生圖」模式鈕、「🎨 選 LoRA」摘要鈕的調色盤圖示區分開，不會看混。 -->
-  <button class="ghost lora-panel-btn" id="lora-panel-btn" title="LoRA 大面板：瀏覽並選擇（完整顯示每段觸發詞）" aria-label="LoRA 大面板">🧩</button>
+       盡量壓低寬度，減少極窄視窗下擠壓其他固定按鈕的風險。圖示用 LoRA Manager 本尊的 logo
+       （vendor 在 lora-manager/static/images/favicon-32x32.png，inline data URI，不用另開
+       靜態路由）而不是通用符號，一眼認出這是連到 LoRA 管理生態的入口。 -->
+  <button class="ghost lora-panel-btn" id="lora-panel-btn" title="LoRA 大面板：瀏覽並選擇（完整顯示每段觸發詞）" aria-label="LoRA 大面板"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAA/lJREFUWEeVV0trFEEQ/ubiRRQPInoTDwo+jhpRRAUR4wNFkywBEdw1ia+LBxUVRUHwIir4QPABIngTPHry5i/IWcFHdteYRCKJm5np7ZLu6Z7p6emenexhd7anp+urqq++qgnGv7cIAAIQCIG4lP8AuZz/iCW9xbuTAArUPvO6eJy0lADQxrRhy4oTkgON20bpqgEgMZr5rnDJZRNQb68Sh4pOmEhSV3UK5E35nOthY41InZ03kAIvnOEDkzgSjH9rEoIgB9rNgOpe9Y5AdpZKgfBeeyYcFJQs+/QAk95WFyXbg/HvTWXZJKI23tvrDGbJ3hygPKcMACkJHK6bHDDqzxUkGUmLgC5uKX+zFOQO0xWgDiLgwqX7aH/5AeIhunGEE7V+nGoM9GR7cmzigMmt5JqEDugUON1JJIoIpy89QOvrT+DvHMAXMDh8EGfODaeHV6g8J6kcEdDhzn5FVOuXH6P5ow3MzAJxiKHh/WiMDZUw1dILOzUyBSIC3xIpznRDM1f9igolQv3KU0y0p0CMIZifR+3wLjRGj7sBuIx5dCmJgElgB4kEgMbV55hoT4I4R9DpoHZgJ+pnjmbSKQQs7QHVNdlNQquiBICRay8w0ZoCUQyKGWr7tqHeOKI4ZjDfrkajAnIyL0IuHstJsY9JBIxcfyUBcGIgYhjq34nG8D43scxeKiIqKkCJrV1smRTbd6xmMnrjDX42pwAw8C7D4KE+NGoKwGL0yrRTjIBHjAgYvfkWrfY0OGcgzjBwsA/1ob1WBOwK6i3nnjLUZZEcKL7Hbr1Dsz2NgHNwFmHg0DacHtxdsQoc6qh89Sih7Rhh7O57tFrT4HEEdBm2blmL3X3rZRMj4jIqq1auwOaN6/xSbqSqOA842KurSvDo7L0PaP36A4oiUBwi4F10WQxiMTgLwaMQS8I5PHx0Ges3rPXEvtjoEyFyiYRkr8hAIsXnH35EszkjhYjCBZCIBGMyIpwtAFEEPjOFNauX48nL21i2bKmzB6TIdHXky1DdLugAcOHZJ0zO/pOeR9Oz4J0OKFoAOCkQISjsgDpz2L5jE+7cGlVNsWQ0k1WgJyJn0LKB4uLrz/g9O48AHOHkH/BOCEQhKBLp4LJD8lgAYujyGCMn92Pg2B6llHpKLhrxp8ASJS4Ika5Z7cOX8fK5NMmwMwW2InqHDCtluZ7iaHAZAdKb/nnAp26VVM/oqPZ0JEFkgiUjIINrHex5N6re5hw79RSU2FfvIXkSqtIz22olj7W1jLSpfWnHGvGM7X4lzBnu0etLWnDpO0JShmoi0vLvack6Tc62uojE2Kmt1gs0cYzcLcJm6dYCgAL5CqVVgRTOLVoUFM8UrP/DbkWRXoaOTQAAAABJRU5ErkJggg==" class="lora-logo" alt="LoRA Manager" width="17" height="17"></button>
   <div class="seg mode-seg" id="mode-seg" role="group" aria-label="模式">
     <span class="seg-pill" id="mode-pill" aria-hidden="true"></span>
     <button data-mode="browse" class="on" title="瀏覽與生成預覽圖">✦ 瀏覽</button>
