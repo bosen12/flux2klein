@@ -1852,8 +1852,13 @@ async function applyLoraPush(d) {
   await openLoraModal();
   const match = (GEN_LORAS || []).find(l => l.name === d.name && (!d.folder || l.folder === d.folder));
   if (!match) { toast(`LoRA Manager 送來的「${d.name}」在這裡的清單找不到——按「重掃」也許有幫助`); return; }
+  // 自動找空格：LoRA 1 空就填 LoRA 1，LoRA 1 滿了才填 LoRA 2；兩格都滿了才蓋掉目前
+  // 編輯中那格（GEN_ACTIVE_SLOT 是「上次編輯到哪」的殘留狀態，不該直接沿用來決定
+  // 推送蓋到哪一格，否則使用者很難預期會蓋掉哪個）。
+  const emptyIdx = GEN_LORA_SLOTS.findIndex(s => !s.lora);
+  if (emptyIdx !== -1) GEN_ACTIVE_SLOT = emptyIdx;
   selectGenLora(match);
-  toast(`已從 LoRA Manager 選入「${match.title || match.name}」`);
+  toast(`已從 LoRA Manager 選入 LoRA ${GEN_ACTIVE_SLOT + 1}：「${match.title || match.name}」`);
 }
 pollLoraPush();
 
