@@ -1851,16 +1851,19 @@ function renderLmCurrent() {
   }
 }
 
+// 單一格（LoRA1 或 LoRA2）依 twPicks 組合出來的觸發詞——genTriggerText()、Concepts
+// 抽卡鎖定側（見 drawConceptsTarot/drawConceptsTarotByCategory）共用同一份邏輯，不要
+// 各自重寫一次「只取第一段」的簡化版，那樣使用者在面板勾的段落就白勾了。
+function slotTriggerText(slot) {
+  if (!slot.lora) return '';
+  const tw = slot.lora.trainedWords || [];
+  if (tw.length <= 1) return tw[0] || '';
+  return [...slot.twPicks].sort((a, b) => a - b).map(i => tw[i]).filter(Boolean).join(', ');
+}
 // 目前兩格 LoRA 合併後的觸發詞（依各自 twPicks 組合，供生成時注入正向）。
 // LoRA 1 的詞在前、LoRA 2 的接在後面——跟兩者在畫面上由上到下的順序一致。
 function genTriggerText() {
-  const parts = GEN_LORA_SLOTS.map(slot => {
-    if (!slot.lora) return '';
-    const tw = slot.lora.trainedWords || [];
-    if (tw.length <= 1) return tw[0] || '';
-    return [...slot.twPicks].sort((a, b) => a - b).map(i => tw[i]).filter(Boolean).join(', ');
-  }).filter(Boolean);
-  return parts.join(', ');
+  return GEN_LORA_SLOTS.map(slotTriggerText).filter(Boolean).join(', ');
 }
 
 async function openLoraModal() {
@@ -2207,11 +2210,14 @@ function drawConceptsTarot() {
   const kPool = lockedConcept ? null : fullConceptsPool();
   if (!lockedChar && !cPool.length) { toast('Character 底下沒有 LoRA 可抽'); return; }
   if (!lockedConcept && !kPool.length) { toast('concepts 底下沒有 LoRA 可抽'); return; }
+  // 鎖定側的觸發詞要照 LoRA1/2 面板實際勾的段落組（slotTriggerText），不是隨便抓第一段
+  // ——這是使用者選了一顆 LoRA 之後，那顆的觸發詞理應完全照面板上勾選的來，跟隨機側
+  // 「沒有勾選狀態、只能抓第一段當預設」的情境不一樣（見 _runConceptsDraw 的 firstTw 退場）。
   const pickChar = lockedChar
-    ? () => ({ lora: lockedChar.lora, strength: CONCEPTS_CHAR_STRENGTH })
+    ? () => ({ lora: lockedChar.lora, strength: CONCEPTS_CHAR_STRENGTH, trigger: slotTriggerText(lockedChar) })
     : () => ({ lora: cPool[Math.floor(Math.random() * cPool.length)], strength: CONCEPTS_CHAR_STRENGTH });
   const pickConcept = lockedConcept
-    ? () => ({ lora: lockedConcept.lora, strength: CONCEPTS_KEY_STRENGTH })
+    ? () => ({ lora: lockedConcept.lora, strength: CONCEPTS_KEY_STRENGTH, trigger: slotTriggerText(lockedConcept) })
     : () => ({ lora: kPool[Math.floor(Math.random() * kPool.length)], strength: CONCEPTS_KEY_STRENGTH });
   CONCEPTS_REDRAW = drawConceptsTarot;
   _runConceptsDraw(pickChar, pickConcept, CONCEPTS_WITH_TEMPLATE);
@@ -2230,10 +2236,10 @@ function drawConceptsTarotByCategory() {
   if (!lockedChar && !cPool.length) { toast('目前範圍內 Character 沒有 LoRA 可抽'); return; }
   if (!lockedConcept && !kPool.length) { toast('目前範圍內 concepts 沒有 LoRA 可抽'); return; }
   const pickChar = lockedChar
-    ? () => ({ lora: lockedChar.lora, strength: CONCEPTS_CHAR_STRENGTH })
+    ? () => ({ lora: lockedChar.lora, strength: CONCEPTS_CHAR_STRENGTH, trigger: slotTriggerText(lockedChar) })
     : () => ({ lora: cPool[Math.floor(Math.random() * cPool.length)], strength: CONCEPTS_CHAR_STRENGTH });
   const pickConcept = lockedConcept
-    ? () => ({ lora: lockedConcept.lora, strength: CONCEPTS_KEY_STRENGTH })
+    ? () => ({ lora: lockedConcept.lora, strength: CONCEPTS_KEY_STRENGTH, trigger: slotTriggerText(lockedConcept) })
     : () => ({ lora: kPool[Math.floor(Math.random() * kPool.length)], strength: CONCEPTS_KEY_STRENGTH });
   CONCEPTS_REDRAW = drawConceptsTarotByCategory;
   _runConceptsDraw(pickChar, pickConcept, CONCEPTS_WITH_TEMPLATE);
@@ -2257,16 +2263,20 @@ function _runConceptsDraw(pickChar, pickConcept, withTemplate) {
   CONCEPTS_TAROT = true;
   document.body.classList.add('concepts-tarot-open');
   const want = CONCEPTS_COUNT;
+  // 隨機側沒有使用者勾選狀態可用，退而求其次只抓第一段當代表；鎖定側呼叫端（pickChar/
+  // pickConcept）本來就會帶上照 twPicks 算好的 trigger（見 slotTriggerText），這裡用
+  // ?? 不是 ||，是因為「使用者把全部段落都取消勾選」得到的空字串 "" 要保留原樣，不能
+  // 被 || 誤判成假值又退回抓第一段。
   const firstTw = (l) => (l.trainedWords || [])[0] || '';
   const jobs = [], picks = [];
   for (let i = 0; i < want; i++) {
-    const { lora: c, strength: cStrength } = pickChar();
-    const { lora: k, strength: kStrength } = pickConcept();
+    const { lora: c, strength: cStrength, trigger: cTrigger } = pickChar();
+    const { lora: k, strength: kStrength, trigger: kTrigger } = pickConcept();
     const loras = [
       { folder: c.folder, file: c.file, title: c.title || c.name, strength: cStrength },
       { folder: k.folder, file: k.file, title: k.title || k.name, strength: kStrength },
     ];
-    let trigger = [firstTw(c), firstTw(k)].filter(Boolean).join(', ');
+    let trigger = [cTrigger ?? firstTw(c), kTrigger ?? firstTw(k)].filter(Boolean).join(', ');
     let rel = '';
     let label = `${c.title || c.name} × ${k.title || k.name}`;
     if (withTemplate) {
