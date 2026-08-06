@@ -49,10 +49,30 @@
   <div class="concepts-group">
     <button class="ghost" id="concepts-btn" title="Concepts 抽卡（快捷鍵 C）：隨機配對 Character LoRA + concepts LoRA 直接生圖">🧬 Concepts</button>
     <span class="concepts-lock" id="concepts-lock" title="目前偵測到的鎖定狀態，來自 LoRA 大面板 LoRA1/LoRA2 選格"></span>
-    <label class="concepts-tpl-toggle" title="同時抽詞庫模板；不勾則只用兩個 LoRA 的觸發詞當 prompt">
-      <input type="checkbox" id="concepts-tpl">
-      <span>+模板</span>
-    </label>
+    <button class="ghost icon-btn" id="concepts-settings-btn" title="Concepts 抽卡設定：強度／張數／是否抽詞庫模板" aria-label="Concepts 抽卡設定">⚙</button>
+    <!-- 強度／張數／模板開關獨立於 LoRA1/2 面板之外，是 Concepts 抽卡專用的一組設定，
+         「這裡」才是唯一來源——不管鎖定側還是隨機側，強度都讀這裡，不讀 LoRA1/2 slot
+         自己的強度滑桿（那是給手動選 LoRA 生圖用的，語意不一樣）。見 darkroom.js。 -->
+    <div class="concepts-settings" id="concepts-settings" hidden>
+      <label class="cs-row">
+        <span>Character 強度</span>
+        <input type="range" id="cs-char-strength" min="0" max="1" step="0.05">
+        <output id="cs-char-strength-out"></output>
+      </label>
+      <label class="cs-row">
+        <span>concepts 強度</span>
+        <input type="range" id="cs-key-strength" min="0" max="1" step="0.05">
+        <output id="cs-key-strength-out"></output>
+      </label>
+      <label class="cs-row cs-row-count">
+        <span>每次抽幾張</span>
+        <input type="number" id="cs-count" min="1" max="24" step="1">
+      </label>
+      <label class="cs-row cs-row-check">
+        <input type="checkbox" id="cs-tpl">
+        <span>同時抽詞庫模板（不勾＝只用兩個 LoRA 的觸發詞）</span>
+      </label>
+    </div>
   </div>
   <!-- LoRA 大面板：只在生圖模式顯示（用 visibility 而非 display，切模式時不擠動旁邊固定的
        圖庫/分段/抽卡/重掃/連線鈕——見 darkroom.css .lora-panel-btn）。圖示鈕、不帶文字，

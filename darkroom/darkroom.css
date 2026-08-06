@@ -655,16 +655,33 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
                   background: color-mix(in srgb, var(--amber) 12%, transparent); }
 .gallery-n { margin-left: 6px; font-family: var(--mono); font-size: 11px; opacity: .85; }
 
-/* Concepts 抽卡（topbar，跟圖庫鈕同一排、不分模式）：按鈕＋鎖定狀態文字＋「+模板」小
-   勾選框擠成一組，視覺上是一個單元，不是三個各自獨立的控制項。 */
-.concepts-group { display: flex; align-items: center; gap: 8px; }
+/* Concepts 抽卡（topbar，跟圖庫鈕同一排、不分模式）：按鈕＋鎖定狀態文字＋設定齒輪擠成
+   一組，視覺上是一個單元，不是各自獨立的控制項。position:relative 讓 .concepts-settings
+   彈窗可以貼著這一組定位，不用另外算座標（跟 .tw-tip 用 JS 追游標位置是不同情境——這裡
+   固定貼在觸發按鈕正下方就好，不需要跟著移動的東西）。 */
+.concepts-group { display: flex; align-items: center; gap: 8px; position: relative; }
 .concepts-lock { font-family: var(--mono); font-size: 10.5px; color: var(--faint); white-space: nowrap; }
-.concepts-tpl-toggle { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--faint); cursor: pointer; }
-.concepts-tpl-toggle input { accent-color: var(--amber); }
-.concepts-tpl-toggle:hover { color: var(--dim); }
 @media (max-width: 900px) {
-  .concepts-lock { display: none; }   /* 窄螢幕先讓位，按鈕跟模板開關優先 */
+  .concepts-lock { display: none; }   /* 窄螢幕先讓位，按鈕跟設定齒輪優先 */
 }
+
+/* 設定彈窗：強度×2／張數／模板開關，是 Concepts 抽卡唯一的強度來源（不讀 LoRA1/2
+   slot 自己的強度滑桿）。用 hidden 屬性＋max-height 過渡展開/收起，不用 element.animate()
+   ——內容固定不需要每次重新播放進場動畫，只是單純顯示/隱藏。 */
+.concepts-settings { position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
+  width: 260px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px;
+  box-shadow: var(--shadow); padding: 14px 16px; display: flex; flex-direction: column; gap: 12px;
+  animation: lmFadeUp var(--d-ui) var(--ease-entrance) both; }
+.concepts-settings[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .concepts-settings { animation: none; } }
+.cs-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--dim); cursor: default; }
+.cs-row > span:first-child { flex: none; width: 92px; }
+.cs-row input[type=range] { flex: 1; }
+.cs-row output { font-family: var(--mono); font-size: 11px; min-width: 30px; text-align: right; color: var(--faint); }
+.cs-row-count input[type=number] { flex: 1; width: 0; min-width: 0; padding: 4px 8px; font-size: 12px; }
+.cs-row-check { cursor: pointer; }
+.cs-row-check span { width: auto; flex: 1; line-height: 1.4; }
+.cs-row-check input { accent-color: var(--amber); flex: none; }
 /* 只在生圖模式顯示的 topbar 鈕（LoRA 大面板入口）：用 visibility 而非 display——保留版位、
    切模式時不會擠動旁邊「圖庫/分段/抽卡/重掃/連線」那排固定不動的共用按鈕（CLAUDE.md 記過
    這排按鈕位置不能位移，用 display:none 會讓它們跟著跳動）。 */

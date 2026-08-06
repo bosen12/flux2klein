@@ -1388,10 +1388,24 @@ let GEN_ACTIVE_SLOT = 0;
 function curSlot() { return GEN_LORA_SLOTS[GEN_ACTIVE_SLOT]; }
 function otherSlotIndex() { return GEN_ACTIVE_SLOT === 0 ? 1 : 0; }
 let GEN_LORA_PAGE = 0;                // LoRA 清單目前頁（搜尋變動時歸零，見 renderLmList）
-// Concepts 抽卡「同時抽詞庫模板」開關（見 drawConceptsTarot）。宣告放這裡、不是靠近
-// drawConceptsTarot 本身，是因為勾選框的初始 checked 狀態要在腳本載入當下就同步設定
-// （見 lm-concepts-tpl 事件綁定），寫在後面會撞 TDZ（CLAUDE.md 記過的老坑）。
+// Concepts 抽卡設定（強度×2／張數／「同時抽詞庫模板」開關，見 _runConceptsDraw）。
+// 宣告放這裡、不是靠近 drawConceptsTarot 本身，是因為設定彈窗控制項的初始值要在腳本
+// 載入當下就同步設定（見 concepts-settings 事件綁定），寫在後面會撞 TDZ（CLAUDE.md
+// 記過的老坑）。這組設定是 Concepts 抽卡唯一的強度／張數來源，不讀 LoRA1/2 面板自己的
+// 強度滑桿——那是給手動選 LoRA 生圖用的，語意不一樣（見使用者原話「以這裡為主」）。
+function _readNum(key, fallback) {
+  const v = parseFloat(localStorage.getItem(key));
+  return Number.isFinite(v) ? v : fallback;
+}
+let CONCEPTS_CHAR_STRENGTH = _readNum('yz-concepts-char-str', 0.8);
+let CONCEPTS_KEY_STRENGTH = _readNum('yz-concepts-key-str', 0.8);
+// 張數沒存過時才用裝置判斷給預設值（手機小螢幕塔羅牌面擠不下太多張）；一旦使用者自己
+// 調過就記住那個數字，之後不再依裝置改變——使用者的選擇優先於自動判斷的預設。
+let CONCEPTS_COUNT = _readNum('yz-concepts-count', isMobile() ? 1 : 8);
 let CONCEPTS_WITH_TEMPLATE = localStorage.getItem('yz-concepts-tpl') === '1';
+function setConceptsCharStrength(v) { CONCEPTS_CHAR_STRENGTH = v; localStorage.setItem('yz-concepts-char-str', v); }
+function setConceptsKeyStrength(v) { CONCEPTS_KEY_STRENGTH = v; localStorage.setItem('yz-concepts-key-str', v); }
+function setConceptsCount(v) { CONCEPTS_COUNT = v; localStorage.setItem('yz-concepts-count', v); }
 function setConceptsWithTemplate(v) {
   CONCEPTS_WITH_TEMPLATE = v;
   localStorage.setItem('yz-concepts-tpl', v ? '1' : '0');
@@ -2084,9 +2098,46 @@ $('gallery-cancel-all').onclick = () => {
   toast(`已取消全部 ${ids.length} 張在途生圖`);
 };
 $('concepts-btn').onclick = () => { fetchGenLoras().then(() => { updateConceptsLockLabel(); drawConceptsTarot(); }); };
-const $conceptsTpl = $('concepts-tpl');
-$conceptsTpl.checked = CONCEPTS_WITH_TEMPLATE;
-$conceptsTpl.addEventListener('change', () => setConceptsWithTemplate($conceptsTpl.checked));
+
+// Concepts 設定彈窗：強度×2／張數／模板開關。開關用 hidden 屬性切換（不是 class），
+// 點按鈕本身或彈窗外任一處都會關閉——跟 .tw-tip 那種「跟著游標移動」的提示不同，這是
+// 「點開、設定完、點外面關掉」的一般彈窗互動，用 document 層級的 click 監聽最單純。
+const $csPanel = $('concepts-settings');
+$('concepts-settings-btn').onclick = (e) => {
+  e.stopPropagation();
+  $csPanel.hidden = !$csPanel.hidden;
+};
+document.addEventListener('click', (e) => {
+  if (!$csPanel.hidden && !$csPanel.contains(e.target) && e.target.id !== 'concepts-settings-btn') {
+    $csPanel.hidden = true;
+  }
+});
+const $csCharStrength = $('cs-char-strength'), $csCharStrengthOut = $('cs-char-strength-out');
+const $csKeyStrength = $('cs-key-strength'), $csKeyStrengthOut = $('cs-key-strength-out');
+const $csCount = $('cs-count');
+const $csTpl = $('cs-tpl');
+$csCharStrength.value = CONCEPTS_CHAR_STRENGTH; $csCharStrengthOut.textContent = CONCEPTS_CHAR_STRENGTH.toFixed(2);
+$csKeyStrength.value = CONCEPTS_KEY_STRENGTH; $csKeyStrengthOut.textContent = CONCEPTS_KEY_STRENGTH.toFixed(2);
+$csCount.value = CONCEPTS_COUNT;
+$csTpl.checked = CONCEPTS_WITH_TEMPLATE;
+$csCharStrength.addEventListener('input', () => {
+  const v = parseFloat($csCharStrength.value);
+  $csCharStrengthOut.textContent = v.toFixed(2);
+  setConceptsCharStrength(v);
+});
+$csKeyStrength.addEventListener('input', () => {
+  const v = parseFloat($csKeyStrength.value);
+  $csKeyStrengthOut.textContent = v.toFixed(2);
+  setConceptsKeyStrength(v);
+});
+$csCount.addEventListener('change', () => {
+  let v = parseInt($csCount.value, 10);
+  if (!Number.isFinite(v) || v < 1) v = 1;
+  if (v > 24) v = 24;
+  $csCount.value = v;
+  setConceptsCount(v);
+});
+$csTpl.addEventListener('change', () => setConceptsWithTemplate($csTpl.checked));
 // 鎖定狀態指示：讀 GEN_LORA_SLOTS 現在有沒有選到 Character/concepts 分類的 LoRA（見
 // conceptsLockLabel）。頁面剛載入時兩格都是空的，顯示「隨機 × 隨機」；之後每次
 // LoRA1/LoRA2 選擇變動（selectGenLora／清空／交換）都要重繪一次，不然按鈕旁的文字會
@@ -2127,15 +2178,17 @@ function openGalleryItem(gid) {
 }
 
 // Concepts 抽卡：跟一般抽卡生圖不同，不是「固定 LoRA、抽不同詞庫」，而是**每張卡各自**
-// 隨機配一組全新的 Character LoRA＋concepts LoRA（用目前 LoRA1/LoRA2 設定的強度），有開
-// 「同時抽詞庫模板」才額外各自抽一個詞庫套進去；沒開就只用該卡那組 LoRA 的 trainword
-// 當 prompt（rel 送空字串，後端 _gen_one_worker 會跳過詞庫載入，只留品質標籤）。
-// CONCEPTS_WITH_TEMPLATE／setConceptsWithTemplate 宣告在上面（跟 GEN_LORA_SLOTS 同一區），
-// 不是這裡——那顆勾選框的初始 checked 狀態是在腳本載入當下就同步設定（見 lm-concepts-tpl
-// 事件綁定），如果宣告寫在這裡（比綁定晚很多行）會撞 TDZ：CLAUDE.md 記過的「state 初始化
-// 引用後面才宣告的 const/let」同一類坑，這次是直接踩到而不是提前發現，寫在這裡當提醒。
+// 隨機配一組全新的 Character LoRA＋concepts LoRA。強度／張數／是否抽詞庫模板不是讀
+// LoRA1/2 面板，是讀獨立的 Concepts 設定彈窗（CONCEPTS_CHAR_STRENGTH／
+// CONCEPTS_KEY_STRENGTH／CONCEPTS_COUNT／CONCEPTS_WITH_TEMPLATE，宣告都在上面、跟
+// GEN_LORA_SLOTS 同一區——不是這裡，理由是彈窗控制項的初始值要在腳本載入當下就同步
+// 設定，寫在後面會撞 TDZ：CLAUDE.md 記過的老坑，這次是動手前就避開，不是修出來的）。
+// 沒開模板就只用該卡那組 LoRA 的 trainword 當 prompt（rel 送空字串，後端
+// _gen_one_worker 會跳過詞庫載入，只留品質標籤）。
 // C 鍵版本：鎖定 LoRA1/LoRA2 面板現在選到的 Character／concepts LoRA（見
 // lockedCharacterSlot/lockedConceptSlot），另一側隨機；都沒鎖定就兩側都隨機。
+// 唯一會抽詞庫模板的版本——CONCEPTS_WITH_TEMPLATE 開關對 C 有效、對 X 永遠無效（見
+// drawConceptsTarotByCategory 的說明）。
 function drawConceptsTarot() {
   const lockedChar = lockedCharacterSlot(), lockedConcept = lockedConceptSlot();
   const cPool = lockedChar ? null : fullCharacterPool();
@@ -2143,13 +2196,13 @@ function drawConceptsTarot() {
   if (!lockedChar && !cPool.length) { toast('Character 底下沒有 LoRA 可抽'); return; }
   if (!lockedConcept && !kPool.length) { toast('concepts 底下沒有 LoRA 可抽'); return; }
   const pickChar = lockedChar
-    ? () => ({ lora: lockedChar.lora, strength: lockedChar.strength })
-    : () => ({ lora: cPool[Math.floor(Math.random() * cPool.length)], strength: GEN_LORA_SLOTS[0].strength });
+    ? () => ({ lora: lockedChar.lora, strength: CONCEPTS_CHAR_STRENGTH })
+    : () => ({ lora: cPool[Math.floor(Math.random() * cPool.length)], strength: CONCEPTS_CHAR_STRENGTH });
   const pickConcept = lockedConcept
-    ? () => ({ lora: lockedConcept.lora, strength: lockedConcept.strength })
-    : () => ({ lora: kPool[Math.floor(Math.random() * kPool.length)], strength: GEN_LORA_SLOTS[1].strength });
+    ? () => ({ lora: lockedConcept.lora, strength: CONCEPTS_KEY_STRENGTH })
+    : () => ({ lora: kPool[Math.floor(Math.random() * kPool.length)], strength: CONCEPTS_KEY_STRENGTH });
   CONCEPTS_REDRAW = drawConceptsTarot;
-  _runConceptsDraw(pickChar, pickConcept);
+  _runConceptsDraw(pickChar, pickConcept, CONCEPTS_WITH_TEMPLATE);
 }
 
 // X 鍵版本：用 LoRA 大面板左欄目前停的分類/子資料夾晶片（GEN_LORA_CAT/GEN_LORA_SUBFOLDER，
@@ -2157,24 +2210,28 @@ function drawConceptsTarot() {
 // ——C 看「LoRA1/2 選了哪顆」，X 看「篩選晶片停在哪」，互不影響。篩選停在 Character（可能
 // 已縮小到 Hanime/manhwa/other 某個子資料夾）就縮小 Character 池，停在 HENTAI 就縮小
 // concepts 池，沒對到就兩側都用全部預設。
+// X 固定不抽詞庫模板（不管「同時抽詞庫模板」開關有沒有勾，用 X 一律當作沒勾）——這是
+// 使用者明確要求的行為：X 只看分類篩選這一件事，模板開關只影響 C。
 function drawConceptsTarotByCategory() {
   const cPool = GEN_LORA_CAT === 'Character' ? loraCatPool() : fullCharacterPool();
   const kPool = GEN_LORA_CAT === 'HENTAI' ? loraCatPool() : fullConceptsPool();
   if (!cPool.length) { toast('目前範圍內 Character 沒有 LoRA 可抽'); return; }
   if (!kPool.length) { toast('目前範圍內 concepts 沒有 LoRA 可抽'); return; }
-  const pickChar = () => ({ lora: cPool[Math.floor(Math.random() * cPool.length)], strength: GEN_LORA_SLOTS[0].strength });
-  const pickConcept = () => ({ lora: kPool[Math.floor(Math.random() * kPool.length)], strength: GEN_LORA_SLOTS[1].strength });
+  const pickChar = () => ({ lora: cPool[Math.floor(Math.random() * cPool.length)], strength: CONCEPTS_CHAR_STRENGTH });
+  const pickConcept = () => ({ lora: kPool[Math.floor(Math.random() * kPool.length)], strength: CONCEPTS_KEY_STRENGTH });
   CONCEPTS_REDRAW = drawConceptsTarotByCategory;
-  _runConceptsDraw(pickChar, pickConcept);
+  _runConceptsDraw(pickChar, pickConcept, false);
 }
 
 // C／X 共用的抽卡核心：pickChar()/pickConcept() 各自決定「這張卡」要用哪個 LoRA＋強度
 // （每張卡各呼叫一次，讓隨機的一側可以每張卡都不一樣，鎖定的一側每次都回傳同一個）。
-function _runConceptsDraw(pickChar, pickConcept) {
-  if (CONCEPTS_WITH_TEMPLATE && !ALL.length) { toast('要同時抽詞庫模板，但目前沒有任何詞庫'); return; }
+// withTemplate 由呼叫端明確傳入（不是這裡自己讀 CONCEPTS_WITH_TEMPLATE），因為 C／X
+// 對同一個開關的反應不一樣。
+function _runConceptsDraw(pickChar, pickConcept, withTemplate) {
+  if (withTemplate && !ALL.length) { toast('要同時抽詞庫模板，但目前沒有任何詞庫'); return; }
   CONCEPTS_TAROT = true;
   document.body.classList.add('concepts-tarot-open');
-  const want = isMobile() ? 1 : 8;
+  const want = CONCEPTS_COUNT;
   const firstTw = (l) => (l.trainedWords || [])[0] || '';
   const jobs = [], picks = [];
   for (let i = 0; i < want; i++) {
@@ -2187,7 +2244,7 @@ function _runConceptsDraw(pickChar, pickConcept) {
     let trigger = [firstTw(c), firstTw(k)].filter(Boolean).join(', ');
     let rel = '';
     let label = `${c.title || c.name} × ${k.title || k.name}`;
-    if (CONCEPTS_WITH_TEMPLATE) {
+    if (withTemplate) {
       const t = ALL[Math.floor(Math.random() * ALL.length)];
       rel = t.rel;
       label += ` · ${t.name}`;
