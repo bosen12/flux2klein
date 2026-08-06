@@ -366,8 +366,14 @@ def list_loras() -> dict:
 def lora_preview_path(folder: str, fn: str):
     """回傳 LoRA 預覽圖的實體路徑。folder 現在可能帶子資料夾（如 "Character/other"，見
     list_loras()），所以驗證改成：第一段須在白名單、每一段不得是 ".."；fn 仍是純檔名
-    （擋目錄穿越），最後再確認解析後的路徑真的落在 LORA_ROOT 底下，雙重保險。"""
-    if not fn or "/" in fn or "\\" in fn or ".." in fn:
+    （擋目錄穿越），最後再確認解析後的路徑真的落在 LORA_ROOT 底下，雙重保險。
+
+    fn 的traversal 檢查用「整段等於 ".."」而不是「字串包含 ".."」——後者會誤傷合法檔名
+    裡剛好連續兩個點的情況（實測踩到：某個 LoRA 原始檔名是 "...with....jpeg"，字面上
+    含 ".."，但沒有路徑分隔符，整段當一個檔名用完全安全，不構成目錄穿越）。fn 已經先
+    擋過 "/" 和 "\\"，不可能被拆成多段，所以只有「fn 剛好整個等於 ".." 或 "."」才是
+    真正的穿越風險，字串包含不是。"""
+    if not fn or "/" in fn or "\\" in fn or fn in (".", ".."):
         return None
     parts = (folder or "").split("/")
     if not parts or parts[0] not in LORA_FOLDERS or any(part in ("", "..") for part in parts) or "\\" in folder:
