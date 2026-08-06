@@ -660,7 +660,11 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
    彈窗可以貼著這一組定位，不用另外算座標（跟 .tw-tip 用 JS 追游標位置是不同情境——這裡
    固定貼在觸發按鈕正下方就好，不需要跟著移動的東西）。 */
 .concepts-group { display: flex; align-items: center; gap: 8px; position: relative; }
-.concepts-lock { font-family: var(--mono); font-size: 10.5px; color: var(--faint); white-space: nowrap; }
+/* 鎖定的 LoRA 標題長度不受控（civitai 上很多長標題，甚至整句日文），沒有上限會把
+   topbar 其他固定按鈕擠爆、甚至撐出橫向捲軸。max-width + ellipsis 截斷，完整內容
+   靠 title 屬性（原生瀏覽器 hover tooltip，見 updateConceptsLockLabel）補回來。 */
+.concepts-lock { font-family: var(--mono); font-size: 10.5px; color: var(--faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
 @media (max-width: 900px) {
   .concepts-lock { display: none; }   /* 窄螢幕先讓位，按鈕跟設定齒輪優先 */
 }

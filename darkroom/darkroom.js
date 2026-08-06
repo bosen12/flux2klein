@@ -2265,7 +2265,10 @@ $csTplCurFolder.addEventListener('change', () => setConceptsTplCurFolder($csTplC
 // LoRA1/LoRA2 選擇變動（selectGenLora／清空／交換）都要重繪一次，不然按鈕旁的文字會
 // 跟實際狀態脫節，使用者以為鎖定了其實沒有、或反過來。
 function updateConceptsLockLabel() {
-  const el = $('concepts-lock'); if (el) el.textContent = conceptsLockLabel();
+  const el = $('concepts-lock'); if (!el) return;
+  const label = conceptsLockLabel();
+  el.textContent = label;
+  el.title = label;   // CSS 會截斷過長的 LoRA 標題（見 darkroom.css .concepts-lock），完整內容靠原生 hover tooltip 補回來
 }
 updateConceptsLockLabel();
 
