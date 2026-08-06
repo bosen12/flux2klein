@@ -48,7 +48,7 @@
        的鎖定狀態，不然使用者不會知道抽出來的怎麼一直重複，以為壞掉。 -->
   <div class="concepts-group">
     <button class="ghost" id="concepts-btn" title="Concepts 抽卡（快捷鍵 C）：隨機配對 Character LoRA + concepts LoRA 直接生圖">🧬 Concepts</button>
-    <span class="concepts-lock" id="concepts-lock" title="目前偵測到的鎖定狀態，來自 LoRA 大面板 LoRA1/LoRA2 選格"></span>
+    <span class="concepts-lock" id="concepts-lock" title="目前偵測到的鎖定狀態，來自 LoRA 大面板 LoRA1/LoRA2 選格" role="status" aria-live="polite"></span>
     <button class="ghost icon-btn" id="concepts-settings-btn" title="Concepts 抽卡設定：強度／張數／是否抽詞庫模板" aria-label="Concepts 抽卡設定">⚙</button>
     <!-- 強度／張數／模板開關獨立於 LoRA1/2 面板之外，是 Concepts 抽卡專用的一組設定，
          「這裡」才是唯一來源——不管鎖定側還是隨機側，強度都讀這裡，不讀 LoRA1/2 slot
@@ -82,7 +82,7 @@
       <div class="cs-tpl-lock" id="cs-tpl-lock">
         <div class="cs-tpl-lock-current" id="cs-tpl-lock-current" hidden>
           <span id="cs-tpl-lock-name"></span>
-          <button type="button" id="cs-tpl-lock-clear" title="取消鎖定模板">✕</button>
+          <button type="button" id="cs-tpl-lock-clear" title="取消鎖定模板" aria-label="取消鎖定模板">✕</button>
         </div>
         <input type="text" id="cs-tpl-search" placeholder="搜尋要鎖定的模板…" autocomplete="off">
         <div class="cs-tpl-results" id="cs-tpl-results"></div>

@@ -1783,7 +1783,7 @@ function renderLmSlotTabs() {
     }
     if (slot.lora) {
       const clear = document.createElement('button'); clear.type = 'button'; clear.className = 'lm-slot-clear';
-      clear.title = `清空 LoRA ${i + 1}`; clear.textContent = '✕';
+      clear.title = `清空 LoRA ${i + 1}`; clear.setAttribute('aria-label', `清空 LoRA ${i + 1}`); clear.textContent = '✕';
       clear.addEventListener('click', (e) => {
         e.stopPropagation();
         GEN_LORA_SLOTS[i] = { lora: null, strength: slot.strength, twPicks: new Set() };
