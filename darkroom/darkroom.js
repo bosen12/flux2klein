@@ -897,6 +897,7 @@ function drawTarot(pool, label) {
   const wrap = $('tarot-cards');
   wrap.classList.remove('ttag');                          // 瀏覽抽卡：清掉打標抽卡的 5×3 排版
   $('tarot-stage').classList.remove('ttag-stage');
+  $('tarot-cancel-gen').hidden = true;   // 瀏覽抽卡不是生圖，沒有「取消生圖」這回事
   $('tarot-hint').textContent = label
     ? '點任一張看大圖與提示詞；E 重抽本分類、R 改抽全庫、Esc 關閉'
     : '點任一張看大圖與提示詞；R 重抽一批、Esc 關閉';
@@ -983,6 +984,7 @@ function drawLoraTarot(pool, label) {
   const wrap = $('tarot-cards');
   wrap.classList.remove('ttag');
   $('tarot-stage').classList.remove('ttag-stage');
+  $('tarot-cancel-gen').hidden = true;   // 隨機瀏覽 LoRA 不是生圖
   $('tarot-hint').textContent = '點任一張直接選中並返回；R 重抽全庫、E 重抽本分類、Esc 關閉';
   wrap.innerHTML = '';
   picks.forEach((l, i) => {
@@ -1072,6 +1074,7 @@ function drawTagTarot() {
   const wrap = $('tarot-cards');
   wrap.classList.add('ttag');
   $('tarot-stage').classList.add('ttag-stage');
+  $('tarot-cancel-gen').hidden = true;   // 抽卡打標不是生圖
   const title = document.querySelector('.tarot-title');
   if (title) title.textContent = '✦ 抽卡打標 ✦';
   $('tarot-hint').textContent = '方向鍵移動焦點，1 普通・2 稀有・3 特別・4 傳奇打標（自動跳下一張），S 跳過・Z 復原・R 重抽；也可直接點卡片按鈕。隨標即時生效。';
@@ -1160,6 +1163,17 @@ const drawDispatch = () => (LORA_TAROT ? drawLoraTarot() : MODE === 'gen' ? draw
 $('draw-cards').onclick = drawDispatch;
 $('tarot-redraw').onclick = drawDispatch;
 $('tarot-close').onclick = closeTarot;
+// 取消「目前這批」抽卡生圖：送出這批的 gid（不是整個分頁），按下才自動關閉疊層——
+// 使用者已經明確要放棄看這批結果，留著空殼疊層沒有意義（跟其他抽卡類型「取消」點
+// 選卡片才關閉」不同，這裡是主動放棄整批，語意上更接近直接關閉）。
+$('tarot-cancel-gen').onclick = () => {
+  const ids = CUR_GEN_TAROT_IDS;
+  if (!ids.length) { closeTarot(); return; }
+  fetch('/api/gen-cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }) }).catch(() => {});
+  closeTarot();
+  toast(`已取消這批 ${ids.length} 張生圖`);
+};
 
 // E 鍵／標題旁「✦」鈕：只在瀏覽／生圖模式，抽卡池換成「目前選中的分類」（跨資料夾搜尋時
 // 換成搜尋結果範圍）而不是整個詞庫。重用 baseList()（本來就是「只套資料夾/搜尋」，不含
@@ -1883,6 +1897,7 @@ function updateGalleryHead() {
   const sub = $('gallery-sub'); if (sub) sub.textContent = n ? `${n} 張` : '';
   const badge = $('gallery-n'); if (badge) badge.textContent = n ? String(n) : '';
   const empty = $('gallery-empty'); if (empty) empty.style.display = n ? 'none' : '';
+  updateCancelAllBtn();
 }
 function buildGalleryCard(g, i) {
   const card = document.createElement('div');
@@ -1915,6 +1930,16 @@ function closeGallery() {
   switchView(() => { GALLERY_OPEN = false; document.body.classList.remove('gallery-open'); $('gallery-btn').classList.remove('on'); });
 }
 $('gallery-btn').onclick = () => (GALLERY_OPEN ? closeGallery() : openGallery());
+// 取消「目前所有」還在跑的生圖，跨批次——跟塔羅疊層那顆只取消當批不同。圖庫本身不用
+// 關閉（使用者還在看結果），卡片會由既有的輪詢（_genTick/applyGenState）自然轉成
+// 「已取消」，不用在這裡手動改 DOM。
+$('gallery-cancel-all').onclick = () => {
+  const ids = [...GEN_PENDING];
+  if (!ids.length) return;
+  fetch('/api/gen-cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }) }).catch(() => {});
+  toast(`已取消全部 ${ids.length} 張在途生圖`);
+};
 
 // 點圖庫（或抽卡塔羅）縮圖看大圖＋資訊。MODAL_FROM_TAROT 由呼叫端設：塔羅來的關掉回牌、圖庫來的正常關。
 function openGalleryItem(gid) {
@@ -1995,13 +2020,19 @@ async function runGen(rels, tarotItems, label) {
 }
 
 // 生圖抽卡的塔羅呈現：沿用瀏覽抽卡的發牌／翻牌動畫，牌面是生成中的即時預覽而非既有圖。
+// 目前塔羅疊層顯示的這一批生圖 gid——「取消生圖」只停這批，不影響使用者更早抽的其他
+// 批次（那些已經看不到牌面了，但還在圖庫背景繼續跑，見 runGen/startGenPoll）。每次
+// openGenTarot 呼叫都整批換掉，不是累加。
+let CUR_GEN_TAROT_IDS = [];
 function openGenTarot(items, picks, label) {
   const n = items.length;
+  CUR_GEN_TAROT_IDS = items.map(it => it.id);
   const title = document.querySelector('.tarot-title');
   if (title) title.textContent = label ? `✦ ${label}　抽選${CN_NUM[n] || n}張生圖 ✦` : `✦ 抽選${CN_NUM[n] || n}張生圖 ✦`;
   const wrap = $('tarot-cards');
   wrap.classList.remove('ttag');
   $('tarot-stage').classList.remove('ttag-stage');
+  $('tarot-cancel-gen').hidden = false;
   $('tarot-hint').textContent = label
     ? '牌面即時顯示生成中的採樣畫面；完成後點卡片看大圖，E 重抽本分類、R 改抽全庫、Esc 關閉'
     : '牌面即時顯示生成中的採樣畫面；完成後點卡片看大圖，R 重抽、Esc 關閉';
@@ -2082,8 +2113,11 @@ function applyGenState(gid, s) {
 // 前端這裡每 GEN_POLL_MS 抓一次 gen-status，pv 有增才換預覽圖。設 500ms（原本 2000ms）
 // 讓即時預覽幾乎追上 ComfyUI 的出幀速度——再快也超不過 ComfyUI 每步一幀的上限。
 const GEN_POLL_MS = 500;
+function updateCancelAllBtn() {
+  const btn = $('gallery-cancel-all'); if (btn) btn.disabled = !GEN_PENDING.size;
+}
 async function _genTick() {
-  if (!GEN_PENDING.size) { _genPoll = null; return; }
+  if (!GEN_PENDING.size) { _genPoll = null; updateCancelAllBtn(); return; }
   try {
     const st = await fetch('/api/gen-status?ids=' + [...GEN_PENDING].join(',')).then(r => r.json());
     for (const gid of [...GEN_PENDING]) {
@@ -2092,6 +2126,7 @@ async function _genTick() {
       if (s.status === 'done' || s.status === 'error' || s.status === 'cancelled') GEN_PENDING.delete(gid);
     }
   } catch (e) { /* 暫時抓失敗就等下一輪 */ }
+  updateCancelAllBtn();
   _genPoll = GEN_PENDING.size ? setTimeout(_genTick, GEN_POLL_MS) : null;
 }
 function startGenPoll(ids) {

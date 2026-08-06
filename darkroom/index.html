@@ -110,6 +110,9 @@
       <div class="gallery-head">
         <h2>🖼 生成圖庫</h2>
         <span class="gallery-sub" id="gallery-sub"></span>
+        <!-- 取消「目前所有」還在跑的生圖，跨批次——跟塔羅疊層那顆只取消當批不同（見
+             darkroom.js cancelAllPending）。沒有任何生圖在途時停用（updateGalleryHead 管）。 -->
+        <button class="danger gallery-cancel-all" id="gallery-cancel-all" disabled>取消全部生圖</button>
       </div>
       <div id="gallery-grid" class="gallery-grid"></div>
       <div id="gallery-empty" class="gallery-empty">還沒有生成任何圖 —— 到「🎨 生圖」選詞庫按生圖，或按「✦ 抽卡」隨機生一批。<br>（圖庫是本次生成的暫存，刷新或關頁就清空）</div>
@@ -179,6 +182,10 @@
       <span class="tarot-title" id="tarot-title">✦ 抽選八張 ✦</span>
       <span class="ttag-progress tag-only" id="ttag-progress"></span>
       <div class="tarot-actions">
+        <!-- 只有抽卡生圖（openGenTarot）才會顯示：取消「這一批」還在跑的生圖，不影響
+             使用者更早抽的其他批次（那些在圖庫背景繼續跑，見 darkroom.js CUR_GEN_TAROT_IDS）。
+             預設 hidden，openGenTarot()/closeTarot() 負責開關。 -->
+        <button id="tarot-cancel-gen" class="danger" hidden>取消生圖</button>
         <button class="primary" id="tarot-redraw">再抽一次 (R)</button>
         <button id="tarot-close">關閉 (Esc)</button>
       </div>

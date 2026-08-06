@@ -1123,16 +1123,14 @@ def start_gen(rels, loras, trigger, client=""):
     return out
 
 
-def cancel_client_gen(client):
-    """只取消某個分頁（client）自己還在途的生圖。等信號量的那幾張標記 cancel 就不會送出；
-    已排進 ComfyUI 的請 ComfyUI 移除排隊中的、並中斷正在跑的——只針對這個 client 自己的
-    gen prompt_id，不動別的分頁、也不誤傷同時在跑的批次預覽生成。client 空字串則不做任何事。"""
-    if not client:
-        return 0
+def _cancel_gen(pred, label):
+    """共用的取消邏輯：pred(gid, status_dict) 決定哪些還在途的生圖要取消。等信號量的那幾張
+    標記 cancel 就不會送出；已排進 ComfyUI 的請 ComfyUI 移除排隊中的、並中斷正在跑的。
+    label 只用來寫 log，說明這次取消的範圍（哪個分頁／哪一批／全部）。"""
     pids = []
     with _gen_lock:
         for gid, s in _gen_status.items():
-            if s.get("status") == "pending" and s.get("client") == client:
+            if s.get("status") == "pending" and pred(gid, s):
                 s["cancel"] = True
                 if s.get("pid"):
                     pids.append(s["pid"])
@@ -1143,11 +1141,29 @@ def cancel_client_gen(client):
             running = {it[1] for it in (q.get("queue_running") or []) if isinstance(it, list) and len(it) > 1}
             http_json("POST", f"{base}/queue", {"delete": pids}, timeout=10)   # 移除還在排隊的（ComfyUI 忽略不存在的）
             if running & set(pids):
-                http_json("POST", f"{base}/interrupt", {}, timeout=10)         # 正在跑的是這個 client 的才中斷
+                http_json("POST", f"{base}/interrupt", {}, timeout=10)         # 正在跑的是這批的才中斷
         except Exception as e:
             plog(f"[genmode] 取消時通知 ComfyUI 失敗：{e}")
-    plog(f"[genmode] 取消分頁 {client[:8]} 的在途生圖（{len(pids)} 筆已在 ComfyUI）")
+    plog(f"[genmode] 取消{label}（{len(pids)} 筆已在 ComfyUI）")
     return len(pids)
+
+
+def cancel_client_gen(client):
+    """只取消某個分頁（client）自己還在途的生圖，別動別的分頁、也不誤傷同時在跑的批次預覽
+    生成。分頁刷新/關閉時由 sendBeacon 打（見 darkroom.js pagehide）。client 空字串則不做任何事。"""
+    if not client:
+        return 0
+    return _cancel_gen(lambda gid, s: s.get("client") == client, f"分頁 {client[:8]} 的在途生圖")
+
+
+def cancel_gen_ids(ids):
+    """只取消這組 gid（抽卡生圖某一批，或圖庫「取消全部」時傳目前所有還在途的 gid）——
+    跟 cancel_client_gen 不同的是不管 client，只認 gid 本身；抽卡疊層的「取消」鈕只想
+    停掉正在看的這批，不該連使用者更早抽的其他批次（還在圖庫背景跑）也一起停掉。"""
+    if not ids:
+        return 0
+    idset = set(ids)
+    return _cancel_gen(lambda gid, s: gid in idset, f"指定的 {len(idset)} 筆生圖")
 
 
 # ---------------------------------------------------------------------------
@@ -1456,8 +1472,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"ok": True, "items": items})
                 return
             if u.path == "/api/gen-cancel":
-                # 該分頁刷新/關閉時由 sendBeacon 打來：只停掉這個 client 自己在途的生圖，別動別的分頁。
-                n = cancel_client_gen(data.get("client") or "")
+                # 帶 ids（陣列）＝只取消這幾張——抽卡疊層的「取消」鈕（只停當批）、圖庫的
+                # 「取消全部」鈕（傳目前所有還在途的 gid）都走這條。沒帶 ids 才退回舊行為：
+                # 分頁刷新/關閉時 sendBeacon 打來，用 client 停掉這個分頁自己全部在途的生圖。
+                ids = data.get("ids")
+                if isinstance(ids, list) and ids:
+                    n = cancel_gen_ids([str(i) for i in ids])
+                else:
+                    n = cancel_client_gen(data.get("client") or "")
                 self._send_json({"ok": True, "cancelled_queued": n})
                 return
             if u.path == "/api/lora-push":
