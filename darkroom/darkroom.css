@@ -661,7 +661,7 @@ body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不�
 .gallery-sub { font-family: var(--mono); font-size: 12px; color: var(--faint); }
 .gallery-empty { color: var(--faint); text-align: center; padding: 64px 20px; font-size: 14px; line-height: 1.9; }
 
-.gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; padding: 0 2px 48px; }
+.gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 18px; padding: 0 2px 48px; }
 .gcard { display: flex; flex-direction: column; gap: 5px;
          animation: gcardIn .34s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 28ms); }
 .gc-square { position: relative; border-radius: 10px; overflow: hidden; background: var(--sunk); }
