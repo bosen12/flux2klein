@@ -1980,8 +1980,49 @@ $('shortcuts-btn').onclick = openShortcuts;
 $('shortcuts-close').onclick = closeShortcuts;
 $('shortcuts-overlay').addEventListener('click', e => { if (e.target.id === 'shortcuts-overlay') closeShortcuts(); });
 
+// genbar「選 LoRA」摘要鈕 hover 預覽：跟 .tw-tip 同一套單例 fixed 元素＋淡入淡出，
+// 差別是往上彈（genbar 貼在畫面最下方，往下彈會被裁掉看不到）、內容是圖片不是文字。
+// 選了幾格 LoRA 就顯示幾張，滑鼠移過去就能比對，不用先開大面板。
+let LORA_PREVIEW_TIP_EL = null;
+function ensureLoraPreviewTip() {
+  if (LORA_PREVIEW_TIP_EL) return LORA_PREVIEW_TIP_EL;
+  LORA_PREVIEW_TIP_EL = document.createElement('div');
+  LORA_PREVIEW_TIP_EL.className = 'lora-preview-tip';
+  document.body.appendChild(LORA_PREVIEW_TIP_EL);
+  return LORA_PREVIEW_TIP_EL;
+}
+function positionLoraPreviewTip(anchor) {
+  const tip = ensureLoraPreviewTip();
+  const r = anchor.getBoundingClientRect();
+  tip.style.left = r.left + 'px';
+  tip.style.top = 'auto';
+  tip.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+}
+function showLoraPreviewTip(anchor) {
+  if (!(GEN_LORA_SLOTS[0].lora || GEN_LORA_SLOTS[1].lora)) return;   // 都沒選就沒什麼好預覽的
+  const tip = ensureLoraPreviewTip();
+  tip.innerHTML = '';
+  GEN_LORA_SLOTS.forEach((slot, i) => {
+    if (!slot.lora) return;   // LoRA2 常留空（見 selectGenLora），沒選就不佔一格
+    const item = document.createElement('div'); item.className = 'lpt-item';
+    if (slot.lora.preview) item.appendChild(makeLoraPreviewEl(slot.lora));
+    else { const ph = document.createElement('span'); ph.className = 'ph'; item.appendChild(ph); }
+    const label = document.createElement('span'); label.className = 'lpt-label';
+    label.textContent = `LoRA${i + 1}：${slot.lora.title || slot.lora.name}`;
+    item.appendChild(label);
+    tip.appendChild(item);
+  });
+  positionLoraPreviewTip(anchor);
+  tip.classList.add('show');
+}
+function hideLoraPreviewTip() {
+  if (LORA_PREVIEW_TIP_EL) LORA_PREVIEW_TIP_EL.classList.remove('show');
+}
+$('lora-pick-btn').addEventListener('mouseenter', () => showLoraPreviewTip($('lora-pick-btn')));
+$('lora-pick-btn').addEventListener('mouseleave', hideLoraPreviewTip);
+
 $('lora-panel-btn').onclick = openLoraModal;   // topbar 入口（只在生圖模式看得到，見 CSS）
-$('lora-pick-btn').onclick = openLoraModal;    // genbar 摘要鈕，同一個面板
+$('lora-pick-btn').onclick = () => { hideLoraPreviewTip(); openLoraModal(); };    // genbar 摘要鈕，同一個面板
 $('lora-modal-close').onclick = closeLoraModal;
 $('lm-random-btn').onclick = () => { fetchGenLoras().then(drawLoraTarot); };
 $('lora-modal').addEventListener('click', e => { if (e.target.id === 'lora-modal') closeLoraModal(); });
