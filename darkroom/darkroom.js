@@ -527,6 +527,7 @@ function openModal(rel, resetNav = true) {
   if (!item) return;
   const inner = $('modal-inner');
   inner.dataset.rel = rel;
+  delete inner.dataset.gid;   // 清掉圖庫大圖可能留下的 gid，不然方向鍵分支會誤判成還在切圖庫
   const relEnc = encodeURIComponent(rel);
   const imgHtml = item.has_image
     ? `<img id="modal-image" data-rel="${escapeAttr(rel)}" src="/api/image?rel=${relEnc}&t=${item.image_mtime}">`
@@ -574,7 +575,22 @@ function modalStep(dir) {
 function closeModal() {
   $('modal').classList.remove('open');
   const inner = $('modal-inner');
-  if (inner) delete inner.dataset.rel;
+  if (inner) { delete inner.dataset.rel; delete inner.dataset.gid; }
+}
+
+// 圖庫大圖的左右切換：跟 modalStep()（切詞庫格線的 VISIBLE）是不同清單，圖庫大圖切的是
+// GALLERY，順序要跟畫面上看到的一致——renderGallery() 是新到舊（陣列反過來疊代），這裡
+// 用同一個順序，不然「按右鍵」跟「畫面往右移一張」對不起來。
+function galleryOrder() { return [...GALLERY].reverse(); }
+function galleryModalStep(dir) {
+  const inner = $('modal-inner');
+  const gid = inner && inner.dataset.gid;
+  if (!gid) return;
+  const order = galleryOrder();
+  const i = order.findIndex(g => g.id === gid);
+  if (i < 0 || !order.length) return;
+  const ni = (i + dir + order.length) % order.length;
+  openGalleryItem(order[ni].id);
 }
 
 // 開大圖：縮圖 morph 放大成大圖（shared-element，view-transition-name: hero-img）。
@@ -840,9 +856,14 @@ window.addEventListener('keydown', e => {
   // 大圖疊在抽卡之上時，鍵盤先歸大圖：Esc 關大圖回到那批牌（而非關掉整個抽卡）
   if ($('modal').classList.contains('open')) {
     if (e.key === 'Escape') { dismissModal(); return; }
-    if (MODAL_FROM_TAROT) return;                // 從抽卡開的大圖不左右切（那批牌不在 VISIBLE 裡）
-    if (e.key === 'ArrowLeft') modalStep(-1);
-    else if (e.key === 'ArrowRight') modalStep(1);
+    if (MODAL_FROM_TAROT) return;                // 從抽卡開的大圖不左右切（那批牌不在 VISIBLE/GALLERY 順序裡）
+    // 大圖是從圖庫還是詞庫格線開的，各自左右切不同的清單——見 openGalleryItem() 設的
+    // dataset.gid／openModal() 設的 dataset.rel。之前只接了 modalStep()（只認 VISIBLE），
+    // 圖庫開的大圖完全沒有對應的清單可切，方向鍵沒有反應，使用者回報過。
+    const inner = $('modal-inner');
+    const isGallery = !!(inner && inner.dataset.gid);
+    if (e.key === 'ArrowLeft') (isGallery ? galleryModalStep(-1) : modalStep(-1));
+    else if (e.key === 'ArrowRight') (isGallery ? galleryModalStep(1) : modalStep(1));
     return;
   }
   if ($('tarot').classList.contains('open')) {
@@ -2221,6 +2242,7 @@ function openGalleryItem(gid) {
   const g = GALLERY.find(x => x.id === gid);
   const inner = $('modal-inner'); if (!inner) return;
   delete inner.dataset.rel;
+  inner.dataset.gid = gid;   // 讓方向鍵知道現在切的是圖庫清單，不是詞庫格線（見 keydown 分支）
   inner.innerHTML = '';
   const left = document.createElement('div');
   const img = document.createElement('img');
