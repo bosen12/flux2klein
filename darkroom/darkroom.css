@@ -654,6 +654,17 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 .gallery-btn.on { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 55%, transparent);
                   background: color-mix(in srgb, var(--amber) 12%, transparent); }
 .gallery-n { margin-left: 6px; font-family: var(--mono); font-size: 11px; opacity: .85; }
+
+/* Concepts 抽卡（topbar，跟圖庫鈕同一排、不分模式）：按鈕＋鎖定狀態文字＋「+模板」小
+   勾選框擠成一組，視覺上是一個單元，不是三個各自獨立的控制項。 */
+.concepts-group { display: flex; align-items: center; gap: 8px; }
+.concepts-lock { font-family: var(--mono); font-size: 10.5px; color: var(--faint); white-space: nowrap; }
+.concepts-tpl-toggle { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--faint); cursor: pointer; }
+.concepts-tpl-toggle input { accent-color: var(--amber); }
+.concepts-tpl-toggle:hover { color: var(--dim); }
+@media (max-width: 900px) {
+  .concepts-lock { display: none; }   /* 窄螢幕先讓位，按鈕跟模板開關優先 */
+}
 /* 只在生圖模式顯示的 topbar 鈕（LoRA 大面板入口）：用 visibility 而非 display——保留版位、
    切模式時不會擠動旁邊「圖庫/分段/抽卡/重掃/連線」那排固定不動的共用按鈕（CLAUDE.md 記過
    這排按鈕位置不能位移，用 display:none 會讓它們跟著跳動）。 */
@@ -749,17 +760,12 @@ body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不�
 .lm-random-btn { margin: 10px 14px 0; display: block; width: calc(100% - 28px); flex: none;
   padding: 8px 10px; font-size: 12.5px; }
 .lm-random-btn:hover { border-color: color-mix(in srgb, var(--amber) 45%, var(--line)); color: var(--ink); }
-/* Concepts 抽卡跟隨機瀏覽同一顆按鈕樣式（.lm-random-btn 提供間距/寬度），只是接續在
-   下面、不用另外調版位。勾選框放最貼近的位置，讓「這個開關只影響上面那顆按鈕」一目
-   了然，不用另外寫說明文字解釋兩者的關係。 */
-.lm-concepts-tpl-toggle { display: flex; align-items: flex-start; gap: 7px; margin: 6px 14px 0;
-  font-size: 11px; line-height: 1.5; color: var(--faint); cursor: pointer; }
-.lm-concepts-tpl-toggle input { margin-top: 2px; accent-color: var(--amber); flex: none; }
-.lm-concepts-tpl-toggle:hover { color: var(--dim); }
 /* 從 LoRA 大面板開的塔羅疊層要蓋在面板之上（大面板 z-index:140 本來就比 #tarot
    的 120 高，不加這個疊層會被面板蓋住看不到），只在這個特定情境才拉高，不動
-   #tarot 平常的 z-index（詞庫抽卡不受影響）。 */
-body.lora-tarot-open #tarot { z-index: 145; }
+   #tarot 平常的 z-index（詞庫抽卡不受影響）。Concepts 抽卡現在是 topbar 按鈕，跟
+   LoRA 大面板已經沒有必然關係，但兩者剛好同時開著時（例如面板開著、按 C 鍵）一樣
+   要蓋上去，所以套用同一招。 */
+body.lora-tarot-open #tarot, body.concepts-tarot-open #tarot { z-index: 145; }
 .lm-search-wrap { position: relative; padding: 12px 14px 10px; flex: none; }
 .lm-search-wrap svg { position: absolute; left: 24px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--faint); pointer-events: none; }
 .lm-search-wrap input { width: 100%; box-sizing: border-box; padding: 8px 10px 8px 32px; }

@@ -40,6 +40,20 @@
   <!-- 以下為兩模式共用、位置固定：切模式時寬度不變、不位移 -->
   <!-- 生成圖庫：獨立於模式分段（放左邊、不混進分段）。本次生成、刷新即清空。 -->
   <button class="ghost gallery-btn" id="gallery-btn" title="生成圖庫（本次生成的圖，刷新／關頁即清空）">🖼 圖庫<span class="gallery-n" id="gallery-n"></span></button>
+  <!-- Concepts 抽卡：每張卡各自隨機配一組 Character LoRA + concepts LoRA 直接生圖（塔羅牌面
+       呈現，跟一般抽卡生圖同一套視覺）。放圖庫鈕旁邊、跟模式無關（不受瀏覽/打標/生圖模式
+       限制），快捷鍵 C。鎖定機制：偵測 LoRA 大面板目前 LoRA1/LoRA2 選格是否已選到 Character
+       或 concepts 分類的 LoRA，選到就鎖定那顆（另一側維持隨機），都沒選就兩側都隨機——見
+       darkroom.js lockedCharacterSlot()/lockedConceptSlot()。#concepts-lock 顯示目前偵測到
+       的鎖定狀態，不然使用者不會知道抽出來的怎麼一直重複，以為壞掉。 -->
+  <div class="concepts-group">
+    <button class="ghost" id="concepts-btn" title="Concepts 抽卡（快捷鍵 C）：隨機配對 Character LoRA + concepts LoRA 直接生圖">🧬 Concepts</button>
+    <span class="concepts-lock" id="concepts-lock" title="目前偵測到的鎖定狀態，來自 LoRA 大面板 LoRA1/LoRA2 選格"></span>
+    <label class="concepts-tpl-toggle" title="同時抽詞庫模板；不勾則只用兩個 LoRA 的觸發詞當 prompt">
+      <input type="checkbox" id="concepts-tpl">
+      <span>+模板</span>
+    </label>
+  </div>
   <!-- LoRA 大面板：只在生圖模式顯示（用 visibility 而非 display，切模式時不擠動旁邊固定的
        圖庫/分段/抽卡/重掃/連線鈕——見 darkroom.css .lora-panel-btn）。圖示鈕、不帶文字，
        盡量壓低寬度，減少極窄視窗下擠壓其他固定按鈕的風險。圖示用 LoRA Manager 本尊的 logo
@@ -159,15 +173,6 @@
       <!-- 隨機瀏覽：沿用詞庫抽卡同一套塔羅發牌/翻牌，改抽 LoRA。獨立一列（不塞進
            #lm-cats，那個 div 每次 renderLmCats() 都會整個重建，塞進去會被清掉）。 -->
       <button class="ghost lm-random-btn" id="lm-random-btn" title="隨機瀏覽 LoRA（塔羅式呈現，點一張直接選中）">🎲 隨機瀏覽</button>
-      <!-- Concepts 抽卡：每張卡各自隨機配一組 Character LoRA + concepts LoRA 直接生圖，
-           跟上面「隨機瀏覽」（只是瀏覽/選擇，不生圖）是不同功能。範圍縮小沿用左欄目前的
-           分類篩選（見 darkroom.js characterDrawPool/conceptsDrawPool），不用另外做選單。 -->
-      <button class="ghost lm-random-btn lm-concepts-btn" id="lm-concepts-btn"
-              title="Concepts 抽卡：隨機配對 Character LoRA + concepts LoRA 直接生圖">🧬 Concepts 抽卡</button>
-      <label class="lm-concepts-tpl-toggle">
-        <input type="checkbox" id="lm-concepts-tpl">
-        <span>同時抽詞庫模板（不勾＝只用兩個 LoRA 的觸發詞）</span>
-      </label>
       <div class="lm-search-wrap">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input type="text" id="lm-search" placeholder="搜尋 LoRA…" autocomplete="off">
