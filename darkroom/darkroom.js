@@ -823,6 +823,12 @@ $('modal').addEventListener('click', e => { if (e.target.id === 'modal') dismiss
 $('m-prev').onclick = () => modalStep(-1);
 $('m-next').onclick = () => modalStep(1);
 window.addEventListener('keydown', e => {
+  // 這個 app 的快捷鍵全部是單一按鍵（R/E/C/X/1~4/S/Z/?/方向鍵…），沒有一個需要搭配
+  // Ctrl/Cmd/Alt。沒有這條擋在最前面，按 Ctrl+C 複製、Ctrl+X 剪下、Ctrl+Z 復原、
+  // Ctrl+S 存檔這些瀏覽器/系統原生快捷鍵會被底下對應字母的分支攔截、擋掉
+  // preventDefault——使用者回報「很多 Windows 預設快捷鍵都不能用」就是這個。任何組合鍵
+  // 一律直接放行給瀏覽器/系統處理，不進這支 handler 的判斷邏輯。
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
   // 快捷鍵一覽（z-index 210，蓋過所有其他疊層）排最前面：不管現在開著什麼，Esc 都先關
   // 這個說明疊層，不去動底下真正在操作的東西。
   if ($('shortcuts-overlay').classList.contains('open')) {
