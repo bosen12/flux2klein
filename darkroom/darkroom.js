@@ -1362,10 +1362,20 @@ function selectGenLora(l) {
   renderLmList($('lm-search').value);   // 只重繪列表刷新選中的高亮，不重置頁碼/搜尋
 }
 
-// genbar 摘要鈕：只顯示「目前選的是誰」，實際挑選都在大面板。
+// genbar 摘要鈕：只顯示「目前選的是誰」，實際挑選都在大面板。圖示用 LoRA Manager
+// 本尊 logo（跟 topbar 大面板鈕、左欄管理連結同一張圖）而非通用符號。innerHTML 只在第
+// 一次呼叫時建立（img 不用每次重繪），之後只更新文字節點，避免每次選 LoRA 都重建 DOM。
+const LORA_MGR_LOGO_B64 = "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAA/lJREFUWEeVV0trFEEQ/ubiRRQPInoTDwo+jhpRRAUR4wNFkywBEdw1ia+LBxUVRUHwIir4QPABIngTPHry5i/IWcFHdteYRCKJm5np7ZLu6Z7p6emenexhd7anp+urqq++qgnGv7cIAAIQCIG4lP8AuZz/iCW9xbuTAArUPvO6eJy0lADQxrRhy4oTkgON20bpqgEgMZr5rnDJZRNQb68Sh4pOmEhSV3UK5E35nOthY41InZ03kAIvnOEDkzgSjH9rEoIgB9rNgOpe9Y5AdpZKgfBeeyYcFJQs+/QAk95WFyXbg/HvTWXZJKI23tvrDGbJ3hygPKcMACkJHK6bHDDqzxUkGUmLgC5uKX+zFOQO0xWgDiLgwqX7aH/5AeIhunGEE7V+nGoM9GR7cmzigMmt5JqEDugUON1JJIoIpy89QOvrT+DvHMAXMDh8EGfODaeHV6g8J6kcEdDhzn5FVOuXH6P5ow3MzAJxiKHh/WiMDZUw1dILOzUyBSIC3xIpznRDM1f9igolQv3KU0y0p0CMIZifR+3wLjRGj7sBuIx5dCmJgElgB4kEgMbV55hoT4I4R9DpoHZgJ+pnjmbSKQQs7QHVNdlNQquiBICRay8w0ZoCUQyKGWr7tqHeOKI4ZjDfrkajAnIyL0IuHstJsY9JBIxcfyUBcGIgYhjq34nG8D43scxeKiIqKkCJrV1smRTbd6xmMnrjDX42pwAw8C7D4KE+NGoKwGL0yrRTjIBHjAgYvfkWrfY0OGcgzjBwsA/1ob1WBOwK6i3nnjLUZZEcKL7Hbr1Dsz2NgHNwFmHg0DacHtxdsQoc6qh89Sih7Rhh7O57tFrT4HEEdBm2blmL3X3rZRMj4jIqq1auwOaN6/xSbqSqOA842KurSvDo7L0PaP36A4oiUBwi4F10WQxiMTgLwaMQS8I5PHx0Ges3rPXEvtjoEyFyiYRkr8hAIsXnH35EszkjhYjCBZCIBGMyIpwtAFEEPjOFNauX48nL21i2bKmzB6TIdHXky1DdLugAcOHZJ0zO/pOeR9Oz4J0OKFoAOCkQISjsgDpz2L5jE+7cGlVNsWQ0k1WgJyJn0LKB4uLrz/g9O48AHOHkH/BOCEQhKBLp4LJD8lgAYujyGCMn92Pg2B6llHpKLhrxp8ASJS4Ika5Z7cOX8fK5NMmwMwW2InqHDCtluZ7iaHAZAdKb/nnAp26VVM/oqPZ0JEFkgiUjIINrHex5N6re5hw79RSU2FfvIXkSqtIz22olj7W1jLSpfWnHGvGM7X4lzBnu0etLWnDpO0JShmoi0vLvack6Tc62uojE2Kmt1gs0cYzcLcJm6dYCgAL5CqVVgRTOLVoUFM8UrP/DbkWRXoaOTQAAAABJRU5ErkJggg==";
 function renderGenCurrent() {
   const btn = $('lora-pick-btn');
-  if (btn) { btn.textContent = GEN_LORA ? `🧩 ${GEN_LORA.title || GEN_LORA.name}` : '🧩 選 LoRA'; btn.classList.toggle('has', !!GEN_LORA); }
+  if (!btn) return;
+  // 初始 HTML 已有 .gen-pick-label（沒有 img），第一次呼叫才補上 img；之後兩者都在
+  // 就只更新文字節點，不重建 DOM。
+  if (!btn.querySelector('img')) {
+    btn.innerHTML = `<img src="data:image/png;base64,${LORA_MGR_LOGO_B64}" alt="" class="lora-logo" width="15" height="15"><span class="gen-pick-label"></span>`;
+  }
+  btn.querySelector('.gen-pick-label').textContent = GEN_LORA ? (GEN_LORA.title || GEN_LORA.name) : '選 LoRA';
+  btn.classList.toggle('has', !!GEN_LORA);
 }
 
 // 大面板右欄：目前選的 LoRA 縮圖/標題 + 每段 trainedWords 各自一張完整文字卡（不截斷）

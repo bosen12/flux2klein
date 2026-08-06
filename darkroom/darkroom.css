@@ -602,7 +602,10 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 
 /* ── 生圖底部列：只留「目前選的 LoRA」摘要鈕＋生圖鈕。實際挑選/trainedWords/強度
    全部在 #lora-modal 大面板（見下方），genbar 與 topbar 的「🎨 LoRA」鈕開的是同一個。 ── */
+/* 保持一般 inline 排版（不用 flex）：text-overflow:ellipsis 對 flex 容器不可靠，
+   這顆鈕原本就靠這招截斷過長的 LoRA 名稱，img 用 vertical-align 對齊即可。 */
 #lora-pick-btn { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#lora-pick-btn img { vertical-align: -3px; margin-right: 6px; border-radius: 3px; }
 #lora-pick-btn.has { border-color: var(--amber); color: var(--ink); }
 /* .lora-row/.lora-cat-head/.lora-pager 等清單樣式沿用給 #lm-list（大面板左欄）用，
    不用重寫一份——原本是底部彈出小選單的清單項目樣式，換到大面板照樣適用。 */
