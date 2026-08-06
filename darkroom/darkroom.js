@@ -1297,10 +1297,18 @@ document.querySelectorAll('.rar-pick').forEach(b =>
    #lora-modal；左欄資料夾分類/搜尋/翻頁/預覽選 LoRA，右欄完整攤開每段 trainedWords
    （勾選要用哪幾段）＋強度，選擇即時生效、關閉只是收起檢視，不需要另外「確定」。 */
 let GEN_LORAS = null;                 // /api/loras 的 items（快取）
-let GEN_LORA = null;                  // 選中的 LoRA
+// 雙 LoRA 疊加：兩個固定格子（不是不限層數的清單），各自獨立強度／觸發詞勾選。
+// GEN_ACTIVE_SLOT 記錄右欄「編輯中」是哪一格——左欄清單、隨機瀏覽塔羅點卡都塞進這一格
+// （見 selectGenLora）。curSlot()/otherSlot() 是讀寫時的簡寫，避免到處寫
+// GEN_LORA_SLOTS[GEN_ACTIVE_SLOT]。
+const GEN_LORA_SLOTS = [
+  { lora: null, strength: 0.8, twPicks: new Set() },
+  { lora: null, strength: 0.8, twPicks: new Set() },
+];
+let GEN_ACTIVE_SLOT = 0;
+function curSlot() { return GEN_LORA_SLOTS[GEN_ACTIVE_SLOT]; }
+function otherSlotIndex() { return GEN_ACTIVE_SLOT === 0 ? 1 : 0; }
 let GEN_LORA_PAGE = 0;                // LoRA 清單目前頁（搜尋變動時歸零，見 renderLmList）
-let GEN_STRENGTH = 0.8;
-const GEN_TW_PICKS = new Set();       // 選中的觸發詞組索引
 // 這個分頁的識別碼：生圖時帶給後端，讓「刷新/關閉這個分頁」只取消自己送的生圖，別的分頁不受影響。
 const GEN_CLIENT = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now());
 
@@ -1525,13 +1533,21 @@ function renderLmList(filter, resetPage) {
       const h = document.createElement('div'); h.className = 'lora-cat-head'; h.textContent = curFolder;
       box.appendChild(h);
     }
+    const slotIdx = GEN_LORA_SLOTS.findIndex(s => s.lora && s.lora.folder === l.folder && s.lora.file === l.file);
     const row = document.createElement('button');
     row.type = 'button';
-    row.className = 'lora-row' + (GEN_LORA && GEN_LORA.folder === l.folder && GEN_LORA.file === l.file ? ' on' : '');
+    // .on 只標「編輯中那格選的是不是這項」；不管哪格選中都額外掛數字徽章（①/②），
+    // 不然使用者選 LoRA 2 時完全看不出這項其實已經是 LoRA 1、點下去會觸發交換。
+    row.className = 'lora-row' + (slotIdx === GEN_ACTIVE_SLOT ? ' on' : '');
     if (l.preview) {
       row.appendChild(makeLoraPreviewEl(l));
     } else { const ph = document.createElement('span'); ph.className = 'ph'; row.appendChild(ph); }
     const rn = document.createElement('span'); rn.className = 'rn';
+    if (slotIdx !== -1) {
+      const badge = document.createElement('span'); badge.className = 'lora-slot-badge';
+      badge.textContent = slotIdx === 0 ? '①' : '②';
+      rn.appendChild(badge);
+    }
     const rt = document.createElement('span'); rt.className = 'rt'; rt.textContent = l.title || l.name;
     const rf = document.createElement('span'); rf.className = 'rf'; rf.textContent = l.folder;
     rn.append(rt, rf); row.appendChild(rn);
@@ -1556,10 +1572,20 @@ function renderLmList(filter, resetPage) {
 // 點左欄某個 LoRA：選中它、預設勾第一段觸發詞，右欄換成它的完整內容。面板**不關閉**——
 // 這是個瀏覽/比較用的大面板，選完通常還要勾段落、調強度，關掉留給使用者自己按 ✕/Esc。
 function selectGenLora(l) {
-  GEN_LORA = l;
-  const tw = l.trainedWords || [];
-  GEN_TW_PICKS.clear();
-  if (tw.length) GEN_TW_PICKS.add(0);   // 預設選第一組觸發詞
+  const otherIdx = otherSlotIndex();
+  const other = GEN_LORA_SLOTS[otherIdx];
+  // 選到的 LoRA 已經在另一格：直接把兩格內容互換，不是把同一個 LoRA 塞進兩格
+  // （那樣等於同一個 LoRA 疊加兩次，沒有意義，使用者也會覺得「怎麼點沒反應」）。
+  if (other.lora && other.lora.folder === l.folder && other.lora.file === l.file) {
+    const tmp = GEN_LORA_SLOTS[GEN_ACTIVE_SLOT];
+    GEN_LORA_SLOTS[GEN_ACTIVE_SLOT] = other;
+    GEN_LORA_SLOTS[otherIdx] = tmp;
+  } else {
+    const tw = l.trainedWords || [];
+    const twPicks = new Set();
+    if (tw.length) twPicks.add(0);   // 預設選第一組觸發詞
+    GEN_LORA_SLOTS[GEN_ACTIVE_SLOT] = { lora: l, strength: curSlot().strength, twPicks };
+  }
   renderGenCurrent();
   renderLmCurrent();
   renderLmList($('lm-search').value);   // 只重繪列表刷新選中的高亮，不重置頁碼/搜尋
@@ -1577,22 +1603,70 @@ function renderGenCurrent() {
   if (!btn.querySelector('img')) {
     btn.innerHTML = `<img src="data:image/png;base64,${LORA_MGR_LOGO_B64}" alt="" class="lora-logo" width="15" height="15"><span class="gen-pick-label"></span>`;
   }
-  btn.querySelector('.gen-pick-label').textContent = GEN_LORA ? (GEN_LORA.title || GEN_LORA.name) : '選 LoRA';
-  btn.classList.toggle('has', !!GEN_LORA);
+  const [s0, s1] = GEN_LORA_SLOTS;
+  let label;
+  if (s0.lora && s1.lora) label = `${s0.lora.title || s0.lora.name} +1`;
+  else if (s0.lora || s1.lora) label = (s0.lora || s1.lora).title || (s0.lora || s1.lora).name;
+  else label = '選 LoRA';
+  btn.querySelector('.gen-pick-label').textContent = label;
+  btn.classList.toggle('has', !!(s0.lora || s1.lora));
 }
 
-// 大面板右欄：目前選的 LoRA 縮圖/標題 + 每段 trainedWords 各自一張完整文字卡（不截斷）
-// + 強度滑桿。這是「淺顯易懂」的重點——每段獨立成塊、可以整段讀完，勾選決定要不要用。
+// 右欄最上面的「LoRA 1 / LoRA 2」分頁卡：點哪張就把它設為編輯中（GEN_ACTIVE_SLOT），
+// 左欄清單/隨機瀏覽點選都塞進編輯中那格。有選的顯示縮圖+標題，沒選顯示「未選擇」；
+// LoRA 2 常常留空（見 selectGenLora 的可留空設計），有選才顯示清空 ✕。
+function renderLmSlotTabs() {
+  const wrap = document.createElement('div'); wrap.className = 'lm-slot-tabs';
+  GEN_LORA_SLOTS.forEach((slot, i) => {
+    const tab = document.createElement('button'); tab.type = 'button';
+    tab.className = 'lm-slot-tab' + (GEN_ACTIVE_SLOT === i ? ' on' : '');
+    if (slot.lora && slot.lora.preview) tab.appendChild(makeLoraPreviewEl(slot.lora));
+    else { const ph = document.createElement('span'); ph.className = 'ph'; tab.appendChild(ph); }
+    const meta = document.createElement('span'); meta.className = 'lm-slot-tab-meta';
+    const lb = document.createElement('span'); lb.className = 'lm-slot-tab-label'; lb.textContent = `LoRA ${i + 1}`;
+    const ti = document.createElement('span'); ti.className = 'lm-slot-tab-title' + (slot.lora ? '' : ' empty');
+    ti.textContent = slot.lora ? (slot.lora.title || slot.lora.name) : '未選擇';
+    meta.append(lb, ti);
+    tab.appendChild(meta);
+    tab.addEventListener('click', () => { GEN_ACTIVE_SLOT = i; renderLmCurrent(); renderLmList($('lm-search').value); });
+    if (slot.lora) {
+      const clear = document.createElement('button'); clear.type = 'button'; clear.className = 'lm-slot-clear';
+      clear.title = `清空 LoRA ${i + 1}`; clear.textContent = '✕';
+      clear.addEventListener('click', (e) => {
+        e.stopPropagation();
+        GEN_LORA_SLOTS[i] = { lora: null, strength: slot.strength, twPicks: new Set() };
+        GEN_ACTIVE_SLOT = i;
+        renderGenCurrent(); renderLmCurrent(); renderLmList($('lm-search').value);
+      });
+      tab.appendChild(clear);
+    }
+    wrap.appendChild(tab);
+  });
+  return wrap;
+}
+
+// 大面板右欄：分頁卡 + 編輯中那格的 LoRA 縮圖/標題 + 每段 trainedWords 各自一張完整
+// 文字卡（不截斷）+ 強度滑桿。這是「淺顯易懂」的重點——每段獨立成塊、可以整段讀完，
+// 勾選決定要不要用。只展開「編輯中」那格的完整內容，不是兩格同時攤開——避免大面板
+// 塞進兩份縮圖/觸發詞卡/預覽圖，閱讀負擔加倍。
 function renderLmCurrent() {
   const box = $('lm-current'); if (!box) return;
   box.innerHTML = '';
-  if (!GEN_LORA) { box.innerHTML = '<div class="lm-none">尚未選擇 LoRA——從左邊清單點一個</div>'; return; }
+  box.appendChild(renderLmSlotTabs());
+  const slot = curSlot();
+  const lora = slot.lora;
+  if (!lora) {
+    const none = document.createElement('div'); none.className = 'lm-none';
+    none.textContent = `LoRA ${GEN_ACTIVE_SLOT + 1} 尚未選擇——從左邊清單點一個`;
+    box.appendChild(none);
+    return;
+  }
   const head = document.createElement('div'); head.className = 'lm-cur-head';
-  if (GEN_LORA.preview) { head.appendChild(makeLoraPreviewEl(GEN_LORA)); }
+  if (lora.preview) { head.appendChild(makeLoraPreviewEl(lora)); }
   else { const ph = document.createElement('span'); ph.className = 'ph'; head.appendChild(ph); }
   const meta = document.createElement('div');
-  const t = document.createElement('div'); t.className = 'lm-cur-title'; t.textContent = GEN_LORA.title || GEN_LORA.name;
-  const f = document.createElement('div'); f.className = 'lm-cur-folder'; f.textContent = GEN_LORA.folder || '(根目錄)';
+  const t = document.createElement('div'); t.className = 'lm-cur-title'; t.textContent = lora.title || lora.name;
+  const f = document.createElement('div'); f.className = 'lm-cur-folder'; f.textContent = lora.folder || '(根目錄)';
   meta.append(t, f);
   // 一鍵直達 LoRA Manager 那邊這個 LoRA 的完整詳情 modal（觸發詞來源、civitai 資訊、範例圖…）。
   // LoRA Manager 原生沒有這種深連結，這是我們在 lora-manager/static/js/loras.js 加的小功能
@@ -1602,7 +1676,7 @@ function renderLmCurrent() {
   detailLink.className = 'lm-detail-link';
   detailLink.target = '_blank'; detailLink.rel = 'noopener';
   detailLink.title = '在 LoRA Manager 開這個 LoRA 的完整詳情（新分頁）';
-  detailLink.href = `http://127.0.0.1:7861/loras?open=${encodeURIComponent((GEN_LORA.folder || '') + '/' + (GEN_LORA.file || ''))}`;
+  detailLink.href = `http://127.0.0.1:7861/loras?open=${encodeURIComponent((lora.folder || '') + '/' + (lora.file || ''))}`;
   detailLink.innerHTML = `<img src="data:image/png;base64,${LORA_MGR_LOGO_B64}" alt="" width="13" height="13"><span>詳情</span>`;
   // 「詳情」旁邊的基礎模型小標籤（Illustrious／Pony／SDXL 1.0…），資料來自 LoRA Manager
   // 掃描時寫的 .metadata.json 頂層 base_model 欄位（見 preview_ui.py list_loras()）。
@@ -1610,10 +1684,10 @@ function renderLmCurrent() {
   // 那類徽章一致，不是純文字——base model 是分類性資訊，用標籤視覺上更好辨識。
   const actionsRow = document.createElement('div');
   actionsRow.className = 'lm-actions-row';
-  if (GEN_LORA.base_model) {
+  if (lora.base_model) {
     const bm = document.createElement('span');
     bm.className = 'lm-base-model';
-    bm.textContent = GEN_LORA.base_model;
+    bm.textContent = lora.base_model;
     bm.title = '基礎模型（來自 metadata.json）';
     actionsRow.appendChild(bm);
   }
@@ -1622,7 +1696,7 @@ function renderLmCurrent() {
   head.appendChild(meta);
   box.appendChild(head);
 
-  const tw = GEN_LORA.trainedWords || [];
+  const tw = lora.trainedWords || [];
   if (tw.length) {
     const label = document.createElement('div'); label.className = 'lm-tw-label';
     label.textContent = tw.length > 1 ? `觸發詞（共 ${tw.length} 段，勾選要用哪幾段）` : '觸發詞';
@@ -1630,9 +1704,9 @@ function renderLmCurrent() {
     const list = document.createElement('div'); list.className = 'lm-tw-list';
     tw.forEach((w, i) => {
       const item = document.createElement('label');
-      item.className = 'lm-tw-item' + (GEN_TW_PICKS.has(i) ? ' on' : '');
+      item.className = 'lm-tw-item' + (slot.twPicks.has(i) ? ' on' : '');
       item.style.setProperty('--i', i);   // 進場 stagger 用（見 darkroom.css .lm-tw-item）
-      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = GEN_TW_PICKS.has(i); cb.dataset.i = i;
+      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = slot.twPicks.has(i); cb.dataset.i = i;
       const idx = document.createElement('span'); idx.className = 'lm-tw-idx'; idx.textContent = (i + 1) + '.';
       const txt = document.createElement('span'); txt.className = 'lm-tw-text'; txt.textContent = w;
       item.append(cb, idx, txt);
@@ -1651,28 +1725,32 @@ function renderLmCurrent() {
   strengthRow.style.animationDelay = tailDelay + 'ms';
   const sLabel = document.createElement('span'); sLabel.textContent = '強度';
   const sInput = document.createElement('input'); sInput.type = 'range'; sInput.id = 'lm-strength';
-  sInput.min = '0'; sInput.max = '1'; sInput.step = '0.05'; sInput.value = String(GEN_STRENGTH);
-  const sOut = document.createElement('output'); sOut.id = 'lm-strength-out'; sOut.textContent = GEN_STRENGTH.toFixed(2);
+  sInput.min = '0'; sInput.max = '1'; sInput.step = '0.05'; sInput.value = String(slot.strength);
+  const sOut = document.createElement('output'); sOut.id = 'lm-strength-out'; sOut.textContent = slot.strength.toFixed(2);
   strengthRow.append(sLabel, sInput, sOut);
   box.appendChild(strengthRow);
 
   // 大預覽圖：強度列下方，不用另外 hover 才跳出來——直接看得到整張參考圖。
-  if (GEN_LORA.preview) {
+  if (lora.preview) {
     const pv = document.createElement('div'); pv.className = 'lm-preview';
     pv.style.animationDelay = (tailDelay + 60) + 'ms';
-    const pvEl = makeLoraPreviewEl(GEN_LORA);
-    if (isLoraPreviewVideo(GEN_LORA)) pvEl.controls = true;
+    const pvEl = makeLoraPreviewEl(lora);
+    if (isLoraPreviewVideo(lora)) pvEl.controls = true;
     pv.appendChild(pvEl);
     box.appendChild(pv);
   }
 }
 
-// 目前選的 LoRA 觸發詞（依 GEN_TW_PICKS 組合，供生成時注入正向）
+// 目前兩格 LoRA 合併後的觸發詞（依各自 twPicks 組合，供生成時注入正向）。
+// LoRA 1 的詞在前、LoRA 2 的接在後面——跟兩者在畫面上由上到下的順序一致。
 function genTriggerText() {
-  if (!GEN_LORA) return '';
-  const tw = GEN_LORA.trainedWords || [];
-  if (tw.length <= 1) return tw[0] || '';
-  return [...GEN_TW_PICKS].sort((a, b) => a - b).map(i => tw[i]).filter(Boolean).join(', ');
+  const parts = GEN_LORA_SLOTS.map(slot => {
+    if (!slot.lora) return '';
+    const tw = slot.lora.trainedWords || [];
+    if (tw.length <= 1) return tw[0] || '';
+    return [...slot.twPicks].sort((a, b) => a - b).map(i => tw[i]).filter(Boolean).join(', ');
+  }).filter(Boolean);
+  return parts.join(', ');
 }
 
 async function openLoraModal() {
@@ -1716,13 +1794,15 @@ $('lm-search').addEventListener('input', () => renderLmList($('lm-search').value
 // 不用每次重繪都重綁一次。
 $('lm-current').addEventListener('input', (e) => {
   if (e.target.id !== 'lm-strength') return;
-  GEN_STRENGTH = parseFloat(e.target.value);
-  const out = $('lm-strength-out'); if (out) out.textContent = GEN_STRENGTH.toFixed(2);
+  const slot = curSlot();
+  slot.strength = parseFloat(e.target.value);
+  const out = $('lm-strength-out'); if (out) out.textContent = slot.strength.toFixed(2);
 });
 $('lm-current').addEventListener('change', (e) => {
   if (!e.target.matches('input[type=checkbox]')) return;
   const i = +e.target.dataset.i;
-  if (e.target.checked) GEN_TW_PICKS.add(i); else GEN_TW_PICKS.delete(i);
+  const twPicks = curSlot().twPicks;
+  if (e.target.checked) twPicks.add(i); else twPicks.delete(i);
   const item = e.target.closest('.lm-tw-item'); if (item) item.classList.toggle('on', e.target.checked);
 });
 $('gen-run').onclick = () => runGen();
@@ -1780,14 +1860,19 @@ pollLoraPush();
 /* ---------------- 生成圖庫（本 session、記憶體、刷新即清空） ----------------
    生成的圖不落地磁碟：前端維護 GALLERY 清單（含 metadata），後端仍記憶體暫存供圖。
    刷新/關頁 → 清單消失 → 圖庫空。用獨立「🖼 圖庫」鈕切換視圖，蓋掉詞庫格線。 */
-const GALLERY = [];          // {id, name, rel, folder, lora:{folder,file,title}|null, strength, trigger, ts, done, err, seed}
+const GALLERY = [];          // {id, name, rel, folder, loras:[{folder,file,title,strength}], trigger, ts, done, err, seed}
 let GALLERY_OPEN = false;
 
 function switchView(fn) {     // 視圖切換交叉淡入（root VT）；窗格隱藏/減動時直接切
   if (!document.startViewTransition || REDUCE_MOTION || document.visibilityState !== 'visible') { fn(); return; }
   document.startViewTransition(fn);
 }
-function galleryLoraText(g) { return g.lora ? ((g.lora.folder ? g.lora.folder + '\\' : '') + g.lora.file) : '（無 LoRA）'; }
+// 兩個 LoRA 用「、」隔開列出；一個沒選就跳過（不是印一個空白項）。
+function galleryLoraText(g) {
+  const loras = g.loras || [];
+  if (!loras.length) return '（無 LoRA）';
+  return loras.map(l => (l.folder ? l.folder + '\\' : '') + l.file).join('、');
+}
 function updateGalleryHead() {
   const n = GALLERY.length;
   const sub = $('gallery-sub'); if (sub) sub.textContent = n ? `${n} 張` : '';
@@ -1841,7 +1926,7 @@ function openGalleryItem(gid) {
   const rows = g ? [
     ['詞庫', g.name], ['資料夾', g.folder || '(根目錄)'],
     ['LoRA', galleryLoraText(g)],
-    ['強度', g.lora ? (+g.strength).toFixed(2) : '—'],
+    ['強度', (g.loras || []).length ? g.loras.map(l => (+l.strength).toFixed(2)).join('、') : '—'],
     ['觸發詞', g.trigger || '（無）'],
     ['seed', g.seed != null ? String(g.seed) : '—'],
     ['時間', new Date(g.ts).toLocaleString()],
@@ -1874,9 +1959,12 @@ const GEN_PENDING = new Set();     // 所有還在生的 gid（跨批次共用�
 async function runGen(rels, tarotItems, label) {
   rels = rels || [...SEL];
   if (!rels.length) return;
-  const lora = GEN_LORA ? { folder: GEN_LORA.folder, file: GEN_LORA.file, title: GEN_LORA.title || GEN_LORA.name } : null;
-  const strength = GEN_STRENGTH, trigger = genTriggerText();
-  const payload = { rels, lora: lora && { folder: lora.folder, file: lora.file }, strength, trigger, client: GEN_CLIENT };
+  // 只送有選 LoRA 的格子（LoRA 2 常留空，見 selectGenLora）；後端依陣列長度注入 0~2 個
+  // LoraLoader（見 preview_ui.py /api/gen）。
+  const loras = GEN_LORA_SLOTS.filter(s => s.lora).map(s => (
+    { folder: s.lora.folder, file: s.lora.file, title: s.lora.title || s.lora.name, strength: s.strength }));
+  const trigger = genTriggerText();
+  const payload = { rels, loras: loras.map(l => ({ folder: l.folder, file: l.file, strength: l.strength })), trigger, client: GEN_CLIENT };
   let res;
   try {
     res = await fetch('/api/gen', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(r => r.json());
@@ -1886,7 +1974,7 @@ async function runGen(rels, tarotItems, label) {
   const ts = Date.now();
   for (const it of items) {
     GALLERY.push({ id: it.id, name: it.name, rel: it.rel, folder: (VISIBLE.find(x => x.rel === it.rel) || {}).folder || '',
-                   lora, strength, trigger, ts, done: false, err: false, seed: null });
+                   loras, trigger, ts, done: false, err: false, seed: null });
   }
   updateGalleryHead();
   if (tarotItems) {

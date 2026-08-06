@@ -1016,7 +1016,7 @@ def _gen_cancelled(gid):
         return bool(_gen_status.get(gid, {}).get("cancel"))
 
 
-def _gen_one_worker(gid, rel, lora_name, strength, trigger, wait_for=None, mark_started=None):
+def _gen_one_worker(gid, rel, loras, trigger, wait_for=None, mark_started=None):
     # wait_for/mark_started 串成一條鏈，逼 gen_sem 照 rels 的順序被搶到——不然多張同時
     # 起的 thread 搶同一個 semaphore，OS 排程先讓誰醒來沒有保證順序，抽卡偶爾會變成
     # 「牌面 1 還在等、牌面 2 先開始跑」，使用者感覺像「從第二張開始生圖」。見
@@ -1046,8 +1046,13 @@ def _gen_one_worker(gid, rel, lora_name, strength, trigger, wait_for=None, mark_
             wf = prepare_workflow(STATE["template"], positive=positive, negative=negative,
                                   seed=seed, filename_prefix=f"genmode/{py.stem}"[:180],
                                   steps=STATE["steps"])
-            if lora_name:
-                inject_lora(wf, lora_name, strength)
+            # loras 是 0~2 筆 (lora_name, strength)；inject_lora 每呼叫一次都會把「目前
+            # 所有吃 checkpoint model/clip 輸出的節點」重新接到新插的 LoraLoader，所以連
+            # 呼叫兩次會自動疊成一條鏈（ckpt → LoraLoader2 → LoraLoader1 → 其餘節點），
+            # 不用另外改 inject_lora 本身去處理「串接第二個」這件事。
+            for lora_name, strength in loras:
+                if lora_name:
+                    inject_lora(wf, lora_name, strength)
 
             def on_prev(b, ct):
                 with _gen_lock:
@@ -1094,9 +1099,10 @@ def _gen_one_worker(gid, rel, lora_name, strength, trigger, wait_for=None, mark_
             plog(f"[genmode] ERR {rel} {type(e).__name__}: {e}")
 
 
-def start_gen(rels, lora_name, strength, trigger, client=""):
+def start_gen(rels, loras, trigger, client=""):
     """為每個 rel 起背景生成，回傳 [{id, rel, name}]（gen_sem 限併發）。client 記錄是哪個
-    分頁送的，供該分頁刷新/關閉時只取消自己這批（見 cancel_client_gen）。"""
+    分頁送的，供該分頁刷新/關閉時只取消自己這批（見 cancel_client_gen）。loras 是 0~2 筆
+    (lora_name, strength) tuple，見 _gen_one_worker。"""
     out = []
     prev_started = None   # 第一張不用等任何人
     for rel in rels:
@@ -1111,7 +1117,7 @@ def start_gen(rels, lora_name, strength, trigger, client=""):
         out.append({"id": gid, "rel": rel, "name": name})
         my_started = threading.Event()
         threading.Thread(target=_gen_one_worker,
-                         args=(gid, rel, lora_name, strength, trigger, prev_started, my_started),
+                         args=(gid, rel, loras, trigger, prev_started, my_started),
                          daemon=True).start()
         prev_started = my_started
     return out
@@ -1419,9 +1425,16 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(rels, list) or not rels:
                     self._send_json({"error": "沒有選取詞庫"}, 400)
                     return
-                lora = data.get("lora") or {}
-                lname = ""
-                if lora.get("file"):
+                # 雙 LoRA：loras 是 0~2 筆 {folder, file, strength}（LoRA 2 常留空，前端只送
+                # 有選的格子，見 darkroom.js runGen）。每筆各自轉成 ComfyUI 認得的 lname。
+                loras_in = data.get("loras")
+                if not isinstance(loras_in, list):
+                    loras_in = [data.get("lora")] if data.get("lora") else []   # 舊格式相容（單一 lora 物件）
+                loras = []
+                for lora in loras_in[:2]:
+                    lora = lora or {}
+                    if not lora.get("file"):
+                        continue
                     # lora["folder"] 現在可能是子資料夾的完整路徑，用 "/" 分隔（list_loras()
                     # 用 as_posix() 產生，見上方）；但 ComfyUI 認的 lora_name 是全部用 "\\"
                     # 分隔的相對路徑（Windows 上 os.sep）。folder 只有一段（無子資料夾）時
@@ -1430,14 +1443,16 @@ class Handler(BaseHTTPRequestHandler):
                     # ComfyUI 找不到這個檔名，生成整批 400 Bad Request。
                     folder = (lora.get("folder") or "").replace("/", "\\")
                     lname = (folder + "\\" + lora["file"]) if folder else lora["file"]
-                try:
-                    strength = float(data.get("strength", 0.8))
-                except Exception:
-                    strength = 0.8
+                    try:
+                        strength = float(lora.get("strength", 0.8))
+                    except Exception:
+                        strength = 0.8
+                    loras.append((lname, strength))
                 trigger = (data.get("trigger") or "").strip()
                 client = (data.get("client") or "")[:64]
-                items = start_gen(rels[:64], lname, strength, trigger, client)   # 一次最多 64 張保險
-                plog(f"[genmode] 起 {len(items)} 張 · lora={lname or '(無)'} · str={strength}")
+                items = start_gen(rels[:64], loras, trigger, client)   # 一次最多 64 張保險
+                lora_desc = "、".join(f"{n}@{s}" for n, s in loras) or "(無)"
+                plog(f"[genmode] 起 {len(items)} 張 · lora={lora_desc}")
                 self._send_json({"ok": True, "items": items})
                 return
             if u.path == "/api/gen-cancel":

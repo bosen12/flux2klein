@@ -635,6 +635,10 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 .lora-row .rn { flex: 1; min-width: 0; }
 .lora-row .rt { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lora-row .rf { font-size: 10px; color: var(--faint); font-family: var(--mono); }
+/* 這項已經被 LoRA 1／LoRA 2 其中一格選走了——不管編輯中是哪格都顯示，不然使用者切到
+   LoRA 2 時完全看不出這項其實是 LoRA 1，點下去觸發交換會很意外（見 selectGenLora）。
+   跟 .rt 同一行、擠在標題前面，不佔額外一行版位。 */
+.lora-slot-badge { color: var(--amber); font-size: 11px; margin-right: 3px; }
 .lora-cat-head { font-size: 10.5px; color: var(--faint); font-family: var(--mono); padding: 6px 8px 2px; letter-spacing: .5px; }
 .lora-empty { color: var(--faint); font-size: 12.5px; padding: 10px; text-align: center; }
 /* 翻頁列（每頁 80 個，總數上百不再一次渲染／截斷丟資料，改翻頁） */
@@ -698,7 +702,9 @@ body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不�
   align-items: center; justify-content: center; padding: 24px;
   background: rgba(8,8,11,.8); backdrop-filter: blur(6px); }
 .lora-modal.open { display: flex; animation: fadeIn var(--d-pop) var(--ease-out); }
-.lora-modal-inner { position: relative; width: min(920px, 94vw); height: min(680px, 86vh);
+/* 雙 LoRA 上線後右欄多了一列分頁卡，面板整體加大一點（原本 920×680）騰出空間，
+   不然分頁卡+展開內容會擠。 */
+.lora-modal-inner { position: relative; width: min(1080px, 95vw); height: min(740px, 88vh);
   background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius);
   box-shadow: var(--shadow); display: grid; grid-template-columns: 320px 1fr; overflow: hidden;
   animation: modalPop var(--d-pop) var(--ease-entrance); }
@@ -767,6 +773,27 @@ body.lora-tarot-open #tarot { z-index: 145; }
 .lm-right { padding: 20px 46px 24px 22px; overflow-y: auto; min-width: 0; }   /* 右邊多留白，別讓內容擠到浮動的 ✕ */
 .lm-right-head { font-size: 11px; color: var(--faint); font-family: var(--mono); letter-spacing: .5px; margin-bottom: 10px; }
 .lm-none { color: var(--faint); font-size: 13px; padding: 40px 0; text-align: center; }
+
+/* 「LoRA 1 / LoRA 2」分頁卡：點哪張就編輯哪格（見 renderLmSlotTabs），只有編輯中那格
+   底下才展開完整內容——跟左欄分類晶片同一套 .on 高亮語彙，不用另外發明一套視覺。 */
+.lm-slot-tabs { display: flex; gap: 8px; margin-bottom: 18px; }
+.lm-slot-tab { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 7px 9px;
+  border-radius: 10px; border: 1px solid var(--line-2); background: var(--sunk); color: var(--dim);
+  cursor: pointer; text-align: left;
+  transition: border-color var(--d-micro) var(--ease-out), background var(--d-micro) var(--ease-out); }
+.lm-slot-tab:hover { border-color: var(--line-2); }
+.lm-slot-tab.on { border-color: var(--amber); background: var(--amber-soft); color: var(--ink); }
+.lm-slot-tab img, .lm-slot-tab video, .lm-slot-tab .ph { width: 28px; height: 28px; border-radius: 6px;
+  object-fit: cover; flex: none; background: var(--sunk); }
+.lm-slot-tab-meta { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.lm-slot-tab-label { font-family: var(--mono); font-size: 9.5px; color: var(--faint); letter-spacing: .4px; }
+.lm-slot-tab-title { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lm-slot-tab-title.empty { color: var(--faint); }
+/* 清空鈕跟面板右上角 ✕（.lora-modal-close）同一套「小方塊置中符號」做法，只是縮小一號。 */
+.lm-slot-clear { flex: none; width: 20px; height: 20px; padding: 0; border-radius: 6px; border: 0;
+  background: transparent; color: var(--faint); display: grid; place-items: center; cursor: pointer;
+  font-size: 11px; transition: background var(--d-micro) var(--ease-out), color var(--d-micro) var(--ease-out); }
+.lm-slot-clear:hover { background: var(--line-2); color: var(--ink); }
 
 /* 選了一個 LoRA、右欄整塊內容重繪時的進場節奏（呼應 animation-systems 的「hero 先動、
    次要元素跟著、小 stagger 建立閱讀順序」）：縮圖/標題先淡入，每段 trainedWords 卡片
