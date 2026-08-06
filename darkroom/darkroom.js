@@ -807,6 +807,12 @@ $('modal').addEventListener('click', e => { if (e.target.id === 'modal') dismiss
 $('m-prev').onclick = () => modalStep(-1);
 $('m-next').onclick = () => modalStep(1);
 window.addEventListener('keydown', e => {
+  // 快捷鍵一覽（z-index 210，蓋過所有其他疊層）排最前面：不管現在開著什麼，Esc 都先關
+  // 這個說明疊層，不去動底下真正在操作的東西。
+  if ($('shortcuts-overlay').classList.contains('open')) {
+    if (e.key === 'Escape' || e.key === '?') { closeShortcuts(); }
+    return;
+  }
   // 隨機瀏覽疊在 LoRA 大面板之上：優先處理，不能讓下面「lora-modal 開著時 Esc
   // 關大面板」的分支把這個疊層的按鍵也吃掉（那樣 Esc 會直接關掉整個大面板，
   // 而不是只關疊層回到大面板）。
@@ -884,7 +890,11 @@ window.addEventListener('keydown', e => {
   if ((e.key === 'x' || e.key === 'X') && !isTyping()) {
     e.preventDefault();
     fetchGenLoras().then(() => { updateConceptsLockLabel(); drawConceptsTarotByCategory(); });
+    return;
   }
+  // ?：開快捷鍵一覽。用 e.key 而不是判斷 Shift+/，跨鍵盤配置（含中文輸入法英數模式）
+  // 都拿得到同一個字元，不用另外處理 shiftKey。
+  if (e.key === '?' && !isTyping()) { e.preventDefault(); openShortcuts(); }
 });
 function isTyping() {
   const el = document.activeElement;
@@ -1862,6 +1872,75 @@ function closeLoraModal() {
   Promise.all(anims.map(a => a.finished)).then(finish).catch(finish);
   setTimeout(finish, 260);
 }
+// 快捷鍵一覽：純展示疊層，內容按「使用情境」分組（不是按字母），因為使用者記的是
+// 「我在做什麼時按什麼」。只在第一次開啟時建 DOM（內容固定不會變，不用每次重繪）。
+const SHORTCUT_GROUPS = [
+  { title: '抽卡／生成', rows: [
+    { keys: ['R'], desc: '重抽——依目前情境：一般抽卡（瀏覽/生圖/打標）、LoRA 隨機瀏覽、或 Concepts 疊層各自對應的重抽' },
+    { keys: ['E'], desc: '重抽本分類（瀏覽/生圖模式看目前資料夾；LoRA 隨機瀏覽看左欄篩選晶片）' },
+    { keys: ['C'], desc: '<b>Concepts 抽卡</b>——鎖定 LoRA1/LoRA2 面板目前選的 Character／concepts LoRA，另一側隨機' },
+    { keys: ['X'], desc: '<b>Concepts 抽卡</b>——改用 LoRA 面板左欄目前的分類篩選縮小範圍，跟 C 各自獨立' },
+  ]},
+  { title: '打標模式', rows: [
+    { keys: ['←', '→', '↑', '↓'], desc: '移動焦點到上／下一張或上／下一列' },
+    { keys: ['1'], desc: '標「普通」並自動跳下一張' },
+    { keys: ['2'], desc: '標「稀有」並自動跳下一張' },
+    { keys: ['3'], desc: '標「特別」並自動跳下一張' },
+    { keys: ['4'], desc: '標「傳奇」並自動跳下一張' },
+    { keys: ['S'], desc: '跳過這張，不標記' },
+    { keys: ['Z'], desc: '復原上一次標記' },
+  ]},
+  { title: '導覽／關閉', rows: [
+    { keys: ['Esc'], desc: '關閉目前開著的疊層／大圖／面板（一次只關最上層的那個）' },
+    { keys: ['←', '→'], desc: '看大圖時切換上一張／下一張（從格線點開才能切，抽卡開的大圖不行）' },
+    { keys: ['?'], desc: '開／關這份快捷鍵一覽' },
+  ]},
+];
+function renderShortcuts() {
+  const box = $('shortcuts-groups'); if (!box || box.children.length) return;   // 只建一次
+  SHORTCUT_GROUPS.forEach((group, gi) => {
+    const g = document.createElement('div'); g.className = 'shortcut-group';
+    g.style.setProperty('--i', gi);
+    const h = document.createElement('h3'); h.textContent = group.title; g.appendChild(h);
+    group.rows.forEach(row => {
+      const r = document.createElement('div'); r.className = 'shortcut-row';
+      const keys = document.createElement('div'); keys.className = 'shortcut-keys';
+      row.keys.forEach(k => { const kbd = document.createElement('span'); kbd.className = 'kbd'; kbd.textContent = k; keys.appendChild(kbd); });
+      const desc = document.createElement('div'); desc.className = 'shortcut-desc'; desc.innerHTML = row.desc;
+      r.append(keys, desc);
+      g.appendChild(r);
+    });
+    box.appendChild(g);
+  });
+}
+function openShortcuts() {
+  renderShortcuts();
+  $('shortcuts-overlay').classList.add('open');
+}
+// 收尾邏輯跟 closeLoraModal 同一套（element.animate() 取代加減 class，分頁在背景時
+// finished 不結算的老坑靠 setTimeout 保險），這裡不獨立寫註解重複解釋。
+function closeShortcuts() {
+  const ov = $('shortcuts-overlay');
+  if (!ov.classList.contains('open')) return;
+  if (REDUCE_MOTION || document.visibilityState !== 'visible' || !ov.animate) {
+    ov.classList.remove('open');
+    return;
+  }
+  const panel = $('shortcuts-panel');
+  const ease = 'cubic-bezier(.4,0,1,1)';
+  const anims = [ov.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: ease })];
+  if (panel) anims.push(panel.animate(
+    [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.97)' }],
+    { duration: 160, easing: ease }));
+  let done = false;
+  const finish = () => { if (done) return; done = true; ov.classList.remove('open'); };
+  Promise.all(anims.map(a => a.finished)).then(finish).catch(finish);
+  setTimeout(finish, 260);
+}
+$('shortcuts-btn').onclick = openShortcuts;
+$('shortcuts-close').onclick = closeShortcuts;
+$('shortcuts-overlay').addEventListener('click', e => { if (e.target.id === 'shortcuts-overlay') closeShortcuts(); });
+
 $('lora-panel-btn').onclick = openLoraModal;   // topbar 入口（只在生圖模式看得到，見 CSS）
 $('lora-pick-btn').onclick = openLoraModal;    // genbar 摘要鈕，同一個面板
 $('lora-modal-close').onclick = closeLoraModal;

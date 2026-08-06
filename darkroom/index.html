@@ -68,7 +68,25 @@
   </div>
   <button class="ghost" id="draw-cards" title="隨機抽卡（瀏覽=看圖；打標=逐張標稀有度；生圖=隨機生圖）">✦ 抽卡</button>
   <button class="ghost" id="rescan" title="重新掃描">↻ 重掃</button>
+  <button class="ghost icon-btn" id="shortcuts-btn" title="快捷鍵一覽（按 ?）" aria-label="快捷鍵一覽">⌨</button>
   <div class="conn" id="conn"><span class="led"></span><span id="conn-text">…</span></div>
+</div>
+
+<!-- 快捷鍵一覽：按 ? 或 topbar ⌨ 鈕開。純展示，不影響任何狀態，Esc／點背景關閉。
+     內容照使用情境分組（不是照字母排），使用者記的是「我在做什麼時按什麼」而不是
+     「這個鍵是什麼」。 -->
+<div class="shortcuts-overlay" id="shortcuts-overlay">
+  <div class="shortcuts-panel" id="shortcuts-panel">
+    <button class="shortcuts-close" id="shortcuts-close" aria-label="關閉 (Esc)" title="關閉 (Esc)">✕</button>
+    <div class="shortcuts-head">
+      <span class="shortcuts-emblem">⌨</span>
+      <div>
+        <h2>快捷鍵</h2>
+        <p>焦點不在輸入框、沒有其他疊層開著時皆可使用</p>
+      </div>
+    </div>
+    <div class="shortcuts-groups" id="shortcuts-groups"></div>
+  </div>
 </div>
 
 <div class="body">
