@@ -2307,9 +2307,17 @@ function renderConceptsTplResults() {
   if (!hits.length) { $csTplResults.innerHTML = '<div class="cs-tpl-empty">找不到符合的詞庫</div>'; return; }
   hits.forEach(item => {
     const row = document.createElement('button'); row.type = 'button'; row.className = 'cs-tpl-row';
+    if (item.has_image) {
+      const img = document.createElement('img');
+      img.className = 'ctr-thumb'; img.loading = 'lazy'; img.decoding = 'async'; img.alt = '';
+      img.src = `/api/thumb?rel=${encodeURIComponent(item.rel)}&v=${item.image_mtime}`;
+      row.appendChild(img);
+    }
+    const text = document.createElement('span'); text.className = 'ctr-text';
     const name = document.createElement('span'); name.className = 'ctr-name'; name.textContent = item.name;
     const folder = document.createElement('span'); folder.className = 'ctr-folder'; folder.textContent = item.folder || '(根目錄)';
-    row.append(name, folder);
+    text.append(name, folder);
+    row.appendChild(text);
     row.addEventListener('click', () => {
       setConceptsLockedTemplate(item);
       $csTplSearch.value = '';
@@ -2332,8 +2340,14 @@ updateConceptsTemplateLockUI();
 function updateConceptsLockLabel() {
   const el = $('concepts-lock'); if (!el) return;
   const label = conceptsLockLabel();
+  if (label === el.textContent) return;
   el.textContent = label;
   el.title = label;   // CSS 會截斷過長的 LoRA 標題（見 darkroom.css .concepts-lock），完整內容靠原生 hover tooltip 補回來
+  // class 加減重啟動畫不可靠（見 CLAUDE.md），改用 element.animate() 直接播放
+  el.animate(
+    [{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }],
+    { duration: 220, easing: 'cubic-bezier(.22,.61,.36,1)' } // 對齊 --d-ui / --ease-out
+  );
 }
 updateConceptsLockLabel();
 
