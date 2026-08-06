@@ -2216,20 +2216,25 @@ function drawConceptsTarot() {
   _runConceptsDraw(pickChar, pickConcept, CONCEPTS_WITH_TEMPLATE);
 }
 
-// X 鍵版本：用 LoRA 大面板左欄目前停的分類/子資料夾晶片（GEN_LORA_CAT/GEN_LORA_SUBFOLDER，
-// 跟隨機瀏覽 LoRA 的 E 鍵、loraCatPool() 同一套狀態）縮小範圍，跟 C 鍵的「鎖定」完全獨立
-// ——C 看「LoRA1/2 選了哪顆」，X 看「篩選晶片停在哪」，互不影響。篩選停在 Character（可能
-// 已縮小到 Hanime/manhwa/other 某個子資料夾）就縮小 Character 池，停在 HENTAI 就縮小
-// concepts 池，沒對到就兩側都用全部預設。
-// X 固定不抽詞庫模板（不管「同時抽詞庫模板」開關有沒有勾，用 X 一律當作沒勾）——這是
-// 使用者明確要求的行為：X 只看分類篩選這一件事，模板開關只影響 C。
+// X 鍵版本：跟 C 鍵一樣先看 LoRA1/2 有沒有鎖定（lockedCharacterSlot/lockedConceptSlot），
+// 鎖定的那側直接用鎖定的 LoRA（跟 C 鍵行為一致，使用者反映過「X 會忽略我選的 concepts
+// LoRA」——鎖定不該被 X 略過）；沒鎖定的那側才改用 LoRA 大面板左欄目前停的分類/子資料夾
+// 晶片（GEN_LORA_CAT/GEN_LORA_SUBFOLDER，跟隨機瀏覽 LoRA 的 E 鍵、loraCatPool() 同一套
+// 狀態）縮小範圍。也就是說 X 是「C 的鎖定＋分類縮小範圍」疊加，不是跟 C 互斥的另一套。
+// X 固定不抽詞庫模板（不管「同時抽詞庫模板」開關有沒有勾，用 X 一律當作沒勾）——這點
+// 維持不變，模板開關只影響 C。
 function drawConceptsTarotByCategory() {
-  const cPool = GEN_LORA_CAT === 'Character' ? loraCatPool() : fullCharacterPool();
-  const kPool = GEN_LORA_CAT === 'HENTAI' ? loraCatPool() : fullConceptsPool();
-  if (!cPool.length) { toast('目前範圍內 Character 沒有 LoRA 可抽'); return; }
-  if (!kPool.length) { toast('目前範圍內 concepts 沒有 LoRA 可抽'); return; }
-  const pickChar = () => ({ lora: cPool[Math.floor(Math.random() * cPool.length)], strength: CONCEPTS_CHAR_STRENGTH });
-  const pickConcept = () => ({ lora: kPool[Math.floor(Math.random() * kPool.length)], strength: CONCEPTS_KEY_STRENGTH });
+  const lockedChar = lockedCharacterSlot(), lockedConcept = lockedConceptSlot();
+  const cPool = lockedChar ? null : (GEN_LORA_CAT === 'Character' ? loraCatPool() : fullCharacterPool());
+  const kPool = lockedConcept ? null : (GEN_LORA_CAT === 'HENTAI' ? loraCatPool() : fullConceptsPool());
+  if (!lockedChar && !cPool.length) { toast('目前範圍內 Character 沒有 LoRA 可抽'); return; }
+  if (!lockedConcept && !kPool.length) { toast('目前範圍內 concepts 沒有 LoRA 可抽'); return; }
+  const pickChar = lockedChar
+    ? () => ({ lora: lockedChar.lora, strength: CONCEPTS_CHAR_STRENGTH })
+    : () => ({ lora: cPool[Math.floor(Math.random() * cPool.length)], strength: CONCEPTS_CHAR_STRENGTH });
+  const pickConcept = lockedConcept
+    ? () => ({ lora: lockedConcept.lora, strength: CONCEPTS_KEY_STRENGTH })
+    : () => ({ lora: kPool[Math.floor(Math.random() * kPool.length)], strength: CONCEPTS_KEY_STRENGTH });
   CONCEPTS_REDRAW = drawConceptsTarotByCategory;
   _runConceptsDraw(pickChar, pickConcept, false);
 }
