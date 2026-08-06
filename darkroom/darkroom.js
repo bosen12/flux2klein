@@ -1543,7 +1543,21 @@ function renderLmCurrent() {
   detailLink.title = '在 LoRA Manager 開這個 LoRA 的完整詳情（新分頁）';
   detailLink.href = `http://127.0.0.1:7861/loras?open=${encodeURIComponent((GEN_LORA.folder || '') + '/' + (GEN_LORA.file || ''))}`;
   detailLink.innerHTML = `<img src="data:image/png;base64,${LORA_MGR_LOGO_B64}" alt="" width="13" height="13"><span>詳情</span>`;
-  meta.appendChild(detailLink);
+  // 「詳情」旁邊的基礎模型小標籤（Illustrious／Pony／SDXL 1.0…），資料來自 LoRA Manager
+  // 掃描時寫的 .metadata.json 頂層 base_model 欄位（見 preview_ui.py list_loras()）。
+  // 跟 .lm-cur-folder 同一套字體/顏色語彙（mono、faint），只是做成小圓角標籤跟 rar-tag
+  // 那類徽章一致，不是純文字——base model 是分類性資訊，用標籤視覺上更好辨識。
+  const actionsRow = document.createElement('div');
+  actionsRow.className = 'lm-actions-row';
+  if (GEN_LORA.base_model) {
+    const bm = document.createElement('span');
+    bm.className = 'lm-base-model';
+    bm.textContent = GEN_LORA.base_model;
+    bm.title = '基礎模型（來自 metadata.json）';
+    actionsRow.appendChild(bm);
+  }
+  actionsRow.appendChild(detailLink);
+  meta.appendChild(actionsRow);
   head.appendChild(meta);
   box.appendChild(head);
 

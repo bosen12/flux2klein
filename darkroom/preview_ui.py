@@ -326,13 +326,16 @@ def list_loras() -> dict:
             if not fn.lower().endswith(".safetensors"):
                 continue
             stem = fn[: -len(".safetensors")]
-            words, title = [], stem
+            words, title, base_model = [], stem, ""
             meta = d / (stem + ".metadata.json")
             if meta.is_file():
                 try:
                     md = json.loads(meta.read_text(encoding="utf-8"))
                     words = (md.get("civitai") or {}).get("trainedWords") or []
                     title = md.get("model_name") or stem
+                    # base_model 是頂層欄位(LoRA Manager 掃描時寫入)，civitai.baseModel
+                    # 當備援(理論上兩者同值,防極少數 metadata.json 只有其中一個)。
+                    base_model = md.get("base_model") or (md.get("civitai") or {}).get("baseModel") or ""
                 except Exception:
                     pass
             preview = None
@@ -341,7 +344,8 @@ def list_loras() -> dict:
                     preview = stem + ext
                     break
             items.append({"folder": folder, "file": fn, "name": stem,
-                          "title": title, "trainedWords": words, "preview": preview})
+                          "title": title, "trainedWords": words, "preview": preview,
+                          "base_model": base_model})
             n += 1
         counts[folder] = n
     data = {"items": items, "counts": counts, "folders": LORA_FOLDERS}
