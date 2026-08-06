@@ -1035,6 +1035,17 @@ function loraCatLabel() {
 }
 function drawLoraCategoryDispatch() { drawLoraTarot(loraCatPool(), loraCatLabel()); }
 
+// Concepts 抽卡的兩個抽選池：Character（角色 LoRA）與固定的 HENTAI/concepts 資料夾
+// （情境/動作 LoRA）。刻意不做另一套範圍選單 UI——直接沿用左欄篩選晶片現有的
+// GEN_LORA_CAT/GEN_LORA_SUBFOLDER：篩選正好停在 Character 就把那個（可能已縮小到某
+// 子資料夾）當 Character 池，篩選停在 HENTAI 就當 concepts 池；沒對到就退回各自預設
+// （Character 全部遞迴 / 固定 HENTAI/concepts 86 個）。兩個池同時只會有一個被篩選縮小
+// （GEN_LORA_CAT 是單一全域值），符合「只設 Character 就抽 concepts，反之亦然」的說法。
+function fullCharacterPool() { return (GEN_LORAS || []).filter(l => l.category === 'Character'); }
+function fullConceptsPool() { return (GEN_LORAS || []).filter(l => l.folder === 'HENTAI/concepts'); }
+function characterDrawPool() { return GEN_LORA_CAT === 'Character' ? loraCatPool() : fullCharacterPool(); }
+function conceptsDrawPool() { return GEN_LORA_CAT === 'HENTAI' ? loraCatPool() : fullConceptsPool(); }
+
 /* ── 抽卡打標（打標模式）：抽 15 張「有圖且尚未打標」的，逐張鍵盤/點按標稀有度，
    即時寫側檔。與瀏覽抽卡共用同一個 #tarot 覆蓋層，靠 .ttag class 切排版與卡片內容。 */
 const RARITY_KEYS = ['common', 'rare', 'special', 'legendary'];
@@ -1323,6 +1334,14 @@ let GEN_ACTIVE_SLOT = 0;
 function curSlot() { return GEN_LORA_SLOTS[GEN_ACTIVE_SLOT]; }
 function otherSlotIndex() { return GEN_ACTIVE_SLOT === 0 ? 1 : 0; }
 let GEN_LORA_PAGE = 0;                // LoRA 清單目前頁（搜尋變動時歸零，見 renderLmList）
+// Concepts 抽卡「同時抽詞庫模板」開關（見 drawConceptsTarot）。宣告放這裡、不是靠近
+// drawConceptsTarot 本身，是因為勾選框的初始 checked 狀態要在腳本載入當下就同步設定
+// （見 lm-concepts-tpl 事件綁定），寫在後面會撞 TDZ（CLAUDE.md 記過的老坑）。
+let CONCEPTS_WITH_TEMPLATE = localStorage.getItem('yz-concepts-tpl') === '1';
+function setConceptsWithTemplate(v) {
+  CONCEPTS_WITH_TEMPLATE = v;
+  localStorage.setItem('yz-concepts-tpl', v ? '1' : '0');
+}
 // 這個分頁的識別碼：生圖時帶給後端，讓「刷新/關閉這個分頁」只取消自己送的生圖，別的分頁不受影響。
 const GEN_CLIENT = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now());
 
@@ -1802,6 +1821,10 @@ $('lora-panel-btn').onclick = openLoraModal;   // topbar 入口（只在生圖�
 $('lora-pick-btn').onclick = openLoraModal;    // genbar 摘要鈕，同一個面板
 $('lora-modal-close').onclick = closeLoraModal;
 $('lm-random-btn').onclick = () => { fetchGenLoras().then(drawLoraTarot); };
+$('lm-concepts-btn').onclick = () => { fetchGenLoras().then(drawConceptsTarot); };
+const $conceptsTpl = $('lm-concepts-tpl');
+$conceptsTpl.checked = CONCEPTS_WITH_TEMPLATE;
+$conceptsTpl.addEventListener('change', () => setConceptsWithTemplate($conceptsTpl.checked));
 $('lora-modal').addEventListener('click', e => { if (e.target.id === 'lora-modal') closeLoraModal(); });
 $('lm-search').addEventListener('input', () => renderLmList($('lm-search').value, true));
 // 強度滑桿／trainedWords 勾選都是動態生成（見 renderLmCurrent），用事件委派在容器上聽，
@@ -1971,6 +1994,44 @@ function openGalleryItem(gid) {
   $('modal').classList.add('open');
 }
 
+// Concepts 抽卡：跟一般抽卡生圖不同，不是「固定 LoRA、抽不同詞庫」，而是**每張卡各自**
+// 隨機配一組全新的 Character LoRA＋concepts LoRA（用目前 LoRA1/LoRA2 設定的強度），有開
+// 「同時抽詞庫模板」才額外各自抽一個詞庫套進去；沒開就只用該卡那組 LoRA 的 trainword
+// 當 prompt（rel 送空字串，後端 _gen_one_worker 會跳過詞庫載入，只留品質標籤）。
+// CONCEPTS_WITH_TEMPLATE／setConceptsWithTemplate 宣告在上面（跟 GEN_LORA_SLOTS 同一區），
+// 不是這裡——那顆勾選框的初始 checked 狀態是在腳本載入當下就同步設定（見 lm-concepts-tpl
+// 事件綁定），如果宣告寫在這裡（比綁定晚很多行）會撞 TDZ：CLAUDE.md 記過的「state 初始化
+// 引用後面才宣告的 const/let」同一類坑，這次是直接踩到而不是提前發現，寫在這裡當提醒。
+function drawConceptsTarot() {
+  const cPool = characterDrawPool(), kPool = conceptsDrawPool();
+  if (!cPool.length) { toast('目前範圍內 Character 沒有 LoRA 可抽'); return; }
+  if (!kPool.length) { toast('目前範圍內 concepts 沒有 LoRA 可抽'); return; }
+  if (CONCEPTS_WITH_TEMPLATE && !ALL.length) { toast('要同時抽詞庫模板，但目前沒有任何詞庫'); return; }
+  const want = isMobile() ? 1 : 8;
+  const [s0, s1] = GEN_LORA_SLOTS;   // 沿用目前面板上 LoRA1/LoRA2 設定的強度，不隨機
+  const jobs = [], picks = [];
+  for (let i = 0; i < want; i++) {
+    const c = cPool[Math.floor(Math.random() * cPool.length)];
+    const k = kPool[Math.floor(Math.random() * kPool.length)];
+    const loras = [
+      { folder: c.folder, file: c.file, title: c.title || c.name, strength: s0.strength },
+      { folder: k.folder, file: k.file, title: k.title || k.name, strength: s1.strength },
+    ];
+    const firstTw = (l) => (l.trainedWords || [])[0] || '';
+    let trigger = [firstTw(c), firstTw(k)].filter(Boolean).join(', ');
+    let rel = '';
+    let label = `${c.title || c.name} × ${k.title || k.name}`;
+    if (CONCEPTS_WITH_TEMPLATE) {
+      const t = ALL[Math.floor(Math.random() * ALL.length)];
+      rel = t.rel;
+      label += ` · ${t.name}`;
+    }
+    jobs.push({ rel, loras, trigger });
+    picks.push({ display_name: label, folder: 'Concepts' });
+  }
+  runGenJobs(jobs, picks, 'Concepts');
+}
+
 // 抽卡生圖：pool/label 未傳＝原本行為（從**全分類**隨機抽 8 個詞庫，R 鍵）；傳了就是
 // 分類抽卡生圖（E 鍵／標題旁按鈕），label 會併進塔羅標題。
 function drawGenTarot(pool, label) {
@@ -2015,6 +2076,35 @@ async function runGen(rels, tarotItems, label) {
   } else {
     openGallery();                            // 手動生圖：切到圖庫，新卡在最上方即時長出
   }
+  toast(`生圖 ${items.length} 張…`);
+  startGenPoll(items.map(x => x.id));
+}
+
+// 起一批「各自獨立」的生圖：跟 runGen() 不同，每個 job 自己的 loras/trigger/rel 都可能
+// 不一樣（Concepts 抽卡用——8 張卡各自配對不同 LoRA）。永遠走塔羅浮層呈現，沒有
+// runGen() 那套「已在圖庫就重繪／否則切圖庫」分支，因為 Concepts 抽卡本來就是抽卡
+// 情境，不會有「手動生圖不用塔羅」的用法。
+async function runGenJobs(jobs, picks, label) {
+  if (!jobs.length) return;
+  const payload = {
+    jobs: jobs.map(j => ({ rel: j.rel, loras: j.loras.map(l => ({ folder: l.folder, file: l.file, strength: l.strength })), trigger: j.trigger })),
+    client: GEN_CLIENT,
+  };
+  let res;
+  try {
+    res = await fetch('/api/gen', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(r => r.json());
+  } catch (e) { toast('生圖失敗：' + e.message); return; }
+  if (res.error) { toast(res.error); return; }
+  const items = res.items || [];
+  const ts = Date.now();
+  items.forEach((it, i) => {
+    const job = jobs[i] || {};
+    GALLERY.push({ id: it.id, name: it.name, rel: it.rel, folder: (VISIBLE.find(x => x.rel === it.rel) || {}).folder || '',
+                   loras: job.loras || [], trigger: job.trigger || '', ts, done: false, err: false, seed: null });
+  });
+  updateGalleryHead();
+  openGenTarot(items, picks, label);
+  if (GALLERY_OPEN) renderGallery();
   toast(`生圖 ${items.length} 張…`);
   startGenPoll(items.map(x => x.id));
 }

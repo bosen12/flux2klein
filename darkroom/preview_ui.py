@@ -1036,15 +1036,24 @@ def _gen_one_worker(gid, rel, loras, trigger, wait_for=None, mark_started=None):
         try:
             if not STATE["comfy_base"]:
                 raise RuntimeError("ComfyUI 未連線")
-            py = py_of(rel)
-            req, pos, neg = load_lib(py)
-            positive = build_prompt(req, pos)
+            # rel 可以是空字串——Concepts 抽卡「不抽詞庫模板」時就是這樣：沒有場景模板，
+            # positive 只有品質標籤（build_prompt([],[]）留下的固定開頭）+ LoRA 的 trigger，
+            # negative 只有 DEFAULT_NEG（build_negative([]) 的行為）。
+            if rel:
+                py = py_of(rel)
+                req, pos, neg = load_lib(py)
+                positive = build_prompt(req, pos)
+                negative = build_negative(neg)
+                prefix = f"genmode/{py.stem}"[:180]
+            else:
+                positive = build_prompt([], [])
+                negative = build_negative([])
+                prefix = "genmode/concepts"
             if trigger:
                 positive = (positive + ", " + trigger) if positive else trigger
-            negative = build_negative(neg)
             seed = random.randint(0, 2**63 - 1)
             wf = prepare_workflow(STATE["template"], positive=positive, negative=negative,
-                                  seed=seed, filename_prefix=f"genmode/{py.stem}"[:180],
+                                  seed=seed, filename_prefix=prefix,
                                   steps=STATE["steps"])
             # loras 是 0~2 筆 (lora_name, strength)；inject_lora 每呼叫一次都會把「目前
             # 所有吃 checkpoint model/clip 輸出的節點」重新接到新插的 LoraLoader，所以連
@@ -1099,18 +1108,57 @@ def _gen_one_worker(gid, rel, loras, trigger, wait_for=None, mark_started=None):
             plog(f"[genmode] ERR {rel} {type(e).__name__}: {e}")
 
 
-def start_gen(rels, loras, trigger, client=""):
-    """為每個 rel 起背景生成，回傳 [{id, rel, name}]（gen_sem 限併發）。client 記錄是哪個
-    分頁送的，供該分頁刷新/關閉時只取消自己這批（見 cancel_client_gen）。loras 是 0~2 筆
-    (lora_name, strength) tuple，見 _gen_one_worker。"""
+def _convert_loras(loras_in):
+    """把前端送來的 loras（陣列，每筆 {folder, file, strength}）轉成 _gen_one_worker 要的
+    [(lora_name, strength), …]（0~2 筆）。folder 現在可能是子資料夾的完整路徑，用 "/"
+    分隔（list_loras() 用 as_posix() 產生）；但 ComfyUI 認的 lora_name 是全部用 "\\"
+    分隔的相對路徑（Windows 上 os.sep）。folder 只有一段（無子資料夾）時 replace 是
+    no-op；有子資料夾時才需要這次轉換，不然會變成 "Character/Hanime\\file.safetensors"
+    正反斜線混用，ComfyUI 找不到這個檔名，生成整批 400 Bad Request。"""
+    if not isinstance(loras_in, list):
+        return []
+    out = []
+    for lora in loras_in[:2]:
+        lora = lora or {}
+        if not lora.get("file"):
+            continue
+        folder = (lora.get("folder") or "").replace("/", "\\")
+        lname = (folder + "\\" + lora["file"]) if folder else lora["file"]
+        try:
+            strength = float(lora.get("strength", 0.8))
+        except Exception:
+            strength = 0.8
+        out.append((lname, strength))
+    return out
+
+
+def _job_display_name(rel, loras):
+    """算這個生成工作在圖庫/塔羅卡片上要顯示的名字。有 rel（詞庫模板）就用它的檔名；
+    沒有（Concepts 抽卡「不抽詞庫模板」時）就退而求其次，把用到的 LoRA 檔名接起來，
+    至少讓使用者看得出這張是哪個組合、不是一片空白。"""
+    if rel:
+        try:
+            return strip_rarity(py_of(rel).stem)
+        except Exception:
+            return rel
+    names = [Path(n).stem for n, _ in loras if n]
+    return " + ".join(names) if names else "(無)"
+
+
+def start_gen(jobs, client=""):
+    """為每筆 job 各自起背景生成，回傳 [{id, rel, name}]（gen_sem 限併發）。
+    job 格式：{"rel": str（可為空字串，見 _gen_one_worker）, "loras": [(lora_name, strength)…]
+    （0~2 筆）, "trigger": str}——每筆完全獨立，不像舊版整批共用同一組 loras/trigger，
+    Concepts 抽卡（每張卡各自隨機配對不同 LoRA）需要這個彈性。client 記錄是哪個分頁送的，
+    供該分頁刷新/關閉時只取消自己這批（見 cancel_client_gen）。"""
     out = []
     prev_started = None   # 第一張不用等任何人
-    for rel in rels:
+    for job in jobs:
+        rel = job.get("rel") or ""
+        loras = job.get("loras") or []
+        trigger = job.get("trigger") or ""
         gid = os.urandom(6).hex()
-        try:
-            name = strip_rarity(py_of(rel).stem)
-        except Exception:
-            name = rel
+        name = _job_display_name(rel, loras)
         with _gen_lock:
             _gen_status[gid] = {"status": "pending", "rel": rel, "name": name, "err": "",
                                 "pv": 0, "cancel": False, "pid": "", "client": client}
@@ -1437,38 +1485,42 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if u.path == "/api/gen":
                 # 生圖模式：對選中的詞庫套 LoRA 背景生成，結果進 _gen_results（不覆蓋詞庫預覽）。
-                rels = data.get("rels") or []
-                if not isinstance(rels, list) or not rels:
-                    self._send_json({"error": "沒有選取詞庫"}, 400)
+                # 兩種送法：① jobs（陣列，每筆各自 rel/loras/trigger，互不相同）——Concepts
+                # 抽卡用，每張卡隨機配對不同 LoRA；② 舊版 rels + 共用 loras/trigger——一般
+                # 抽卡生圖／手動生圖，整批套同一組 LoRA。start_gen() 底層統一吃 jobs 陣列。
+                jobs_in = data.get("jobs")
+                if isinstance(jobs_in, list) and jobs_in:
+                    jobs = []
+                    for j in jobs_in[:64]:
+                        j = j or {}
+                        jobs.append({
+                            "rel": str(j.get("rel") or ""),
+                            "loras": _convert_loras(j.get("loras")),
+                            "trigger": (j.get("trigger") or "").strip(),
+                        })
+                else:
+                    rels = data.get("rels") or []
+                    if not isinstance(rels, list) or not rels:
+                        self._send_json({"error": "沒有選取詞庫"}, 400)
+                        return
+                    # 雙 LoRA：loras 是 0~2 筆 {folder, file, strength}（LoRA 2 常留空，前端只送
+                    # 有選的格子，見 darkroom.js runGen）。
+                    loras = _convert_loras(data.get("loras"))
+                    if not loras and data.get("lora"):
+                        loras = _convert_loras([data.get("lora")])   # 舊格式相容（單一 lora 物件）
+                    trigger = (data.get("trigger") or "").strip()
+                    jobs = [{"rel": r, "loras": loras, "trigger": trigger} for r in rels[:64]]
+                if not jobs:
+                    self._send_json({"error": "沒有可生成的項目"}, 400)
                     return
-                # 雙 LoRA：loras 是 0~2 筆 {folder, file, strength}（LoRA 2 常留空，前端只送
-                # 有選的格子，見 darkroom.js runGen）。每筆各自轉成 ComfyUI 認得的 lname。
-                loras_in = data.get("loras")
-                if not isinstance(loras_in, list):
-                    loras_in = [data.get("lora")] if data.get("lora") else []   # 舊格式相容（單一 lora 物件）
-                loras = []
-                for lora in loras_in[:2]:
-                    lora = lora or {}
-                    if not lora.get("file"):
-                        continue
-                    # lora["folder"] 現在可能是子資料夾的完整路徑，用 "/" 分隔（list_loras()
-                    # 用 as_posix() 產生，見上方）；但 ComfyUI 認的 lora_name 是全部用 "\\"
-                    # 分隔的相對路徑（Windows 上 os.sep）。folder 只有一段（無子資料夾）時
-                    # replace 是 no-op，行為跟改之前完全一樣；有子資料夾時才需要這次轉換，
-                    # 不然會變成 "Character/Hanime\\file.safetensors" 正反斜線混用，
-                    # ComfyUI 找不到這個檔名，生成整批 400 Bad Request。
-                    folder = (lora.get("folder") or "").replace("/", "\\")
-                    lname = (folder + "\\" + lora["file"]) if folder else lora["file"]
-                    try:
-                        strength = float(lora.get("strength", 0.8))
-                    except Exception:
-                        strength = 0.8
-                    loras.append((lname, strength))
-                trigger = (data.get("trigger") or "").strip()
                 client = (data.get("client") or "")[:64]
-                items = start_gen(rels[:64], loras, trigger, client)   # 一次最多 64 張保險
-                lora_desc = "、".join(f"{n}@{s}" for n, s in loras) or "(無)"
-                plog(f"[genmode] 起 {len(items)} 張 · lora={lora_desc}")
+                items = start_gen(jobs, client)
+                # jobs 陣列時（Concepts 抽卡）每筆 LoRA 可能都不同，log 只印第一筆當樣本＋
+                # 總筆數，不然一次列出 8 組會洗版；舊版 rels+共用 loras 全部 job 的 loras
+                # 本來就相同，印第一筆等於印全部。
+                first_desc = "、".join(f"{n}@{s}" for n, s in jobs[0]["loras"]) or "(無)"
+                sample = first_desc if len(jobs) == 1 else f"{first_desc}（等 {len(jobs)} 筆，各自可能不同）"
+                plog(f"[genmode] 起 {len(items)} 張 · lora={sample}")
                 self._send_json({"ok": True, "items": items})
                 return
             if u.path == "/api/gen-cancel":

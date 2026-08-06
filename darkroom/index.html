@@ -159,6 +159,15 @@
       <!-- 隨機瀏覽：沿用詞庫抽卡同一套塔羅發牌/翻牌，改抽 LoRA。獨立一列（不塞進
            #lm-cats，那個 div 每次 renderLmCats() 都會整個重建，塞進去會被清掉）。 -->
       <button class="ghost lm-random-btn" id="lm-random-btn" title="隨機瀏覽 LoRA（塔羅式呈現，點一張直接選中）">🎲 隨機瀏覽</button>
+      <!-- Concepts 抽卡：每張卡各自隨機配一組 Character LoRA + concepts LoRA 直接生圖，
+           跟上面「隨機瀏覽」（只是瀏覽/選擇，不生圖）是不同功能。範圍縮小沿用左欄目前的
+           分類篩選（見 darkroom.js characterDrawPool/conceptsDrawPool），不用另外做選單。 -->
+      <button class="ghost lm-random-btn lm-concepts-btn" id="lm-concepts-btn"
+              title="Concepts 抽卡：隨機配對 Character LoRA + concepts LoRA 直接生圖">🧬 Concepts 抽卡</button>
+      <label class="lm-concepts-tpl-toggle">
+        <input type="checkbox" id="lm-concepts-tpl">
+        <span>同時抽詞庫模板（不勾＝只用兩個 LoRA 的觸發詞）</span>
+      </label>
       <div class="lm-search-wrap">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input type="text" id="lm-search" placeholder="搜尋 LoRA…" autocomplete="off">

@@ -749,6 +749,13 @@ body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不�
 .lm-random-btn { margin: 10px 14px 0; display: block; width: calc(100% - 28px); flex: none;
   padding: 8px 10px; font-size: 12.5px; }
 .lm-random-btn:hover { border-color: color-mix(in srgb, var(--amber) 45%, var(--line)); color: var(--ink); }
+/* Concepts 抽卡跟隨機瀏覽同一顆按鈕樣式（.lm-random-btn 提供間距/寬度），只是接續在
+   下面、不用另外調版位。勾選框放最貼近的位置，讓「這個開關只影響上面那顆按鈕」一目
+   了然，不用另外寫說明文字解釋兩者的關係。 */
+.lm-concepts-tpl-toggle { display: flex; align-items: flex-start; gap: 7px; margin: 6px 14px 0;
+  font-size: 11px; line-height: 1.5; color: var(--faint); cursor: pointer; }
+.lm-concepts-tpl-toggle input { margin-top: 2px; accent-color: var(--amber); flex: none; }
+.lm-concepts-tpl-toggle:hover { color: var(--dim); }
 /* 從 LoRA 大面板開的塔羅疊層要蓋在面板之上（大面板 z-index:140 本來就比 #tarot
    的 120 高，不加這個疊層會被面板蓋住看不到），只在這個特定情境才拉高，不動
    #tarot 平常的 z-index（詞庫抽卡不受影響）。 */
