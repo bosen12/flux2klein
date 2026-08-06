@@ -1390,7 +1390,19 @@ function renderLmCurrent() {
   const meta = document.createElement('div');
   const t = document.createElement('div'); t.className = 'lm-cur-title'; t.textContent = GEN_LORA.title || GEN_LORA.name;
   const f = document.createElement('div'); f.className = 'lm-cur-folder'; f.textContent = GEN_LORA.folder || '(根目錄)';
-  meta.append(t, f); head.appendChild(meta);
+  meta.append(t, f);
+  // 一鍵直達 LoRA Manager 那邊這個 LoRA 的完整詳情 modal（觸發詞來源、civitai 資訊、範例圖…）。
+  // LoRA Manager 原生沒有這種深連結，這是我們在 lora-manager/static/js/loras.js 加的小功能
+  // （讀 ?open=<folder>/<file> 自動開對應 modal，見 VENDORED.md）。folder/file 是暗房既有
+  // LoRA 資料的欄位，跟推送機制用同一套識別方式。
+  const detailLink = document.createElement('a');
+  detailLink.className = 'lm-detail-link';
+  detailLink.target = '_blank'; detailLink.rel = 'noopener';
+  detailLink.title = '在 LoRA Manager 開這個 LoRA 的完整詳情（新分頁）';
+  detailLink.href = `http://127.0.0.1:7861/loras?open=${encodeURIComponent((GEN_LORA.folder || '') + '/' + (GEN_LORA.file || ''))}`;
+  detailLink.innerHTML = `<img src="data:image/png;base64,${LORA_MGR_LOGO_B64}" alt="" width="13" height="13"><span>詳情</span>`;
+  meta.appendChild(detailLink);
+  head.appendChild(meta);
   box.appendChild(head);
 
   const tw = GEN_LORA.trainedWords || [];

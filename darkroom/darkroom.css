@@ -749,6 +749,13 @@ body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不�
 .lm-cur-head img, .lm-cur-head video, .lm-cur-head .ph { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; flex: none; background: var(--sunk); }
 .lm-cur-title { font-size: 15px; font-weight: 700; color: var(--ink); }
 .lm-cur-folder { font-size: 11px; color: var(--faint); font-family: var(--mono); margin-top: 2px; }
+/* 一鍵直達 LoRA Manager 詳情（見 renderLmCurrent 註解）：小徽章式連結，跟標題/資料夾同區塊 */
+.lm-detail-link { display: inline-flex; align-items: center; gap: 5px; margin-top: 7px;
+  padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--sunk);
+  color: var(--dim); font-size: 11px; text-decoration: none;
+  transition: border-color var(--d-micro) var(--ease-out), color var(--d-micro) var(--ease-out), background var(--d-micro) var(--ease-out); }
+.lm-detail-link:hover { border-color: var(--amber); color: var(--ink); background: var(--amber-soft); }
+.lm-detail-link img { display: block; border-radius: 3px; }
 
 /* 每段 trainedWords 各自一張完整文字卡——這是這個面板存在的目的：不截斷、一眼看完整段。
    用原生 checkbox（最不用學的互動元件）決定要不要用這段，跟現有 GEN_TW_PICKS 狀態同步。 */

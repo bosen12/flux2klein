@@ -39,6 +39,19 @@ checkpoint／embedding／recipe 各自的送出路徑，都維持上游原樣—
 一樣是原本就壞的（跳警告 toast），沒有變得更差，只是還沒接去暗房。之後真的需要
 再補。詳細改動位置與函式，見上面「對照上游改了什麼」段。
 
+- **`static/js/loras.js`**：新增 `openModelFromUrlParam()`，`initializeLoraPage()` 一開始
+  就呼叫。讓 `/loras` 頁面支援 `?open=<folder>/<file.safetensors>` 這個網址參數——載入時
+  自動打開對應那個 LoRA 的完整詳情 modal（跟原生的 `showModelModalFromCard()` 呼叫同一個
+  `showModelModal(model, modelType)`，只是 model 物件不是從畫面上已渲染的卡片 dataset 抓，
+  是直接呼叫 `/api/lm/loras/list?folder=…&search=…&search_filename=true` 精準查一次——因為
+  清單頁是分頁＋虛擬捲動，目標項目未必已經載入到目前畫面。**踩過的坑**：一開始以為
+  `/list` API 回的 `file_name` 跟 `ModelCard.js` 塞進 `card.dataset.file_name` 一樣含副檔名
+  （研究時看程式碼推論的），直接拿真實資料測才發現 `/list` 回的其實是**不含副檔名**的
+  stem（例：查 `ntrman_IL.safetensors` 會拿到 `file_name: "ntrman_IL"`）——比對邏輯要跟
+  `stem` 比而不是原始檔名，不然永遠比對不到、暗房那顆連結點了會一直显示「找不到」。找不到
+  就留在列表頁彈 toast，不是失敗、只是還沒掃到或路徑對不上。這是暗房 LoRA 大面板右欄「查看
+  詳情」連結（`darkroom/darkroom.js` `renderLmCurrent()`）的另一端。
+
 ## 新增的檔案（不是上游帶的，flux2klein 自己加的）
 
 - `write_settings.py`：每次啟動前把 `settings.json` 的 `loras` 路徑同步成
