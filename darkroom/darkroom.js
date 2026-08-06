@@ -1910,6 +1910,12 @@ function joinTriggerParts(parts) {
   }
   return out;
 }
+// 純粹算「這格勾了哪些段落」，不管強度——強度是否為 0 由呼叫端決定要不要用這份文字
+// （見 genTriggerText() 跟 Concepts 抽卡鎖定側的呼叫點）。不在這裡內建強度判斷是刻意
+// 的：Concepts 抽卡鎖定某一格 LoRA 時，實際套用的強度是 CONCEPTS_CHAR/KEY_STRENGTH
+// （面板自己的滑桿），不是這格在 LoRA1/2 面板原本設定的 slot.strength——兩個強度
+// 可能不一樣，這裡如果直接看 slot.strength 判斷，會在「LoRA1/2 面板強度是 0 但
+// Concepts 強度不是 0」這種情況誤刪本該存在的觸發詞。
 function slotTriggerText(slot) {
   if (!slot.lora) return '';
   const tw = slot.lora.trainedWords || [];
@@ -1917,9 +1923,11 @@ function slotTriggerText(slot) {
   return joinTriggerParts([...slot.twPicks].sort((a, b) => a - b).map(i => tw[i]));
 }
 // 目前兩格 LoRA 合併後的觸發詞（依各自 twPicks 組合，供生成時注入正向）。
-// LoRA 1 的詞在前、LoRA 2 的接在後面——跟兩者在畫面上由上到下的順序一致。
+// LoRA 1 的詞在前、LoRA 2 的接在後面——跟兩者在畫面上由上到下的順序一致。強度 0 的
+// 格子觸發詞不寫進去，理由跟 _runConceptsDraw() 那條一樣：強度 0 等於這格 LoRA 完全
+// 不生效，使用者拿「調成 0」當手動關閉開關，觸發詞還留著會讓人以為調 0 沒用。
 function genTriggerText() {
-  return joinTriggerParts(GEN_LORA_SLOTS.map(slotTriggerText));
+  return joinTriggerParts(GEN_LORA_SLOTS.map(slot => slot.strength > 0 ? slotTriggerText(slot) : ''));
 }
 
 async function openLoraModal() {
@@ -2445,7 +2453,14 @@ function _runConceptsDraw(pickChar, pickConcept, withTemplate) {
       { folder: c.folder, file: c.file, title: c.title || c.name, strength: cStrength },
       { folder: k.folder, file: k.file, title: k.title || k.name, strength: kStrength },
     ];
-    let trigger = joinTriggerParts([cTrigger ?? firstTw(c), kTrigger ?? firstTw(k)]);
+    // 強度 0 等於這顆 LoRA 完全不生效（inject_lora 送 strength_model/clip=0，數學上是
+    // no-op），對應的觸發詞就不該還寫進 prompt——使用者拿「設強度 0」當「這次不要套用
+    // concepts/character」的手動關閉開關，回報過如果沒濾掉會很意外：明明調成 0 了，
+    // prompt 裡卻還看得到那些詞。
+    let trigger = joinTriggerParts([
+      cStrength > 0 ? (cTrigger ?? firstTw(c)) : '',
+      kStrength > 0 ? (kTrigger ?? firstTw(k)) : '',
+    ]);
     let rel = '';
     let label = `${c.title || c.name} × ${k.title || k.name}`;
     if (useTemplate) {
