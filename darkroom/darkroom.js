@@ -1681,7 +1681,9 @@ function renderLmList(filter, resetPage) {
     const rt = document.createElement('span'); rt.className = 'rt'; rt.textContent = l.title || l.name;
     const rf = document.createElement('span'); rf.className = 'rf'; rf.textContent = l.folder;
     rn.append(rt, rf); row.appendChild(rn);
-    row.addEventListener('click', () => selectGenLora(l));
+    row.addEventListener('click', () => { hideLoraPreviewTip(); selectGenLora(l); });
+    row.addEventListener('mouseenter', () => showSingleLoraPreviewTip(row, l));
+    row.addEventListener('mouseleave', hideLoraPreviewTip);
     box.appendChild(row);
   }
   if (pages > 1) {
@@ -1759,7 +1761,11 @@ function renderLmSlotTabs() {
     ti.textContent = slot.lora ? (slot.lora.title || slot.lora.name) : '未選擇';
     meta.append(lb, ti);
     tab.appendChild(meta);
-    tab.addEventListener('click', () => { GEN_ACTIVE_SLOT = i; renderLmCurrent(); renderLmList($('lm-search').value); });
+    tab.addEventListener('click', () => { hideLoraPreviewTip(); GEN_ACTIVE_SLOT = i; renderLmCurrent(); renderLmList($('lm-search').value); });
+    if (slot.lora) {
+      tab.addEventListener('mouseenter', () => showSingleLoraPreviewTip(tab, slot.lora));
+      tab.addEventListener('mouseleave', hideLoraPreviewTip);
+    }
     if (slot.lora) {
       const clear = document.createElement('button'); clear.type = 'button'; clear.className = 'lm-slot-clear';
       clear.title = `清空 LoRA ${i + 1}`; clear.textContent = '✕';
@@ -2041,6 +2047,32 @@ function hideLoraPreviewTip() {
 }
 $('lora-pick-btn').addEventListener('mouseenter', () => showLoraPreviewTip($('lora-pick-btn')));
 $('lora-pick-btn').addEventListener('mouseleave', hideLoraPreviewTip);
+
+// LoRA 大面板內部（左欄清單列、右欄 LoRA1/2 分頁卡）hover 放大預覽：面板裡的縮圖本來就
+// 比 genbar 摘要鈕上小很多（52x52／28x28），選之前想看清楚長什麼樣得先點下去才知道。
+// 沿用同一顆 .lora-preview-tip 單例元素（跟 genbar 那顆共用，同一時間只會有一個 hover
+// 目標，不會衝突），但這裡是「單張、貼在滑鼠旁邊」，不是「依 LoRA1/2 slot 狀態固定顯示
+// 一到兩張」，所以另外寫一個單張版本的顯示函式，位置也改成貼右側（面板內容通常還有
+// 空間、貼右不會被自己清單擋住），超出視窗右緣才改貼左側。
+function showSingleLoraPreviewTip(anchor, lora) {
+  if (!lora || !lora.preview) return;   // 沒預覽圖就不彈——清單/分頁卡本身已經有 🧩 佔位圖示，夠清楚了
+  const tip = ensureLoraPreviewTip();
+  tip.innerHTML = '';
+  const item = document.createElement('div'); item.className = 'lpt-item';
+  item.appendChild(makeLoraPreviewEl(lora));
+  const label = document.createElement('span'); label.className = 'lpt-label';
+  label.textContent = lora.title || lora.name;
+  item.appendChild(label);
+  tip.appendChild(item);
+  const r = anchor.getBoundingClientRect();
+  const w = 220;   // 跟 .lpt-item 寬度對應（200 + padding）
+  let left = r.right + 10;
+  if (left + w > window.innerWidth) left = r.left - w - 10;
+  tip.style.left = left + 'px';
+  tip.style.bottom = 'auto';
+  tip.style.top = Math.max(8, Math.min(window.innerHeight - 240, r.top + r.height / 2 - 120)) + 'px';
+  tip.classList.add('show');
+}
 
 $('lora-panel-btn').onclick = openLoraModal;   // topbar 入口（只在生圖模式看得到，見 CSS）
 $('lora-pick-btn').onclick = () => { hideLoraPreviewTip(); openLoraModal(); };    // genbar 摘要鈕，同一個面板

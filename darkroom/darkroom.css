@@ -895,19 +895,19 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
    往上彈不是往下（translateY 正負號相反），而且內容是圖片不是文字。選了幾個 LoRA
    就顯示幾張，一眼比對兩個 LoRA 長什麼樣，不用開大面板。 */
 .lora-preview-tip { position: fixed; z-index: 200; pointer-events: none;
-  display: flex; gap: 8px; background: var(--panel); border: 1px solid var(--line-2);
-  border-radius: 10px; box-shadow: var(--shadow); padding: 8px;
-  opacity: 0; transform: translateY(4px);
-  transition: opacity var(--d-micro) var(--ease-out), transform var(--d-micro) var(--ease-out); }
+  display: flex; gap: 10px; background: var(--panel); border: 1px solid var(--line-2);
+  border-radius: 12px; box-shadow: var(--shadow); padding: 10px;
+  opacity: 0; transform: translateY(6px) scale(.97);
+  transition: opacity var(--d-ui) var(--ease-out), transform var(--d-ui) var(--ease-spring); }
 .lora-preview-tip.show { opacity: 1; transform: none; }
 @media (prefers-reduced-motion: reduce) { .lora-preview-tip { transition: none; } }
-.lpt-item { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 116px; }
-.lpt-item img, .lpt-item video, .lpt-item .ph { width: 116px; height: 116px; border-radius: 8px;
+.lpt-item { display: flex; flex-direction: column; align-items: center; gap: 5px; width: 200px; }
+.lpt-item img, .lpt-item video, .lpt-item .ph { width: 200px; height: 200px; border-radius: 10px;
   object-fit: cover; background: var(--sunk); flex: none; }
 .lpt-item .ph { display: grid; place-items: center; }
-.lpt-item .ph::after { content: '🧩'; font-size: 1.8em; opacity: .35; filter: grayscale(1); }
-.lpt-label { font-size: 10.5px; color: var(--faint); font-family: var(--mono);
-  max-width: 116px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lpt-item .ph::after { content: '🧩'; font-size: 2.4em; opacity: .35; filter: grayscale(1); }
+.lpt-label { font-size: 11px; color: var(--faint); font-family: var(--mono);
+  max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* animation-delay 由 JS 依 trainedWords 段數算（見 renderLmCurrent）——段數愈多，
    後面的強度列/大圖愈晚出場，順序感才對；CSS 這裡不寫死數字。 */
