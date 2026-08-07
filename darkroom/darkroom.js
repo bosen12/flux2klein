@@ -1101,16 +1101,16 @@ function drawLoraTarot(pool, label) {
 }
 
 // LoRA 隨機瀏覽的「E 重抽本分類」：跟左欄篩選晶片（renderLmCats/renderLmSubcats）共用
-// 同一套 GEN_LORA_CAT/GEN_LORA_SUBFOLDER 狀態，池子跟清單畫面看到的完全一致——不是另外
+// 同一套 curScope() 狀態，池子跟清單畫面看到的完全一致——不是另外
 // 發明一套篩選邏輯，使用者選好分類/子資料夾再按 E，抽到的就是清單裡當下看得到的那些。
 function loraCatPool() {
   return (GEN_LORAS || []).filter(l =>
-    (GEN_LORA_CAT === 'all' || l.category === GEN_LORA_CAT) &&
-    (!GEN_LORA_SUBFOLDER || l.folder === GEN_LORA_SUBFOLDER));
+    (curScope().cat === 'all' || l.category === curScope().cat) &&
+    (!curScope().subfolder || l.folder === curScope().subfolder));
 }
 function loraCatLabel() {
-  if (GEN_LORA_SUBFOLDER) return GEN_LORA_SUBFOLDER === GEN_LORA_CAT ? GEN_LORA_CAT : GEN_LORA_SUBFOLDER;
-  return GEN_LORA_CAT === 'all' ? null : GEN_LORA_CAT;
+  if (curScope().subfolder) return curScope().subfolder === curScope().cat ? curScope().cat : curScope().subfolder;
+  return curScope().cat === 'all' ? null : curScope().cat;
 }
 function drawLoraCategoryDispatch() { drawLoraTarot(loraCatPool(), loraCatLabel()); }
 
@@ -1514,8 +1514,8 @@ function updateGenbar() {
 }
 
 const GEN_LORA_PAGE_SIZE = 80;          // 每頁列數（總數上百，全渲染會卡；改翻頁而非截斷丟資料）
-let GEN_LORA_CAT = 'all';               // 目前選的頂層分類（見 renderLmCats）
-let GEN_LORA_SUBFOLDER = '';            // 目前選的子資料夾完整路徑，''＝該分類全部（見 renderLmSubcats）
+const GEN_LORA_SLOT_SCOPE = [{ cat: 'all', subfolder: '' }, { cat: 'all', subfolder: '' }];  // 每格各自的分類/子資料夾抽取範圍，見 curScope()
+function curScope() { return GEN_LORA_SLOT_SCOPE[GEN_ACTIVE_SLOT]; }   // 目前作用格的範圍——左欄晶片、loraCatPool()、K 鍵都讀寫這個
 function loraPreviewUrl(l) { return `/api/lora-preview?folder=${encodeURIComponent(l.folder)}&file=${encodeURIComponent(l.preview)}`; }
 
 /* ---------------- 觸發詞卡 hover 翻譯（Google 翻譯免費端點，不用 API key）----------------
@@ -1636,14 +1636,15 @@ function renderLmCats() {
   box.innerHTML = '';
   const mk = (key, label, n) => {
     const b = document.createElement('button'); b.type = 'button';
-    b.className = 'lm-cat' + (GEN_LORA_CAT === key ? ' on' : '');
+    b.className = 'lm-cat' + (curScope().cat === key ? ' on' : '');
     const lb = document.createElement('span'); lb.textContent = label;
     const nb = document.createElement('span'); nb.className = 'lm-cat-n'; nb.textContent = n;
     b.append(lb, nb);
     b.addEventListener('click', () => {
-      GEN_LORA_CAT = key;
-      GEN_LORA_SUBFOLDER = '';   // 換頂層分類，子資料夾篩選跟著清掉——上次選的子資料夾對新分類沒意義
+      curScope().cat = key;
+      curScope().subfolder = '';   // 換頂層分類，子資料夾篩選跟著清掉——上次選的子資料夾對新分類沒意義
       renderLmCats(); renderLmSubcats(); renderLmList($('lm-search').value, true);
+      renderCsScopeSelects();   // 設定彈窗的下拉要跟著晶片同步（Task 3 定義，此時已存在於檔案中）
     });
     box.appendChild(b);
   };
@@ -1657,28 +1658,29 @@ function renderLmCats() {
 function renderLmSubcats() {
   const box = $('lm-subcats'); if (!box) return;
   box.innerHTML = '';
-  if (GEN_LORA_CAT === 'all') return;
-  const items = (GEN_LORAS || []).filter(l => l.category === GEN_LORA_CAT);
+  if (curScope().cat === 'all') return;
+  const items = (GEN_LORAS || []).filter(l => l.category === curScope().cat);
   const counts = {};
   for (const l of items) counts[l.folder] = (counts[l.folder] || 0) + 1;
   const subfolders = Object.keys(counts).sort();
   if (subfolders.length <= 1) return;   // 沒有子資料夾可挑，不用出現一顆「全部」孤零零杵著
   const mk = (key, label, n) => {
     const b = document.createElement('button'); b.type = 'button';
-    b.className = 'lm-subcat' + (GEN_LORA_SUBFOLDER === key ? ' on' : '');
+    b.className = 'lm-subcat' + (curScope().subfolder === key ? ' on' : '');
     const lb = document.createElement('span'); lb.textContent = label;
     const nb = document.createElement('span'); nb.className = 'lm-subcat-n'; nb.textContent = n;
     b.append(lb, nb);
     b.addEventListener('click', () => {
-      GEN_LORA_SUBFOLDER = key;
+      curScope().subfolder = key;
       renderLmSubcats(); renderLmList($('lm-search').value, true);
+      renderCsScopeSelects();   // 設定彈窗的下拉要跟著晶片同步（Task 3 定義，此時已存在於檔案中）
     });
     box.appendChild(b);
   };
   mk('', '全部', items.length);
   subfolders.forEach(f => {
-    // f === GEN_LORA_CAT：直接放在分類頂層、沒再分子資料夾的那些；其餘去掉「分類/」前綴只顯示子資料夾名
-    const label = f === GEN_LORA_CAT ? '(根目錄)' : f.slice(GEN_LORA_CAT.length + 1);
+    // f === curScope().cat：直接放在分類頂層、沒再分子資料夾的那些；其餘去掉「分類/」前綴只顯示子資料夾名
+    const label = f === curScope().cat ? '(根目錄)' : f.slice(curScope().cat.length + 1);
     mk(f, label, counts[f]);
   });
 }
@@ -1692,8 +1694,8 @@ function renderLmList(filter, resetPage) {
   // 名稱／標題有命中的排前面，只靠 trainedWords 命中的排後面——不然「查名稱完全不相關
   // 的東西」也會混進來，使用者以為搜尋壞了。無搜尋字串時維持原本依資料夾排序。
   let items = (GEN_LORAS || []).filter(l =>
-    (GEN_LORA_CAT === 'all' || l.category === GEN_LORA_CAT) &&
-    (!GEN_LORA_SUBFOLDER || l.folder === GEN_LORA_SUBFOLDER));
+    (curScope().cat === 'all' || l.category === curScope().cat) &&
+    (!curScope().subfolder || l.folder === curScope().subfolder));
   if (q) {
     items = items
       .map(l => {
@@ -2529,14 +2531,14 @@ function drawConceptsTarot() {
 
 // X 鍵版本：跟 C 鍵一樣先看 LoRA1/2 有沒有鎖定（lockedCharacterSlot/lockedConceptSlot），
 // 鎖定的那側直接用鎖定的 LoRA；沒鎖定的那側才改用 LoRA 大面板左欄目前停的分類/子資料夾
-// 晶片（GEN_LORA_CAT/GEN_LORA_SUBFOLDER，跟隨機瀏覽 LoRA 的 E 鍵、loraCatPool() 同一套
+// 晶片（curScope()，跟隨機瀏覽 LoRA 的 E 鍵、loraCatPool() 同一套
 // 狀態）縮小範圍。跟 C 鍵唯一的差別就是「沒鎖定那側的隨機池要不要先被分類晶片縮小」，
 // 「鎖定」與「同時抽詞庫模板」開關這兩件事兩鍵完全一致、互相獨立——鎖定看 LoRA1/2，
 // 模板看 CONCEPTS_WITH_TEMPLATE，跟你用 C 還是 X 抽無關。
 function drawConceptsTarotByCategory() {
   const lockedChar = lockedCharacterSlot(), lockedConcept = lockedConceptSlot();
-  const cPool = lockedChar ? null : (GEN_LORA_CAT === 'Character' ? loraCatPool() : fullCharacterPool());
-  const kPool = lockedConcept ? null : (GEN_LORA_CAT === 'HENTAI' ? loraCatPool() : fullConceptsPool());
+  const cPool = lockedChar ? null : (curScope().cat === 'Character' ? loraCatPool() : fullCharacterPool());
+  const kPool = lockedConcept ? null : (curScope().cat === 'HENTAI' ? loraCatPool() : fullConceptsPool());
   if (!lockedChar && !cPool.length) { toast('目前範圍內 Character 沒有 LoRA 可抽'); return; }
   if (!lockedConcept && !kPool.length) { toast('目前範圍內 concepts 沒有 LoRA 可抽'); return; }
   const pickChar = lockedChar
