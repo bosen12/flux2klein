@@ -1130,6 +1130,7 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 .shortcuts-head p { margin: 0; font-size: 12.5px; color: var(--faint); }
 .help-seg { margin-bottom: 18px; }
 .shortcuts-groups { display: flex; flex-direction: column; gap: 22px; }
+.shortcuts-groups[hidden] { display: none; }
 .shortcut-group { animation: lmFadeUp var(--d-enter) var(--ease-spring) both;
   animation-delay: calc(var(--i, 0) * 70ms); }
 @media (prefers-reduced-motion: reduce) { .shortcut-group { animation: none; } }
