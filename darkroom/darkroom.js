@@ -855,6 +855,12 @@ window.addEventListener('keydown', e => {
     }
     return;
   }
+  // 教學疊層排在 cs-modal 之前：它是從 cs-modal 裡開的、疊在上面（z-index 220 > 200），
+  // Esc 要先關疊在最上面的那個，不能讓下面 cs-modal 的判斷先把整個設定彈窗關掉。
+  if ($('lora-help-modal').classList.contains('open')) {
+    if (e.key === 'Escape') closeLoraHelpModal();
+    return;
+  }
   if ($('cs-modal').classList.contains('open')) {
     if (e.key === 'Escape') closeCsModal();
     return;
@@ -1117,12 +1123,43 @@ function loraCatLabel() {
   return curScope().cat === 'all' ? null : curScope().cat;
 }
 
+// 這格如果被鎖定（GEN_LORA_SLOT_LOCKED），範圍晶片就跟這次生圖無關了——鎖定的格子
+// L/K 完全不會重抽，調範圍也不會有任何效果，繼續顯示晶片只會讓人誤以為調了有用。
+// 鎖定時改顯示「目前鎖住的是哪顆 LoRA」，hover 用既有的 showSingleLoraPreviewTip
+// 預覽（跟大面板左欄清單/分頁卡 hover 同一套，不用另外做一套預覽邏輯）。
+function renderCsSlotLockState(slot) {
+  const lockedBox = document.querySelector(`.cs-scope-locked[data-slot="${slot}"]`);
+  const catBox = document.querySelector(`.cs-scope-cats[data-slot="${slot}"]`);
+  const subBox = document.querySelector(`.cs-scope-subs[data-slot="${slot}"]`);
+  if (!lockedBox || !catBox || !subBox) return;
+  const locked = GEN_LORA_SLOT_LOCKED[slot];
+  lockedBox.hidden = !locked;
+  catBox.hidden = locked;
+  subBox.hidden = locked;
+  if (!locked) return;
+  lockedBox.innerHTML = '';
+  const card = document.createElement('div'); card.className = 'cs-locked-card';
+  const lora = GEN_LORA_SLOTS[slot].lora;
+  if (lora && lora.preview) {
+    card.appendChild(makeLoraPreviewEl(lora));
+    card.addEventListener('mouseenter', () => showSingleLoraPreviewTip(card, lora));
+    card.addEventListener('mouseleave', hideLoraPreviewTip);
+  } else {
+    const ph = document.createElement('span'); ph.className = 'ph'; card.appendChild(ph);
+  }
+  const label = document.createElement('span'); label.className = 'cs-locked-name';
+  label.textContent = lora ? (lora.title || lora.name) : '（這格還沒選 LoRA）';
+  card.appendChild(label);
+  lockedBox.appendChild(card);
+}
 // 設定 modal「一般」分頁的 LoRA1/LoRA2 範圍晶片——跟大面板左欄晶片（renderLmCats/
 // renderLmSubcats）是同一份 GEN_LORA_SLOT_SCOPE 資料，視覺邏輯也完全比照(分類晶片＋
 // 子資料夾晶片，選了分類才出現、只有一種子資料夾值時不顯示），差別只在這裡固定畫兩份
 // （slot 0/1 都要看得到），不是只畫「目前作用格」那一份；晶片點擊直接改
 // GEN_LORA_SLOT_SCOPE[slot]，不透過 curScope()（curScope() 只會指到作用格）。
 function renderCsScopeChips(slot) {
+  renderCsSlotLockState(slot);
+  if (GEN_LORA_SLOT_LOCKED[slot]) return;   // 鎖定時晶片藏起來了，不用建內容
   const box = document.querySelector(`.cs-scope-cats[data-slot="${slot}"]`); if (!box) return;
   const scope = GEN_LORA_SLOT_SCOPE[slot];
   const items = GEN_LORAS || [];
@@ -1878,6 +1915,7 @@ function selectGenLora(l) {
   renderGenCurrent();
   renderLmCurrent();
   renderLmList($('lm-search').value);   // 只重繪列表刷新選中的高亮，不重置頁碼/搜尋
+  renderCsScopeChips(0); renderCsScopeChips(1);   // 設定彈窗鎖定卡片的縮圖/名稱可能因為換選而過時，一併刷新
 }
 
 // genbar 摘要鈕：只顯示「目前選的是誰」，實際挑選都在大面板。圖示用 LoRA Manager
@@ -1936,6 +1974,7 @@ function renderLmSlotTabs() {
       e.stopPropagation();
       GEN_LORA_SLOT_LOCKED[i] = !GEN_LORA_SLOT_LOCKED[i];
       renderLmCurrent();
+      renderCsScopeChips(i);   // 設定彈窗（如果開著）跟著切換顯示晶片／鎖定卡片
     });
     tab.appendChild(lock);
     if (slot.lora) {
@@ -1946,6 +1985,7 @@ function renderLmSlotTabs() {
         GEN_LORA_SLOTS[i] = { lora: null, strength: slot.strength, twPicks: new Set() };
         setActiveSlot(i);
         renderGenCurrent(); renderLmCurrent(); renderLmList($('lm-search').value);
+        renderCsScopeChips(i);
       });
       tab.appendChild(clear);
     }
@@ -2103,6 +2143,11 @@ async function openLoraModal() {
 function closeLoraModal() {
   const modal = $('lora-modal');
   if (!modal.classList.contains('open')) return;
+  // 關面板時強制收掉 hover 預覽——這個面板裡好幾個地方（LoRA1/2 分頁卡、左欄清單列）
+  // 靠 mouseleave 收預覽卡，但關面板（Esc／背景遮罩／點 ✕）當下滑鼠通常還停在被 hover
+  // 的元素上沒有真的移開，mouseleave 不一定會觸發，預覽卡會卡住不消失。不能只靠
+  // mouseleave，關閉動作本身就要保證收掉。
+  hideLoraPreviewTip();
   if (REDUCE_MOTION || document.visibilityState !== 'visible' || !modal.animate) {
     modal.classList.remove('open');
     return;
@@ -2474,6 +2519,7 @@ async function openCsModal() {
 function closeCsModal() {
   const modal = $('cs-modal');
   if (!modal.classList.contains('open')) return;
+  hideLoraPreviewTip();   // 鎖定卡片（.cs-locked-card）hover 預覽同樣的收尾保險，見 closeLoraModal()
   if (REDUCE_MOTION || document.visibilityState !== 'visible' || !modal.animate) {
     modal.classList.remove('open');
     return;
@@ -2492,6 +2538,30 @@ function closeCsModal() {
 $('concepts-settings-btn').onclick = (e) => { e.stopPropagation(); openCsModal(); };
 $('cs-modal-close').onclick = closeCsModal;
 $('cs-modal').addEventListener('click', e => { if (e.target.id === 'cs-modal') closeCsModal(); });
+// 教學疊層：純展示、不影響任何狀態，開關動畫跟 closeCsModal() 同一套寫法。從 cs-modal
+// 裡的「？ 詳細教學」按鈕開，關掉只是收起這層，cs-modal 本身還開著。
+function openLoraHelpModal() { $('lora-help-modal').classList.add('open'); }
+function closeLoraHelpModal() {
+  const modal = $('lora-help-modal');
+  if (!modal.classList.contains('open')) return;
+  if (REDUCE_MOTION || document.visibilityState !== 'visible' || !modal.animate) {
+    modal.classList.remove('open');
+    return;
+  }
+  const inner = $('lora-help-inner');
+  const ease = 'cubic-bezier(.4,0,1,1)';
+  const anims = [modal.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: ease })];
+  if (inner) anims.push(inner.animate(
+    [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.97)' }],
+    { duration: 160, easing: ease }));
+  let done = false;
+  const finish = () => { if (done) return; done = true; modal.classList.remove('open'); };
+  Promise.all(anims.map(a => a.finished)).then(finish).catch(finish);
+  setTimeout(finish, 260);
+}
+$('lora-help-btn').addEventListener('click', (e) => { e.stopPropagation(); openLoraHelpModal(); });
+$('lora-help-close').onclick = closeLoraHelpModal;
+$('lora-help-modal').addEventListener('click', e => { if (e.target.id === 'lora-help-modal') closeLoraHelpModal(); });
 function moveCsTabPill() {
   const seg = $('cs-tab-seg'), pill = $('cs-tab-pill');
   const active = seg && seg.querySelector('button.on');

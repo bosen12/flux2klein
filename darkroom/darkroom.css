@@ -690,8 +690,35 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
   transition: color var(--d-micro) var(--ease-out), background var(--d-micro) var(--ease-out), transform var(--d-micro) var(--ease-out); }
 .cs-modal-close:hover { color: var(--ink); background: var(--line-2); }
 .cs-modal-close:active { transform: scale(.9); }
+.lora-help-btn { margin-bottom: 14px; font-size: 12px; padding: 5px 10px; }
+/* 教學疊層：z-index 220 比 cs-modal 的 200 高一層——從 cs-modal 裡點「？」開的，
+   要疊在它上面，不是取代它（cs-modal 背後保持開著，關教學疊層時直接回去看設定）。
+   內容排版整段沿用 .shortcuts-panel 那套讀物樣式（.shortcuts-head/.shortcut-group/
+   .shortcut-row/.kbd），這個疊層只負責外殼跟裡面幾個示意用的小元件。 */
+.lora-help-modal { position: fixed; inset: 0; z-index: 220; display: none;
+  align-items: center; justify-content: center; padding: 24px;
+  background: rgba(8,8,11,.8); backdrop-filter: blur(6px); }
+.lora-help-modal.open { display: flex; animation: fadeIn var(--d-pop) var(--ease-out); }
+.lora-help-inner { position: relative; width: min(560px, 92vw); max-height: 86vh; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 24px; animation: modalPop var(--d-pop) var(--ease-entrance); }
+@media (prefers-reduced-motion: reduce) { .lora-help-modal.open, .lora-help-inner { animation: none; } }
+/* 示意用的小卡片：直接重用 .lm-slot-lock/.lm-cat 的真實樣式（不是另外畫一套圖示），
+   這樣看到的長相就是使用者真正會在介面上遇到的樣子，不用另外對照。 */
+.lora-help-demo { display: flex; align-items: center; gap: 8px; margin: 8px 0; padding: 6px 10px;
+  border-radius: 8px; background: var(--sunk); font-size: 12.5px; color: var(--dim); }
+.lora-help-demo .help-demo-lock, .lora-help-demo .help-demo-chip { pointer-events: none; }
+.lora-help-steps { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.lora-help-steps li { font-size: 13px; color: var(--dim); line-height: 1.5; }
 .cs-scope-block { display: flex; flex-direction: column; gap: 4px; }
 .cs-scope-label { font-size: 12px; color: var(--dim); }
+/* 這格鎖定時取代範圍晶片顯示——縮圖跟 .lm-slot-tab 的 28px 縮圖同一個尺寸感，
+   hover 走既有的 .lora-preview-tip（showSingleLoraPreviewTip），不用另外做一套。 */
+.cs-locked-card { display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px 5px 5px;
+  border-radius: 999px; background: var(--amber-soft); border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--line)); cursor: default; }
+.cs-locked-card img, .cs-locked-card video, .cs-locked-card .ph { width: 28px; height: 28px; border-radius: 50%;
+  object-fit: cover; flex: none; background: var(--sunk); }
+.cs-locked-name { font-size: 12px; color: var(--ink); }
 /* .lm-cats/.lm-subcats 原本的 padding（14px 14px 0 / 0 14px）是配合 LoRA 大面板左欄
    那個側欄版面，這裡是彈窗裡的獨立區塊，蓋掉 padding 改用 gap 控制間距。 */
 .cs-scope-cats, .cs-scope-subs { padding: 0; }
@@ -810,12 +837,12 @@ body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不�
    overflow-y:auto 才吃得到剩餘高度、滾輪/捲軸才會動。 */
 .lm-left { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: var(--rail); min-width: 0; }
 .lm-cats { display: flex; flex-wrap: wrap; gap: 6px; padding: 14px 14px 0; flex: none; }
-.lm-cat { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line-2); background: var(--sunk);
+.lm-cat, .help-demo-chip { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line-2); background: var(--sunk);
   color: var(--dim); padding: 5px 10px; border-radius: 999px; font-size: 11.5px; cursor: pointer;
   transition: border-color var(--d-micro) var(--ease-out), background var(--d-micro) var(--ease-out), color var(--d-micro) var(--ease-out); }
 .lm-cat:hover { border-color: var(--line-2); color: var(--ink); }
-.lm-cat.on { border-color: var(--amber); background: var(--amber-soft); color: var(--ink); }
-.lm-cat-n { font-family: var(--mono); font-size: 10px; opacity: .75; }
+.lm-cat.on, .help-demo-chip.on { border-color: var(--amber); background: var(--amber-soft); color: var(--ink); }
+.lm-cat-n, .help-demo-chip-n { font-family: var(--mono); font-size: 10px; opacity: .75; }
 /* 子資料夾晶片：比 .lm-cat 小一號、色調更淡，表達「這是分類底下再細分」的次要層級。
    沒有子資料夾可選時 renderLmSubcats() 讓容器維持 height:0（見 JS），animate() 淡入淡出
    高度＋透明度，呼應本專案「用 element.animate() 取代加減 class」的慣例（CLAUDE.md）。 */
@@ -887,11 +914,11 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 /* 🎲／🔒 切換：跟清空鈕同一套「小方塊置中符號」尺寸，永遠顯示（不像清空鈕只在有選
    LoRA 時才出現）——這格空的時候也該看得到、能先設定鎖定狀態。鎖定時用琥珀色跟大面板
    其他「已選中/已鎖定」的視覺語彙一致（.lm-cat.on 等都是同一個 --amber）。 */
-.lm-slot-lock { flex: none; width: 20px; height: 20px; padding: 0; border-radius: 6px; border: 0;
+.lm-slot-lock, .help-demo-lock { flex: none; width: 20px; height: 20px; padding: 0; border-radius: 6px; border: 0;
   background: transparent; color: var(--faint); display: grid; place-items: center; cursor: pointer;
   font-size: 12px; transition: background var(--d-micro) var(--ease-out), color var(--d-micro) var(--ease-out); }
 .lm-slot-lock:hover { background: var(--line-2); color: var(--ink); }
-.lm-slot-lock.locked { color: var(--amber); }
+.lm-slot-lock.locked, .help-demo-lock.locked { color: var(--amber); }
 
 /* 選了一個 LoRA、右欄整塊內容重繪時的進場節奏（呼應 animation-systems 的「hero 先動、
    次要元素跟著、小 stagger 建立閱讀順序」）：縮圖/標題先淡入，每段 trainedWords 卡片
