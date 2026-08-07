@@ -1965,6 +1965,14 @@ function selectGenLora(l) {
   renderCsScopeChips(0); renderCsScopeChips(1);   // 設定彈窗鎖定卡片的縮圖/名稱可能因為換選而過時，一併刷新
 }
 
+// LoRA Manager 是獨立埠（7861），連結不能寫死 127.0.0.1——遠端（手機/Tailscale）連
+// 暗房時網址列已經是區網或 Tailscale IP，寫死 127.0.0.1 只有在本機瀏覽器上才連得到，
+// 遠端點下去會變成連自己裝置的 loopback，當然打不通。改用 location.hostname 現拼，
+// 這樣連暗房走的是哪個位址，連 LoRA Manager 就跟著走同一個位址。固定用 http（LoRA
+// Manager 本身沒有另外做 HTTPS/憑證），不是 location.protocol，即使暗房開 --https
+// 也一樣連 http 的 7861。
+const LORA_MGR_ORIGIN = `http://${location.hostname}:7861`;
+if ($('lm-manager-link')) $('lm-manager-link').href = `${LORA_MGR_ORIGIN}/loras`;
 // genbar 摘要鈕：只顯示「目前選的是誰」，實際挑選都在大面板。圖示用 LoRA Manager
 // 本尊 logo（跟 topbar 大面板鈕、左欄管理連結同一張圖）而非通用符號。innerHTML 只在第
 // 一次呼叫時建立（img 不用每次重繪），之後只更新文字節點，避免每次選 LoRA 都重建 DOM。
@@ -2057,7 +2065,7 @@ function renderLmCurrent() {
   detailLink.className = 'lm-detail-link';
   detailLink.target = '_blank'; detailLink.rel = 'noopener';
   detailLink.title = '在 LoRA Manager 開這個 LoRA 的完整詳情（新分頁）';
-  detailLink.href = `http://127.0.0.1:7861/loras?open=${encodeURIComponent((lora.folder || '') + '/' + (lora.file || ''))}`;
+  detailLink.href = `${LORA_MGR_ORIGIN}/loras?open=${encodeURIComponent((lora.folder || '') + '/' + (lora.file || ''))}`;
   detailLink.innerHTML = `<img src="data:image/png;base64,${LORA_MGR_LOGO_B64}" alt="" width="13" height="13"><span>詳情</span>`;
   // 「詳情」旁邊的基礎模型小標籤（Illustrious／Pony／SDXL 1.0…），資料來自 LoRA Manager
   // 掃描時寫的 .metadata.json 頂層 base_model 欄位（見 preview_ui.py list_loras()）。

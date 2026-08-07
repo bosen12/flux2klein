@@ -236,7 +236,7 @@ Windows 雙擊即可（會自動啟動 Groq 多 key 代理）：
 - **啟動**：雙擊 `lora-manager/start_lora_manager.bat`（第一次會 `pip install` 幾個輕量套件如 aiohttp，之後很快），開啟 `http://localhost:7861/loras`。
 - **跟 KLEIN／暗房共用同一份 LoRA 收藏**：啟動時會自動把設定檔的掃描路徑同步成 `LORA_ROOT` 環境變數（跟 `darkroom/preview_ui.py`、`serve.py` 用同一個變數、同一個預設值），看到的是同一批檔案，不用另外設定兩份。
 - **「送到 workflow」改送去暗房與 KLEIN 面板**：這是**唯一被改過的功能**——原版的「送到 workflow」是靠同源 ComfyUI 網頁即時改 LiteGraph 節點，standalone 模式下這條路本來就走不通（只會跳一個沒用的警告）。改成點了**同時推給暗房與 KLEIN 主面板**（`serve.py` 的 `/panel/lora-push`）：哪邊分頁開著，哪邊就自動選中——暗房自動切到生圖模式、開大面板；KLEIN 面板自動切到 Illustrious 引擎、開啟 LoRA 開關、選進那個 LoRA，都不用手動找、不用複製貼上。沒開著的那邊下次打開輪詢照樣拿得到（單一格、最新一次覆蓋前一次，不排隊）。右鍵選單的「送到 workflow」也是同一套。
-- 暗房的 LoRA 大面板裡也有一顆「🧰 用 LoRA Manager 管理」連結，開新分頁直接過去（互相連通）。
+- 暗房的 LoRA 大面板裡也有一顆「🧰 用 LoRA Manager 管理」連結（含每顆 LoRA 旁的「詳情」深連結），開新分頁直接過去（互相連通）——連結網址跟著目前連暗房用的主機位址走（讀 `location.hostname`），不是寫死 `127.0.0.1`，所以手機/Tailscale 遠端連暗房時點過去也連得到同一台機器上的 LoRA Manager，不用手動改網址。
 - 改了什麼、vendor 的細節見 [`lora-manager/VENDORED.md`](lora-manager/VENDORED.md)。其餘功能（CivitAI 下載、統計、recipes、checkpoint／embedding 管理⋯）都是上游原樣，沒有動。
 
 ---
