@@ -176,6 +176,8 @@ Windows 雙擊即可（會自動啟動 Groq 多 key 代理）：
 
 `darkroom/preview_ui.py` 是一個**獨立工具**（跟前端檔案、暗房的 Python「大腦」都收在 `darkroom/` 底下，2026-08 整理專案結構時把散在根目錄的暗房相關檔案全部併過去），用來幫 `special_prompts` 的每個詞庫透過 ComfyUI 生成 `.webp` 預覽圖（也就是 Illustrious 詞庫選單 hover 顯示的那些圖）。深色「暗房」介面：左側資料夾導覽（含覆蓋率條）、縮圖牆、點圖看大圖與正/負向 prompt、單張或**批次**補齊缺圖／重生、資料夾／缺圖／已有／名稱篩選。
 
+- **首次進場畫面**：第一次打開暗房會先看到一個全螢幕進場畫面——固定隨機抽樣 50 張詞庫縮圖，分兩行橫向跑馬燈（一行往左、一行往右，純 CSS animation 捲動，不吃效能），中間疊「詞庫暗房」題字與「進入暗房 →」鈕，按下（或按 `Enter`／`Esc`）才收起進入真正介面。只播一次（`localStorage` 旗標控制），之後重整直接進主畫面。
+
 - **啟動**：跑 `darkroom/preview_ui.bat`（或 `python darkroom/preview_ui.py`），預設開在 `http://localhost:7860/`。要真的生成圖需先開 ComfyUI。詞庫很多時開頁/重整要幾秒（掃描＋渲染），會先顯示一個**科技感載入畫面**（相機光圈 logo 自轉＋掃描光弧＋掃描進度條），載入完自動淡出。頁面品牌與分頁圖示（favicon）都用**相機光圈**當 logo。
 - **面板按鈕**：主面板頂部「AI Assistant」旁有「**詞庫暗房**」按鈕，點了用新視窗開這個工具（不嵌入面板）。工具沒啟動的話新視窗會連不上——先跑 `darkroom/preview_ui.bat`。
 - **設定**：機器相關路徑放 `darkroom/preview_config.json`（已 gitignore，複製 `darkroom/preview_config.example.json` 來改）——`special_dir`（詞庫資料夾，預設指向 `C:\projects\special_prompts`）、`comfy`、`workflow`、`port` 等。**面板的詞庫選單（`serve.py`）也讀同一個 `special_dir`**（從 `darkroom/preview_config.json` 讀），所以兩邊看的是同一份詞庫。

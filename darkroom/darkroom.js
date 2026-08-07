@@ -3077,10 +3077,65 @@ function hideBoot() {
   b.classList.add('hide');
   setTimeout(() => b.remove(), 600);
 }
+
+/* ---------------------------------------------------------------------------
+   首次進暗房的進場畫面：兩行縮圖橫向跑馬燈（純 CSS animation，一行往左一行
+   往右），中間疊題字＋「進入暗房」鈕。只播一次（localStorage 旗標），之後
+   重整就直接進真正介面。
+   --------------------------------------------------------------------------- */
+const INTRO_SAMPLE = 50;   // 固定抽樣張數，不管詞庫實際有多少筆
+function buildIntroRow(items) {
+  const track = document.createElement('div'); track.className = 'intro-track';
+  // 內容重複兩份首尾接龍，animation 只需要跑 translateX(-50%) 就能無縫循環，
+  // 不用另外算「捲到底了要不要重置位置」這種容易出錯的邏輯。
+  for (let rep = 0; rep < 2; rep++) {
+    for (const it of items) {
+      const img = document.createElement('img');
+      img.loading = 'lazy'; img.decoding = 'async'; img.alt = '';
+      img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
+      track.appendChild(img);
+    }
+  }
+  return track;
+}
+function maybeStartIntro() {
+  if (localStorage.getItem('yz-intro-seen') === '1') return;
+  if (!ALL.length) return;
+  const picks = sampleN(ALL, Math.min(INTRO_SAMPLE, ALL.length));
+  const mid = Math.ceil(picks.length / 2);
+  const rowsBox = $('intro-rows');
+  rowsBox.innerHTML = '';
+  const rowLeft = document.createElement('div'); rowLeft.className = 'intro-row left';
+  rowLeft.appendChild(buildIntroRow(picks.slice(0, mid)));
+  const rowRight = document.createElement('div'); rowRight.className = 'intro-row right';
+  rowRight.appendChild(buildIntroRow(picks.slice(mid)));
+  rowsBox.append(rowLeft, rowRight);
+  $('intro-modal').classList.add('open');
+}
+function closeIntro() {
+  const modal = $('intro-modal');
+  if (!modal.classList.contains('open')) return;
+  localStorage.setItem('yz-intro-seen', '1');
+  const finish = () => { modal.classList.remove('open'); $('intro-rows').innerHTML = ''; };
+  if (REDUCE_MOTION || document.visibilityState !== 'visible' || !modal.animate) { finish(); return; }
+  const anim = modal.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: 'cubic-bezier(.4,0,1,1)' });
+  let done = false;
+  const settle = () => { if (done) return; done = true; finish(); };
+  anim.finished.then(settle).catch(settle);
+  setTimeout(settle, 260);   // 分頁在背景時 finished 不結算的保險（CLAUDE.md 記過的老坑）
+}
+$('intro-enter-btn').addEventListener('click', closeIntro);
+window.addEventListener('keydown', (e) => {
+  if (!$('intro-modal').classList.contains('open')) return;
+  if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); closeIntro(); }
+});
+
 // boot 只等「資料到＋首屏渲染完」就關。pollBatch 是常駐背景輪詢——批次執行中它
 // 的 while(true) 永不 resolve，所以**不能**把 hideBoot 鏈在它後面（`() => pollBatch()`
 // 會回傳那個永不結算的 promise），否則只要背景有批次在跑，boot 就會一直等到下面
 // 的 20s 保險逾時才關＝每次刷新都卡整整 20 秒。改成 loadAll 完成後「不 return」地
 // 啟動 pollBatch，讓 finally(hideBoot) 立刻收尾、pollBatch 自行在背景跑。
-loadAll().then(() => { pollBatch(); }).finally(hideBoot);
+// maybeStartIntro() 排在 pollBatch() 之前：進場疊層（z-index 230）比 #boot（300）
+// 低，boot 淡出的 600ms 期間進場畫面已經在底下跑，boot 一收起就無縫接上。
+loadAll().then(() => { maybeStartIntro(); pollBatch(); }).finally(hideBoot);
 setTimeout(hideBoot, 20000);   // 保險：萬一 loadAll 本身卡住也別讓載入畫面永遠蓋著

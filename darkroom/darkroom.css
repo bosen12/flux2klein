@@ -1230,3 +1230,47 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
   .shortcut-row { flex-direction: column; gap: 5px; }
   .shortcut-keys { width: auto; }
 }
+
+/* ---------------------------------------------------------------------------
+   首次進暗房的進場畫面：兩行縮圖橫向跑馬燈（CSS animation，不用 JS 逐幀算），
+   一行往左一行往右，中間疊題字＋進入鈕。z-index 230，比 #boot（300）低——boot
+   淡出的 600ms 期間這層已經在底下跑，boot 一收起就無縫接上。
+   --------------------------------------------------------------------------- */
+.intro-modal { position: fixed; inset: 0; z-index: 230; display: none;
+  background: radial-gradient(ellipse at 50% 45%, #1c1e2a 0%, var(--bg) 78%); overflow: hidden; }
+.intro-modal.open { display: block; animation: fadeIn var(--d-pop) var(--ease-out); }
+@media (prefers-reduced-motion: reduce) { .intro-modal.open { animation: none; } }
+
+.intro-rows { position: absolute; inset: 0; display: flex; flex-direction: column;
+  justify-content: center; gap: 18px;
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); }
+.intro-row { overflow: hidden; white-space: nowrap; opacity: .85; }
+.intro-track { display: inline-flex; gap: 14px; will-change: transform; }
+.intro-track img { width: 150px; height: 150px; border-radius: 12px; object-fit: cover;
+  display: block; flex: none; background: var(--sunk); box-shadow: 0 8px 20px rgba(0,0,0,.4); }
+.intro-row.left .intro-track { animation: introScrollLeft 46s linear infinite; }
+.intro-row.right .intro-track { animation: introScrollRight 52s linear infinite; }
+@keyframes introScrollLeft { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes introScrollRight { from { transform: translateX(-50%); } to { transform: translateX(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .intro-row.left .intro-track, .intro-row.right .intro-track { animation-play-state: paused; }
+}
+
+.intro-copy { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  text-align: center; padding: 32px 40px; border-radius: 20px;
+  background: color-mix(in srgb, var(--bg) 62%, transparent); backdrop-filter: blur(10px);
+  border: 1px solid var(--line); box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+.intro-copy h2 { margin: 0 0 8px; font-size: 30px; letter-spacing: 4px; color: var(--ink);
+  text-shadow: 0 0 24px rgba(234,173,87,.35); }
+.intro-copy p { margin: 0 0 22px; font-size: 13.5px; color: var(--dim); }
+.intro-enter-btn { padding: 12px 30px; border-radius: 999px; font-size: 14px; font-weight: 600;
+  background: linear-gradient(180deg, #eaad57, var(--amber-d)); border: 1px solid var(--amber-d);
+  color: #201405; }
+.intro-enter-btn:hover { filter: brightness(1.06); }
+
+@media (max-width: 640px) {
+  .intro-track img { width: 96px; height: 96px; border-radius: 9px; }
+  .intro-copy { padding: 22px 24px; width: calc(100% - 48px); box-sizing: border-box; }
+  .intro-copy h2 { font-size: 22px; letter-spacing: 2px; }
+}
