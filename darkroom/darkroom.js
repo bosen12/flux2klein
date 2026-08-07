@@ -855,6 +855,10 @@ window.addEventListener('keydown', e => {
     }
     return;
   }
+  if ($('cs-modal').classList.contains('open')) {
+    if (e.key === 'Escape') closeCsModal();
+    return;
+  }
   if ($('lora-modal').classList.contains('open')) {
     if (e.key === 'Escape') closeLoraModal();
     return;
@@ -1113,49 +1117,64 @@ function loraCatLabel() {
   return curScope().cat === 'all' ? null : curScope().cat;
 }
 
-// 設定彈窗「一般」分頁的 LoRA1/LoRA2 範圍下拉——跟左欄晶片（renderLmCats/
-// renderLmSubcats）是同一份 GEN_LORA_SLOT_SCOPE 資料，只是畫成 select 而不是晶片
-// （設定彈窗窄，兩組並排用晶片會擠爆）。改到「目前作用格」那組會連動重繪左欄晶片，
-// 改到「另一格」大面板當下看不到，不用重繪（見 change handler）。
-function renderCsScopeSelects() {
+// 設定 modal「一般」分頁的 LoRA1/LoRA2 範圍晶片——跟大面板左欄晶片（renderLmCats/
+// renderLmSubcats）是同一份 GEN_LORA_SLOT_SCOPE 資料，視覺邏輯也完全比照(分類晶片＋
+// 子資料夾晶片，選了分類才出現、只有一種子資料夾值時不顯示），差別只在這裡固定畫兩份
+// （slot 0/1 都要看得到），不是只畫「目前作用格」那一份；晶片點擊直接改
+// GEN_LORA_SLOT_SCOPE[slot]，不透過 curScope()（curScope() 只會指到作用格）。
+function renderCsScopeChips(slot) {
+  const box = document.querySelector(`.cs-scope-cats[data-slot="${slot}"]`); if (!box) return;
+  const scope = GEN_LORA_SLOT_SCOPE[slot];
   const items = GEN_LORAS || [];
   const counts = {};
   for (const l of items) counts[l.category] = (counts[l.category] || 0) + 1;
   const cats = Object.keys(counts).sort();
-  [0, 1].forEach((slot) => {
-    const scope = GEN_LORA_SLOT_SCOPE[slot];
-    const catSel = document.querySelector(`.cs-scope-cat[data-slot="${slot}"]`);
-    if (!catSel) return;
-    catSel.innerHTML = '';
-    const allOpt = document.createElement('option'); allOpt.value = 'all'; allOpt.textContent = `全部 (${items.length})`;
-    catSel.appendChild(allOpt);
-    cats.forEach((c) => {
-      const opt = document.createElement('option'); opt.value = c; opt.textContent = `${c} (${counts[c]})`;
-      catSel.appendChild(opt);
+  box.innerHTML = '';
+  const mk = (key, label, n) => {
+    const b = document.createElement('button'); b.type = 'button';
+    b.className = 'lm-cat' + (scope.cat === key ? ' on' : '');
+    const lb = document.createElement('span'); lb.textContent = label;
+    const nb = document.createElement('span'); nb.className = 'lm-cat-n'; nb.textContent = n;
+    b.append(lb, nb);
+    b.addEventListener('click', () => {
+      scope.cat = key; scope.subfolder = '';
+      renderCsScopeChips(slot);
+      if (slot === GEN_ACTIVE_SLOT) { renderLmCats(); renderLmSubcats(); renderLmList($('lm-search').value, true); }
     });
-    catSel.value = scope.cat;
-    renderCsScopeSubSelect(slot);
-  });
+    box.appendChild(b);
+  };
+  mk('all', '全部', items.length);
+  cats.forEach(c => mk(c, c, counts[c]));
+  renderCsScopeSubChips(slot);
 }
-function renderCsScopeSubSelect(slot) {
+function renderCsScopeSubChips(slot) {
+  const box = document.querySelector(`.cs-scope-subs[data-slot="${slot}"]`); if (!box) return;
   const scope = GEN_LORA_SLOT_SCOPE[slot];
-  const subSel = document.querySelector(`.cs-scope-sub[data-slot="${slot}"]`);
-  if (!subSel) return;
-  subSel.innerHTML = '';
-  if (scope.cat === 'all') { subSel.hidden = true; return; }
+  box.innerHTML = '';
+  if (scope.cat === 'all') return;
   const items = (GEN_LORAS || []).filter(l => l.category === scope.cat);
   const counts = {};
   for (const l of items) counts[l.folder] = (counts[l.folder] || 0) + 1;
   const subfolders = Object.keys(counts).sort();
-  if (subfolders.length <= 1) { subSel.hidden = true; return; }
-  subSel.hidden = false;
-  const allOpt = document.createElement('option'); allOpt.value = ''; allOpt.textContent = `${scope.cat} 全部`;
-  subSel.appendChild(allOpt);
-  subfolders.forEach((f) => {
-    const opt = document.createElement('option'); opt.value = f; opt.textContent = `${f} (${counts[f]})`;
-    subSel.appendChild(opt);
+  if (subfolders.length <= 1) return;
+  const mk = (key, label, n) => {
+    const b = document.createElement('button'); b.type = 'button';
+    b.className = 'lm-subcat' + (scope.subfolder === key ? ' on' : '');
+    const lb = document.createElement('span'); lb.textContent = label;
+    const nb = document.createElement('span'); nb.className = 'lm-subcat-n'; nb.textContent = n;
+    b.append(lb, nb);
+    b.addEventListener('click', () => {
+      scope.subfolder = key;
+      renderCsScopeSubChips(slot);
+      if (slot === GEN_ACTIVE_SLOT) { renderLmCats(); renderLmSubcats(); renderLmList($('lm-search').value, true); }
+    });
+    box.appendChild(b);
+  };
+  mk('', '全部', items.length);
+  subfolders.forEach(f => {
+    const label = f === scope.cat ? '(根目錄)' : f.slice(scope.cat.length + 1);
+    mk(f, label, counts[f]);
   });
-  subSel.value = scope.subfolder;
 }
 
 function drawLoraCategoryDispatch() { drawLoraTarot(loraCatPool(), loraCatLabel()); }
@@ -1719,7 +1738,7 @@ function renderLmCats() {
       curScope().cat = key;
       curScope().subfolder = '';   // 換頂層分類，子資料夾篩選跟著清掉——上次選的子資料夾對新分類沒意義
       renderLmCats(); renderLmSubcats(); renderLmList($('lm-search').value, true);
-      renderCsScopeSelects();   // 設定彈窗的下拉要跟著晶片同步（Task 3 定義，此時已存在於檔案中）
+      renderCsScopeChips(GEN_ACTIVE_SLOT);   // 設定 modal 的晶片要跟著大面板左欄同步
     });
     box.appendChild(b);
   };
@@ -1748,7 +1767,7 @@ function renderLmSubcats() {
     b.addEventListener('click', () => {
       curScope().subfolder = key;
       renderLmSubcats(); renderLmList($('lm-search').value, true);
-      renderCsScopeSelects();   // 設定彈窗的下拉要跟著晶片同步（Task 3 定義，此時已存在於檔案中）
+      renderCsScopeChips(GEN_ACTIVE_SLOT);   // 設定 modal 的晶片要跟著大面板左欄同步
     });
     box.appendChild(b);
   };
@@ -2420,20 +2439,39 @@ $('gallery-cancel-all').onclick = () => {
 };
 $('concepts-btn').onclick = () => { fetchGenLoras().then(() => { updateConceptsLockLabel(); drawConceptsTarot(); }); };
 
-// Concepts 設定彈窗：強度×2／張數／模板開關。開關用 hidden 屬性切換（不是 class），
-// 點按鈕本身或彈窗外任一處都會關閉——跟 .tw-tip 那種「跟著游標移動」的提示不同，這是
-// 「點開、設定完、點外面關掉」的一般彈窗互動，用 document 層級的 click 監聽最單純。
-const $csPanel = $('concepts-settings');
-$('concepts-settings-btn').onclick = (e) => {
-  e.stopPropagation();
-  $csPanel.hidden = !$csPanel.hidden;
-  if (!$csPanel.hidden) { fetchGenLoras().then(renderCsScopeSelects); moveCsTabPill(); }
-};
-document.addEventListener('click', (e) => {
-  if (!$csPanel.hidden && !$csPanel.contains(e.target) && e.target.id !== 'concepts-settings-btn') {
-    $csPanel.hidden = true;
+// LoRA 抽取設定：⚙ 鈕開置中大 modal，比照 .lora-modal 同一套開關方式——背景遮罩點擊、
+// ✕、Esc 都能關（見 keydown handler），不再用 document 層級 outside-click 偵測（那個
+// 機制本身就是先前修過的一個 bug 的根源模式：click handler 若把被點擊的元素自己從
+// DOM 移除，冒泡到 document 判斷式時 Node.contains() 對離線節點一律回傳 false，會被
+// 誤判成「點在外面」而自動關閉——這次直接用背景遮罩點擊取代，整類問題不會再發生）。
+async function openCsModal() {
+  $('cs-modal').classList.add('open');
+  await fetchGenLoras();
+  renderCsScopeChips(0);
+  renderCsScopeChips(1);
+  moveCsTabPill();
+}
+function closeCsModal() {
+  const modal = $('cs-modal');
+  if (!modal.classList.contains('open')) return;
+  if (REDUCE_MOTION || document.visibilityState !== 'visible' || !modal.animate) {
+    modal.classList.remove('open');
+    return;
   }
-});
+  const inner = $('cs-modal-inner');
+  const ease = 'cubic-bezier(.4,0,1,1)';
+  const anims = [modal.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: ease })];
+  if (inner) anims.push(inner.animate(
+    [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.97)' }],
+    { duration: 160, easing: ease }));
+  let done = false;
+  const finish = () => { if (done) return; done = true; modal.classList.remove('open'); };
+  Promise.all(anims.map(a => a.finished)).then(finish).catch(finish);
+  setTimeout(finish, 260);
+}
+$('concepts-settings-btn').onclick = (e) => { e.stopPropagation(); openCsModal(); };
+$('cs-modal-close').onclick = closeCsModal;
+$('cs-modal').addEventListener('click', e => { if (e.target.id === 'cs-modal') closeCsModal(); });
 function moveCsTabPill() {
   const seg = $('cs-tab-seg'), pill = $('cs-tab-pill');
   const active = seg && seg.querySelector('button.on');
@@ -2447,24 +2485,6 @@ $('cs-tab-seg').addEventListener('click', (e) => {
   moveCsTabPill();
   $('cs-tab-general').hidden = btn.dataset.tab !== 'general';
   $('cs-tab-concepts').hidden = btn.dataset.tab !== 'concepts';
-});
-// 兩組 LoRA1/LoRA2 範圍下拉共用同一個 change 委派，用 data-slot 判斷改的是哪一格。
-// i === GEN_ACTIVE_SLOT 是雙向同步的關鍵：改到目前作用格那組，大面板左欄晶片要跟著重繪；
-// 改到另一格，那格的晶片畫面當下看不到，不用重繪。
-$('cs-tab-general').addEventListener('change', (e) => {
-  const slotAttr = e.target.dataset.slot; if (slotAttr === undefined) return;
-  const i = Number(slotAttr);
-  const scope = GEN_LORA_SLOT_SCOPE[i];
-  if (e.target.classList.contains('cs-scope-cat')) {
-    scope.cat = e.target.value;
-    scope.subfolder = '';
-    renderCsScopeSubSelect(i);
-  } else if (e.target.classList.contains('cs-scope-sub')) {
-    scope.subfolder = e.target.value;
-  } else {
-    return;
-  }
-  if (i === GEN_ACTIVE_SLOT) { renderLmCats(); renderLmSubcats(); renderLmList($('lm-search').value, true); }
 });
 const $csCharStrength = $('cs-char-strength'), $csCharStrengthOut = $('cs-char-strength-out');
 const $csKeyStrength = $('cs-key-strength'), $csKeyStrengthOut = $('cs-key-strength-out');
