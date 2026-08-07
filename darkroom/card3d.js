@@ -60,20 +60,20 @@
     grid(i, n) {
       const cols = Math.max(1, Math.ceil(Math.sqrt(n)));
       const rows = Math.ceil(n / cols);
-      const spacing = 190;
+      const spacing = 130;
       const col = i % cols, row = Math.floor(i / cols);
       return { x: (col - (cols - 1) / 2) * spacing, y: (row - (rows - 1) / 2) * spacing, z: 0, rotX: 0, rotY: 0, rotZ: 0 };
     },
     table(i, n) {
       const cols = Math.max(1, Math.ceil(Math.sqrt(n * 1.6)));   // 比 grid 扁一點、密一點，視覺上跟 grid 有區別
       const rows = Math.ceil(n / cols);
-      const spacing = 132;
+      const spacing = 92;
       const col = i % cols, row = Math.floor(i / cols);
       return { x: (col - (cols - 1) / 2) * spacing, y: (row - (rows - 1) / 2) * spacing, z: 0, rotX: 0, rotY: 0, rotZ: 0 };
     },
     sphere(i, n) {
       n = Math.max(n, 1);
-      const radius = 70 * Math.sqrt(n) + 420;
+      const radius = 48 * Math.sqrt(n) + 280;
       // 跟參考範例同一種螺旋分布：phi 從 0 掃到 π，theta 依 phi 累加，均勻覆蓋整個
       // 球面、兩極不會擠成一團。
       const phi = Math.acos(-1 + (2 * i) / n);
@@ -87,9 +87,9 @@
     },
     helix(i, n) {
       n = Math.max(n, 1);
-      const radius = 50 * Math.sqrt(n) + 320;
+      const radius = 34 * Math.sqrt(n) + 210;
       const theta = i * 0.175 + Math.PI;   // 沿用參考範例的角度增量／起始偏移
-      const vStep = clamp(4600 / n, 16, 42);
+      const vStep = clamp(3200 / n, 12, 30);
       const x = radius * Math.cos(theta);
       const z = radius * Math.sin(theta);
       const y = i * vStep - (n / 2) * vStep;   // Y-down 版本：i 越大越往下（參考範例 Y-up 是越大越往上）
@@ -119,7 +119,7 @@
   // 一定要掛在 stage，不能掛在 scene，否則點空白處拖曳完全沒反應。
   function createCard3DScene({ scene, cards, onCardClick, stage }) {
     stage = stage || scene.parentElement;
-    let rotX = -16, rotY = 8, zoom = -420;   // 往後拉一點，剛進場時就看得到整批卡片的散開範圍，不用先手動縮小
+    let rotX = -16, rotY = 8, zoom = -260;   // 往後拉一點，剛進場時就看得到整批卡片的散開範圍，不用先手動縮小
     let dragging = false, dragDist = 0, lastX = 0, lastY = 0, velX = 0, velY = 0;
     let inertiaRAF = null, pinchDist = null;
 
@@ -192,7 +192,7 @@
     }
     function onWheel(e) {
       e.preventDefault();
-      zoom = clamp(zoom - e.deltaY * 0.6, -900, 500);
+      zoom = clamp(zoom - e.deltaY * 0.6, -1400, 2000);
       applySceneTransform();
     }
     function touchDist(t0, t1) { return Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY); }
@@ -205,7 +205,7 @@
       if (e.touches.length === 2 && pinchDist != null) {
         e.preventDefault();
         const d = touchDist(e.touches[0], e.touches[1]);
-        zoom = clamp(zoom + (d - pinchDist) * 1.2, -900, 500);
+        zoom = clamp(zoom + (d - pinchDist) * 1.2, -1400, 2000);
         pinchDist = d;
         applySceneTransform();
       } else if (e.touches.length === 1 && dragging) {
