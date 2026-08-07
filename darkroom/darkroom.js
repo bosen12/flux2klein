@@ -1318,6 +1318,23 @@ function buildConceptsPickers(autoFillConcept) {
   return pickers;
 }
 
+// 一般手動生圖／R／E（非 Concepts 疊層）套用的 LoRA 陣列，跟 Concepts 的 R/E 共用同一套
+// slotSignal()/signalPicker() 判斷——已跳過的格子當它不存在、固定的直接套用、只設了範圍
+// （沒固定）的隨機抽一顆。**跟 buildConceptsPickers() 唯一的差別**：兩格都空手是完全正常
+// 的情況（單純不套 LoRA 生圖），不當錯誤、不擋生圖，直接回傳空陣列，不像 Concepts 那樣
+// 兩格都跳過要 toast 擋下來。
+function resolveGenLoras() {
+  const loras = [];
+  for (const sig of [slotSignal(0), slotSignal(1)]) {
+    if (!sig) continue;
+    const pick = signalPicker(sig, GEN_LORA_SLOTS[sig.i].strength);
+    if (!pick) { toast(`LoRA${sig.i + 1} 的範圍內沒有 LoRA 可抽`); return null; }
+    const p = pick();
+    loras.push({ folder: p.lora.folder, file: p.lora.file, title: p.lora.title || p.lora.name, strength: p.strength });
+  }
+  return loras;
+}
+
 // 「鎖定」機制：不做另一套選單 UI，直接偵測 LoRA1/LoRA2 面板現在有沒有選到符合分類的
 // LoRA——有選到就鎖定那顆（用它跟它設定的強度，每張卡都一樣，不重新隨機）。標成「跳過」
 // 的格子（GEN_LORA_SLOT_SKIP）完全不參與這個判斷，當它不存在。依 slot0→slot1 順序找
@@ -2852,10 +2869,12 @@ const GEN_PENDING = new Set();     // 所有還在生的 gid（跨批次共用�
 async function runGen(rels, tarotItems, label) {
   rels = rels || [...SEL];
   if (!rels.length) return;
-  // 只送有選 LoRA 的格子（LoRA 2 常留空，見 selectGenLora）；後端依陣列長度注入 0~2 個
-  // LoraLoader（見 preview_ui.py /api/gen）。
-  const loras = GEN_LORA_SLOTS.filter(s => s.lora).map(s => (
-    { folder: s.lora.folder, file: s.lora.file, title: s.lora.title || s.lora.name, strength: s.strength }));
+  // 每格「參與判斷」時：固定的 LoRA 直接套用、只設了範圍（沒固定）的隨機抽一顆、已跳過
+  // 的當它不存在——跟 Concepts 疊層裡 R/E 的判斷完全同一套（resolveGenLoras()），不再是
+  // 只認「格子裡有沒有實際放一顆 LoRA」。後端依陣列長度注入 0~2 個 LoraLoader（見
+  // preview_ui.py /api/gen）。
+  const loras = resolveGenLoras();
+  if (loras === null) return;   // 範圍內沒有 LoRA 可抽，resolveGenLoras() 已經 toast 過了
   const trigger = genTriggerText();
   const payload = { rels, loras: loras.map(l => ({ folder: l.folder, file: l.file, strength: l.strength })), trigger, client: GEN_CLIENT };
   let res;
