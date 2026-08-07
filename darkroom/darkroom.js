@@ -2768,7 +2768,7 @@ async function runGen(rels, tarotItems, label) {
   const items = res.items || [];
   const ts = Date.now();
   for (const it of items) {
-    GALLERY.push({ id: it.id, name: it.name, rel: it.rel, folder: (VISIBLE.find(x => x.rel === it.rel) || {}).folder || '',
+    GALLERY.push({ id: it.id, name: it.name, rel: it.rel, folder: (ALL.find(x => x.rel === it.rel) || {}).folder || '',
                    loras, trigger, ts, done: false, err: false, seed: null });
   }
   updateGalleryHead();
@@ -2803,7 +2803,7 @@ async function runGenJobs(jobs, picks, label) {
   const ts = Date.now();
   items.forEach((it, i) => {
     const job = jobs[i] || {};
-    GALLERY.push({ id: it.id, name: it.name, rel: it.rel, folder: (VISIBLE.find(x => x.rel === it.rel) || {}).folder || '',
+    GALLERY.push({ id: it.id, name: it.name, rel: it.rel, folder: (ALL.find(x => x.rel === it.rel) || {}).folder || '',
                    loras: job.loras || [], trigger: job.trigger || '', ts, done: false, err: false, seed: null });
   });
   updateGalleryHead();

@@ -719,6 +719,7 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 .cs-tpl-lock { display: flex; flex-direction: column; gap: 6px; padding-top: 4px; border-top: 1px solid var(--line); }
 .cs-tpl-lock-current { display: flex; align-items: center; gap: 6px; padding: 6px 8px;
   border-radius: 8px; background: var(--amber-soft); border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--line)); }
+.cs-tpl-lock-current[hidden] { display: none; }
 .cs-tpl-lock-current span { flex: 1; min-width: 0; font-size: 11.5px; color: var(--ink);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cs-tpl-lock-current button { flex: none; width: 20px; height: 20px; padding: 0; border-radius: 6px; border: 0;
