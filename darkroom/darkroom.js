@@ -3084,24 +3084,36 @@ function hideBoot() {
    距的縱深感，不用模糊濾鏡。中間疊題字＋「進入暗房」鈕。只播一次
    （localStorage 旗標），之後重整就直接進真正介面。
    --------------------------------------------------------------------------- */
-const INTRO_SAMPLE = 72;   // 固定抽樣張數（4 行 × 18），不管詞庫實際有多少筆
-// dir：'left'|'right'；durS：這行跑一輪要幾秒（行與行故意不同速，才有層次感，
-// 不是整批同步移動）。
-const INTRO_ROWS = [
+// 手機/弱網路裝置抽樣少一點、行數少一點——桌機 4 行 18 張、手機 2 行 10 張，
+// 首次載入時對 /api/thumb 的併發請求數跟著砍半以上，見 web-interface-guidelines
+// 的效能檢查（大量非關鍵圖片不該無差別跟桌機吃一樣的量）。
+const INTRO_ROWS_DESKTOP = [
   { dir: 'left', durS: 62, size: 'edge' },
   { dir: 'right', durS: 40, size: 'mid' },
   { dir: 'left', durS: 44, size: 'mid' },
   { dir: 'right', durS: 66, size: 'edge' },
 ];
-function buildIntroRow(items, durS) {
+const INTRO_ROWS_MOBILE = [
+  { dir: 'left', durS: 46, size: 'mid' },
+  { dir: 'right', durS: 58, size: 'mid' },
+];
+const INTRO_IMG_SIZE = { edge: 108, mid: 168 };   // 對照 darkroom.css 的 .intro-row.edge/.mid img 尺寸，寫進 width/height 屬性避免版面跳動（CLS）
+const INTRO_IMG_SIZE_MOBILE = { edge: 68, mid: 100 };
+function buildIntroRow(items, durS, px) {
   const track = document.createElement('div'); track.className = 'intro-track';
   track.style.setProperty('--intro-dur', durS + 's');
   // 內容重複兩份首尾接龍，animation 只需要跑 translateX(-50%) 就能無縫循環，
-  // 不用另外算「捲到底了要不要重置位置」這種容易出錯的邏輯。
+  // 不用另外算「捲到底了要不要重置位置」這種容易出錯的邏輯。第一份是畫面一
+  // 開始就看得到的內容，eager 載入；第二份接在後面、要捲很久才會進到可視
+  // 範圍，維持 lazy——不要無差別把「馬上看得到的」也標成 lazy 拖到它的載入
+  // 時機。兩份都是裝飾用縮圖，fetchpriority 一律 low，不跟任何關鍵請求搶頻寬。
   for (let rep = 0; rep < 2; rep++) {
     for (const it of items) {
       const img = document.createElement('img');
-      img.loading = 'lazy'; img.decoding = 'async'; img.alt = '';
+      img.loading = rep === 0 ? 'eager' : 'lazy';
+      img.decoding = 'async';
+      img.fetchPriority = 'low';
+      img.alt = ''; img.width = px; img.height = px;
       img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
       track.appendChild(img);
     }
@@ -3111,15 +3123,18 @@ function buildIntroRow(items, durS) {
 function maybeStartIntro() {
   if (localStorage.getItem('yz-intro-seen') === '1') return;
   if (!ALL.length) return;
-  const picks = sampleN(ALL, Math.min(INTRO_SAMPLE, ALL.length));
-  const perRow = Math.ceil(picks.length / INTRO_ROWS.length);
+  const mobile = isMobile();
+  const rowsCfg = mobile ? INTRO_ROWS_MOBILE : INTRO_ROWS_DESKTOP;
+  const sizeMap = mobile ? INTRO_IMG_SIZE_MOBILE : INTRO_IMG_SIZE;
+  const perRow = mobile ? 10 : 18;
+  const picks = sampleN(ALL, Math.min(perRow * rowsCfg.length, ALL.length));
   const rowsBox = $('intro-rows');
   rowsBox.innerHTML = '';
-  INTRO_ROWS.forEach((cfg, i) => {
+  rowsCfg.forEach((cfg, i) => {
     const items = picks.slice(i * perRow, (i + 1) * perRow);
     if (!items.length) return;
     const row = document.createElement('div'); row.className = `intro-row ${cfg.dir} ${cfg.size}`;
-    row.appendChild(buildIntroRow(items, cfg.durS));
+    row.appendChild(buildIntroRow(items, cfg.durS, sizeMap[cfg.size]));
     rowsBox.appendChild(row);
   });
   $('intro-modal').classList.add('open');
