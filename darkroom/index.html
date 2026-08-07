@@ -196,13 +196,18 @@
       <button data-tab="concepts">Concepts</button>
     </div>
     <div class="cs-tab-panel" id="cs-tab-general">
-      <p class="cs-hint">這裡是 LoRA1／LoRA2 的全域控制面板，跟 LoRA 大面板互相即時同步。按 <b>Concepts</b> 抽卡時：哪格固定放著角色/情境分類的 LoRA 就鎖定用它，沒有固定但範圍晶片設對分類就縮小範圍隨機抽，角色兩者都沒有就整個跳過、情境兩者都沒有就從全部隨機抽。標「已跳過」的格子完全不參與這個判斷。</p>
+      <p class="cs-hint">這裡是 LoRA1／LoRA2 的全域控制面板，跟 LoRA 大面板互相即時同步（強度、固定的 LoRA 都共用同一份狀態，改哪邊另一邊都會跟著變）。按 <b>Concepts</b> 抽卡時：哪格固定放著 LoRA 就鎖定用它，沒有固定但範圍晶片設了分類就縮小範圍隨機抽；情境（concepts）兩格都沒覆蓋到時會自動從全部 concepts 隨機補一顆，其他分類沒有這個補位。標「已跳過」的格子完全不參與這個判斷。</p>
       <button type="button" class="ghost lora-help-btn" id="lora-help-btn">？ 詳細教學</button>
       <div class="cs-scope-block" data-slot="0">
         <div class="cs-scope-head">
           <span class="cs-scope-label">LoRA1</span>
           <button type="button" class="cs-skip-toggle" data-slot="0">參與判斷</button>
         </div>
+        <label class="cs-row cs-str-row">
+          <span>強度</span>
+          <input type="range" id="cs-str-0" min="0" max="1" step="0.05">
+          <output id="cs-str-0-out"></output>
+        </label>
         <div class="cs-scope-locked" data-slot="0" hidden></div>
         <div class="lm-cats cs-scope-cats" data-slot="0"></div>
         <div class="lm-subcats cs-scope-subs" data-slot="0"></div>
@@ -212,22 +217,17 @@
           <span class="cs-scope-label">LoRA2</span>
           <button type="button" class="cs-skip-toggle" data-slot="1">參與判斷</button>
         </div>
+        <label class="cs-row cs-str-row">
+          <span>強度</span>
+          <input type="range" id="cs-str-1" min="0" max="1" step="0.05">
+          <output id="cs-str-1-out"></output>
+        </label>
         <div class="cs-scope-locked" data-slot="1" hidden></div>
         <div class="lm-cats cs-scope-cats" data-slot="1"></div>
         <div class="lm-subcats cs-scope-subs" data-slot="1"></div>
       </div>
     </div>
     <div class="cs-tab-panel" id="cs-tab-concepts" hidden>
-      <label class="cs-row">
-        <span>Character 強度</span>
-        <input type="range" id="cs-char-strength" min="0" max="1" step="0.05">
-        <output id="cs-char-strength-out"></output>
-      </label>
-      <label class="cs-row">
-        <span>concepts 強度</span>
-        <input type="range" id="cs-key-strength" min="0" max="1" step="0.05">
-        <output id="cs-key-strength-out"></output>
-      </label>
       <label class="cs-row cs-row-count">
         <span>每次抽幾張</span>
         <input type="number" id="cs-count" min="1" max="24" step="1">
@@ -277,27 +277,35 @@
         </div>
       </div>
       <div class="shortcut-group">
-        <h3>角色／情境怎麼判斷</h3>
+        <h3>每格套用哪顆 LoRA</h3>
         <div class="shortcut-row no-keys">
           <div class="shortcut-desc">
-            對每個「參與判斷」的格子，Concepts 分別判斷角色（Character）跟情境（concepts）兩個角色，順序固定：
+            對每個「參與判斷」的格子：
             <ol class="lora-help-steps">
-              <li><b>固定 LoRA 優先</b>——格子裡已經放著符合分類的 LoRA（Character 分類算角色、HENTAI/concepts 資料夾算情境）→ 每張卡都鎖定用這顆，不隨機</li>
-              <li><b>範圍晶片其次</b>——沒有固定 LoRA，但格子的範圍晶片設成符合的分類 → 隨機池縮小到那個範圍</li>
-              <li><b>都沒有</b>——角色：整個跳過，這次不套角色 LoRA；情境：從<b>全部</b> concepts 隨機抽（情境一定會套用一顆，不會跳過）</li>
+              <li><b>固定 LoRA 優先</b>——格子裡已經放著一顆 LoRA → 每張卡都鎖定用這顆，<b>不限分類</b>，放什麼就套什麼，不隨機</li>
+              <li><b>範圍晶片其次</b>——沒有固定 LoRA，但格子的範圍晶片縮小了分類/子資料夾 → 每張卡在那個範圍內各自重新隨機</li>
             </ol>
+            強度就是這格自己的強度滑桿（LoRA 大面板／「一般」分頁是同一份，改哪邊都同步），不分角色。
           </div>
         </div>
       </div>
       <div class="shortcut-group">
-        <h3>範例：LoRA1 固定角色、LoRA2 隨機抽情境</h3>
+        <h3>情境（concepts）的自動補位——只有 <b>C</b> 會這樣做</h3>
+        <div class="shortcut-row no-keys">
+          <div class="shortcut-desc">
+            兩格都沒有情境訊號（沒有固定在 HENTAI/concepts 資料夾裡的 LoRA、範圍晶片也沒設成 HENTAI 分類），且至少有一格還是「已跳過」（代表還有空位）時，<b>C</b> 會自動幫那個空格補一顆全庫隨機 concepts，強度沿用那格自己的設定。<b>R</b>／<b>E</b> 不會自動補位，單純照兩格現在的樣子字面套用——例如兩格都固定了跟 concepts 無關的 LoRA，R／E 就只套那兩顆。
+          </div>
+        </div>
+      </div>
+      <div class="shortcut-group">
+        <h3>範例：LoRA1 固定角色、LoRA2 隨機補情境</h3>
         <div class="shortcut-row no-keys">
           <div class="shortcut-desc">
             <ol class="lora-help-steps">
               <li>LoRA 大面板選好角色 LoRA 放 LoRA1</li>
-              <li>「一般」分頁把 LoRA1 切成「參與判斷」——角色側就鎖定用它了</li>
-              <li>LoRA2 維持預設「已跳過」，不用特別設定，情境側會自動從全部 concepts 隨機抽</li>
-              <li>按 <b>Concepts</b>——每張卡角色都是同一顆，情境每次重抽</li>
+              <li>「一般」分頁把 LoRA1 切成「參與判斷」（在大面板選定的當下其實已經自動切了，不用手動再點一次）</li>
+              <li>LoRA2 維持預設「已跳過」，不用特別設定</li>
+              <li>按 <b>C</b>——每張卡 LoRA1 都是同一顆角色 LoRA，LoRA2 自動補一顆全庫隨機 concepts、每張卡重抽；按 <b>R</b>／<b>E</b> 則只套 LoRA1 那顆，不會補</li>
             </ol>
           </div>
         </div>
@@ -306,7 +314,7 @@
         <h3>模板怎麼決定</h3>
         <div class="shortcut-row no-keys">
           <div class="shortcut-desc">
-            跟角色/情境判斷完全獨立，看「Concepts」分頁的「同時抽詞庫模板」「模板只抽左邊目前資料夾」兩個勾選：都不勾就不套模板，只用 LoRA 觸發詞當 prompt；勾了才會另外隨機抽一個詞庫模板（勾「只抽左邊」就只在目前資料夾裡抽，否則全部詞庫都可能抽到）。
+            <b>C</b> 看「Concepts」分頁的「同時抽詞庫模板」「模板只抽左邊目前資料夾」兩個勾選：都不勾就不套模板，只用 LoRA 觸發詞當 prompt；勾了才會另外隨機抽一個詞庫模板（勾「只抽左邊」就只在目前資料夾裡抽，否則全部詞庫都可能抽到）。<b>R</b> 無視這兩個勾選，固定從全庫抽模板；<b>E</b> 也無視勾選，固定限目前左邊選中的資料夾——跟 R／E 在瀏覽/生圖模式下的既有意思一致。
           </div>
         </div>
       </div>
