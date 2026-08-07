@@ -906,6 +906,15 @@ window.addEventListener('keydown', e => {
   if ((e.key === 'e' || e.key === 'E') && !isTyping() && (MODE === 'browse' || MODE === 'gen')) {
     e.preventDefault(); drawCategoryDispatch(); return;
   }
+  // L：一般生圖模式一鍵抽 LoRA（全庫）＋直接生圖，跟 R/E 對詞庫的「全庫／本分類」
+  // 配對邏輯一致，只是抽的對象換成 LoRA。只在生圖模式有意義。
+  if ((e.key === 'l' || e.key === 'L') && !isTyping() && MODE === 'gen') {
+    e.preventDefault(); drawGenLoraDispatch(); return;
+  }
+  // K：跟 L 一樣，但只在 LoRA 大面板左欄目前的分類/子資料夾範圍內抽。
+  if ((e.key === 'k' || e.key === 'K') && !isTyping() && MODE === 'gen') {
+    e.preventDefault(); drawGenLoraCategoryDispatch(); return;
+  }
   // C：Concepts 抽卡（鎖定版），跟模式無關（不像 R/E 限定瀏覽/生圖）。走到這裡代表沒有
   // 任何大圖/抽卡浮層／LoRA 大面板開著（前面幾個分支都會提早 return），所以不用再另外判斷。
   if ((e.key === 'c' || e.key === 'C') && !isTyping()) {
@@ -1104,6 +1113,34 @@ function loraCatLabel() {
   return GEN_LORA_CAT === 'all' ? null : GEN_LORA_CAT;
 }
 function drawLoraCategoryDispatch() { drawLoraTarot(loraCatPool(), loraCatLabel()); }
+
+// 一般生圖模式的「一鍵抽 LoRA」：跟 LoRA 隨機瀏覽（🎲 疊層，要點卡片選）不同層級——
+// 這裡是抽完直接套用、直接對目前選取的詞庫送出生圖，比照 Concepts C/X 鍵的操作體感。
+// 抽幾格看 GEN_LORA_DRAW_SCOPE：'both' 兩格都重抽（不判斷原本有沒有手動選，字面上就是
+// 兩格都換掉——這裡沒有 Concepts 那種 Character/concepts 角色區分，沒有「鎖定」的語意可
+// 套用）；'active' 只重抽 GEN_ACTIVE_SLOT 指到的那一格，另一格完全不動。
+function drawGenLoraSlots(pool, label) {
+  if (!pool.length) { toast(label ? `「${label}」沒有 LoRA 可抽` : '目前沒有 LoRA 可抽'); return; }
+  const indices = GEN_LORA_DRAW_SCOPE === 'both' ? [0, 1] : [GEN_ACTIVE_SLOT];
+  // 兩格都抽時各自獨立取樣、允許抽到同一顆（機率極低且沒有語意上的問題，不特別排除，
+  // 跟 Concepts 抽卡的 Character／concepts 兩側各自獨立隨機同一套邏輯）。
+  indices.forEach((i) => {
+    const l = pool[Math.floor(Math.random() * pool.length)];
+    const tw = l.trainedWords || [];
+    const twPicks = new Set();
+    if (tw.length) twPicks.add(0);   // 預設勾第一段觸發詞，跟 selectGenLora() 手動點選同一套規則
+    GEN_LORA_SLOTS[i] = { lora: l, strength: GEN_LORA_SLOTS[i].strength, twPicks };
+  });
+  renderGenCurrent();
+  if (!SEL.size) { toast('已抽到 LoRA，請先選要生成的詞庫再生圖'); return; }
+  runGen();
+}
+function drawGenLoraDispatch() {
+  fetchGenLoras().then((loras) => drawGenLoraSlots(loras, null));
+}
+function drawGenLoraCategoryDispatch() {
+  fetchGenLoras().then(() => drawGenLoraSlots(loraCatPool(), loraCatLabel()));
+}
 
 // Concepts 抽卡的兩個抽選池：Character（角色 LoRA）與固定的 HENTAI/concepts 資料夾
 // （情境/動作 LoRA）。
