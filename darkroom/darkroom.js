@@ -3079,13 +3079,23 @@ function hideBoot() {
 }
 
 /* ---------------------------------------------------------------------------
-   首次進暗房的進場畫面：兩行縮圖橫向跑馬燈（純 CSS animation，一行往左一行
-   往右），中間疊題字＋「進入暗房」鈕。只播一次（localStorage 旗標），之後
-   重整就直接進真正介面。
+   首次進暗房的進場畫面：四行縮圖橫向跑馬燈填滿整個高度（純 CSS animation，
+   方向左右交錯），中間兩行大而亮、外側兩行小而暗——靠尺寸/透明度差製造淺焦
+   距的縱深感，不用模糊濾鏡。中間疊題字＋「進入暗房」鈕。只播一次
+   （localStorage 旗標），之後重整就直接進真正介面。
    --------------------------------------------------------------------------- */
-const INTRO_SAMPLE = 50;   // 固定抽樣張數，不管詞庫實際有多少筆
-function buildIntroRow(items) {
+const INTRO_SAMPLE = 72;   // 固定抽樣張數（4 行 × 18），不管詞庫實際有多少筆
+// dir：'left'|'right'；durS：這行跑一輪要幾秒（行與行故意不同速，才有層次感，
+// 不是整批同步移動）。
+const INTRO_ROWS = [
+  { dir: 'left', durS: 62, size: 'edge' },
+  { dir: 'right', durS: 40, size: 'mid' },
+  { dir: 'left', durS: 44, size: 'mid' },
+  { dir: 'right', durS: 66, size: 'edge' },
+];
+function buildIntroRow(items, durS) {
   const track = document.createElement('div'); track.className = 'intro-track';
+  track.style.setProperty('--intro-dur', durS + 's');
   // 內容重複兩份首尾接龍，animation 只需要跑 translateX(-50%) 就能無縫循環，
   // 不用另外算「捲到底了要不要重置位置」這種容易出錯的邏輯。
   for (let rep = 0; rep < 2; rep++) {
@@ -3102,14 +3112,16 @@ function maybeStartIntro() {
   if (localStorage.getItem('yz-intro-seen') === '1') return;
   if (!ALL.length) return;
   const picks = sampleN(ALL, Math.min(INTRO_SAMPLE, ALL.length));
-  const mid = Math.ceil(picks.length / 2);
+  const perRow = Math.ceil(picks.length / INTRO_ROWS.length);
   const rowsBox = $('intro-rows');
   rowsBox.innerHTML = '';
-  const rowLeft = document.createElement('div'); rowLeft.className = 'intro-row left';
-  rowLeft.appendChild(buildIntroRow(picks.slice(0, mid)));
-  const rowRight = document.createElement('div'); rowRight.className = 'intro-row right';
-  rowRight.appendChild(buildIntroRow(picks.slice(mid)));
-  rowsBox.append(rowLeft, rowRight);
+  INTRO_ROWS.forEach((cfg, i) => {
+    const items = picks.slice(i * perRow, (i + 1) * perRow);
+    if (!items.length) return;
+    const row = document.createElement('div'); row.className = `intro-row ${cfg.dir} ${cfg.size}`;
+    row.appendChild(buildIntroRow(items, cfg.durS));
+    rowsBox.appendChild(row);
+  });
   $('intro-modal').classList.add('open');
 }
 function closeIntro() {

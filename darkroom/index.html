@@ -371,12 +371,14 @@
      「進入暗房」鈕。只用 CSS animation 做橫向捲動，不用 3D/矩陣運算——單純、好驗證。
      只播一次（localStorage 旗標），見 darkroom.js maybeStartIntro()。 -->
 <div class="intro-modal" id="intro-modal">
+  <div class="intro-sprocket top" aria-hidden="true"></div>
   <div class="intro-rows" id="intro-rows"></div>
   <div class="intro-copy">
     <h2>詞庫暗房</h2>
-    <p>瀏覽、標記、生成——你的詞庫都在這裡</p>
+    <p>在琥珀色的安全燈下，讓每一批詞庫慢慢顯影</p>
     <button type="button" class="intro-enter-btn" id="intro-enter-btn">進入暗房 →</button>
   </div>
+  <div class="intro-sprocket bottom" aria-hidden="true"></div>
 </div>
 <script src="/darkroom.js" defer></script>
 </body>
