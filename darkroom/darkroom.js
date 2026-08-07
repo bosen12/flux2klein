@@ -1318,21 +1318,22 @@ function buildConceptsPickers(autoFillConcept) {
   return pickers;
 }
 
-// 一般手動生圖／R／E（非 Concepts 疊層）套用的 LoRA 陣列，跟 Concepts 的 R/E 共用同一套
+// 一般手動生圖／R／E（非 Concepts 疊層）套用的 LoRA picker，跟 Concepts 的 R/E 共用同一套
 // slotSignal()/signalPicker() 判斷——已跳過的格子當它不存在、固定的直接套用、只設了範圍
-// （沒固定）的隨機抽一顆。**跟 buildConceptsPickers() 唯一的差別**：兩格都空手是完全正常
-// 的情況（單純不套 LoRA 生圖），不當錯誤、不擋生圖，直接回傳空陣列，不像 Concepts 那樣
-// 兩格都跳過要 toast 擋下來。
-function resolveGenLoras() {
-  const loras = [];
+// （沒固定）的每次呼叫各自重新隨機一顆。**跟 buildConceptsPickers() 唯一的差別**：兩格都
+// 空手是完全正常的情況（單純不套 LoRA 生圖），不當錯誤、不擋生圖，直接回傳空陣列，不像
+// Concepts 那樣兩格都跳過要 toast 擋下來。回傳 picker 函式（不是直接抽好的結果）是因為
+// runGen() 一次可能對好幾個詞庫生圖，範圍隨機的那格要讓**每張圖各自重新抽一次**，不是整批
+// 共用同一顆——使用者選範圍就是要「這批裡每張都可能不一樣」，不是變相的另一種固定。
+function buildGenPickers() {
+  const pickers = [];
   for (const sig of [slotSignal(0), slotSignal(1)]) {
     if (!sig) continue;
     const pick = signalPicker(sig, GEN_LORA_SLOTS[sig.i].strength);
     if (!pick) { toast(`LoRA${sig.i + 1} 的範圍內沒有 LoRA 可抽`); return null; }
-    const p = pick();
-    loras.push({ folder: p.lora.folder, file: p.lora.file, title: p.lora.title || p.lora.name, strength: p.strength });
+    pickers.push(pick);
   }
-  return loras;
+  return pickers;
 }
 
 // 「鎖定」機制：不做另一套選單 UI，直接偵測 LoRA1/LoRA2 面板現在有沒有選到符合分類的
@@ -2869,14 +2870,28 @@ const GEN_PENDING = new Set();     // 所有還在生的 gid（跨批次共用�
 async function runGen(rels, tarotItems, label) {
   rels = rels || [...SEL];
   if (!rels.length) return;
-  // 每格「參與判斷」時：固定的 LoRA 直接套用、只設了範圍（沒固定）的隨機抽一顆、已跳過
-  // 的當它不存在——跟 Concepts 疊層裡 R/E 的判斷完全同一套（resolveGenLoras()），不再是
-  // 只認「格子裡有沒有實際放一顆 LoRA」。後端依陣列長度注入 0~2 個 LoraLoader（見
-  // preview_ui.py /api/gen）。
-  const loras = resolveGenLoras();
-  if (loras === null) return;   // 範圍內沒有 LoRA 可抽，resolveGenLoras() 已經 toast 過了
-  const trigger = genTriggerText();
-  const payload = { rels, loras: loras.map(l => ({ folder: l.folder, file: l.file, strength: l.strength })), trigger, client: GEN_CLIENT };
+  // 每格「參與判斷」時：固定的 LoRA 直接套用、已跳過的當它不存在；只設了範圍（沒固定）的
+  // 這批裡**每張圖各自重新隨機抽一次**，不是整批共用同一顆——跟 Concepts 疊層裡 R/E 的
+  // 判斷完全同一套（buildGenPickers()/slotSignal()/signalPicker()），不再是只認「格子裡
+  // 有沒有實際放一顆 LoRA」。後端依陣列長度注入 0~2 個 LoraLoader（見 preview_ui.py
+  // /api/gen）。範圍隨機側沒有使用者勾選狀態可用，觸發詞退而求其次抓第一段當代表（跟
+  // Concepts 一致）；固定側的觸發詞已經包含在 baseTrigger 裡（genTriggerText 讀
+  // GEN_LORA_SLOTS 本尊），這裡只需要補範圍隨機側缺的那份——signalPicker 的固定分支才
+  // 會帶 trigger 欄位，用這個分辨是不是固定側，不用另外傳旗標。
+  const pickers = buildGenPickers();
+  if (pickers === null) return;   // 範圍內沒有 LoRA 可抽，buildGenPickers() 已經 toast 過了
+  const baseTrigger = genTriggerText();
+  const firstTw = (l) => (l.trainedWords || [])[0] || '';
+  const jobs = rels.slice(0, 64).map(rel => {
+    const picked = pickers.map(fn => fn());
+    const loras = picked.map(p => ({ folder: p.lora.folder, file: p.lora.file, title: p.lora.title || p.lora.name, strength: p.strength }));
+    const extra = joinTriggerParts(picked.filter(p => p.trigger === undefined && p.strength > 0).map(p => firstTw(p.lora)));
+    return { rel, loras, trigger: joinTriggerParts([baseTrigger, extra]) };
+  });
+  const payload = {
+    jobs: jobs.map(j => ({ rel: j.rel, loras: j.loras.map(l => ({ folder: l.folder, file: l.file, strength: l.strength })), trigger: j.trigger })),
+    client: GEN_CLIENT,
+  };
   let res;
   try {
     res = await fetch('/api/gen', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(r => r.json());
@@ -2884,10 +2899,11 @@ async function runGen(rels, tarotItems, label) {
   if (res.error) { toast(res.error); return; }
   const items = res.items || [];
   const ts = Date.now();
-  for (const it of items) {
+  items.forEach((it, i) => {
+    const job = jobs[i] || {};
     GALLERY.push({ id: it.id, name: it.name, rel: it.rel, folder: (ALL.find(x => x.rel === it.rel) || {}).folder || '',
-                   loras, trigger, ts, done: false, err: false, seed: null });
-  }
+                   loras: job.loras || [], trigger: job.trigger || '', ts, done: false, err: false, seed: null });
+  });
   updateGalleryHead();
   if (tarotItems) {
     openGenTarot(items, tarotItems, label);   // 抽卡：塔羅浮層（圖同時已進圖庫）
