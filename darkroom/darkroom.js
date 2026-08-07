@@ -848,10 +848,10 @@ window.addEventListener('keydown', e => {
   // 打標模式時按 C 開了 Concepts 疊層，R/1~4 這些鍵會被下面通用分支誤判成打標快捷鍵。
   if (CONCEPTS_TAROT && $('tarot').classList.contains('open')) {
     if (e.key === 'Escape') { closeTarot(); return; }
-    // R/C/X 在疊層內都是「沿用這次是哪個版本開的（CONCEPTS_REDRAW）重抽」，不是各自
-    // 切換成對應版本——切版本的邏輯只在「還沒開疊層」時的全域 C/X 觸發才有意義。
-    if (e.key === 'r' || e.key === 'R' || e.key === 'Enter' || e.key === 'c' || e.key === 'C' || e.key === 'x' || e.key === 'X') {
-      e.preventDefault(); CONCEPTS_REDRAW(); return;
+    // R/C 在疊層內都是「重抽」，用同一份 drawConceptsTarot（C/X 已經合併成一顆，不再
+    // 需要分兩個版本各自記住怎麼重抽）。
+    if (e.key === 'r' || e.key === 'R' || e.key === 'Enter' || e.key === 'c' || e.key === 'C') {
+      e.preventDefault(); drawConceptsTarot(); return;
     }
     return;
   }
@@ -916,26 +916,13 @@ window.addEventListener('keydown', e => {
   if ((e.key === 'e' || e.key === 'E') && !isTyping() && (MODE === 'browse' || MODE === 'gen')) {
     e.preventDefault(); drawCategoryDispatch(); return;
   }
-  // L：一般生圖模式一鍵抽 LoRA（全庫）＋直接生圖，跟 R/E 對詞庫的「全庫／本分類」
-  // 配對邏輯一致，只是抽的對象換成 LoRA。只在生圖模式有意義。
-  if ((e.key === 'l' || e.key === 'L') && !isTyping() && MODE === 'gen') {
-    e.preventDefault(); drawGenLoraDispatch(); return;
-  }
-  // K：跟 L 一樣，但只在 LoRA 大面板左欄目前的分類/子資料夾範圍內抽。
-  if ((e.key === 'k' || e.key === 'K') && !isTyping() && MODE === 'gen') {
-    e.preventDefault(); drawGenLoraCategoryDispatch(); return;
-  }
-  // C：Concepts 抽卡（鎖定版），跟模式無關（不像 R/E 限定瀏覽/生圖）。走到這裡代表沒有
-  // 任何大圖/抽卡浮層／LoRA 大面板開著（前面幾個分支都會提早 return），所以不用再另外判斷。
+  // C：Concepts 抽卡，跟模式無關（不像 R/E 限定瀏覽/生圖）。走到這裡代表沒有任何大圖/
+  // 抽卡浮層／LoRA 大面板開著（前面幾個分支都會提早 return），所以不用再另外判斷。
+  // 原本另有一個 X 鍵（分類縮小範圍版）——角色/情境的判斷邏輯改成直接看 LoRA1/LoRA2
+  // 固定放的 LoRA／範圍晶片之後，C／X 的差異已經不存在，合併成一顆。
   if ((e.key === 'c' || e.key === 'C') && !isTyping()) {
     e.preventDefault();
     fetchGenLoras().then(() => { updateConceptsLockLabel(); drawConceptsTarot(); });
-    return;
-  }
-  // X：Concepts 抽卡（分類縮小範圍版）——見 drawConceptsTarotByCategory。
-  if ((e.key === 'x' || e.key === 'X') && !isTyping()) {
-    e.preventDefault();
-    fetchGenLoras().then(() => { updateConceptsLockLabel(); drawConceptsTarotByCategory(); });
     return;
   }
   // ?：開快捷鍵一覽。用 e.key 而不是判斷 Shift+/，跨鍵盤配置（含中文輸入法英數模式）
@@ -1053,11 +1040,6 @@ let LORA_TAROT = false;
 // 收尾、z-index 拉高（body.concepts-tarot-open，見 darkroom.css）都要認得現在是這個
 // 情境，不然會被 MODE 判斷出來的一般抽卡邏輯誤觸（見 drawDispatch() 與 keydown 分支）。
 let CONCEPTS_TAROT = false;
-// Concepts 抽卡有兩個版本（C 鍵鎖定版／X 鍵分類縮小範圍版，見 drawConceptsTarot／
-// drawConceptsTarotByCategory），R 鍵重抽要沿用「這次疊層是哪個版本開的」，不能寫死
-// 呼叫其中一個——不然用 X 開的疊層按 R 會悄悄變成鎖定版，跟畫面上看到的不一致。
-// 兩個進入點各自的第一行都會把自己指派給這個變數。
-let CONCEPTS_REDRAW = drawConceptsTarot;
 // pool/label 可選（沿用 drawTarot/drawGenTarot 那套：不傳＝原本行為，全庫隨機）。
 // E 鍵重抽本分類靠 drawLoraCategoryDispatch() 帶 pool/label 進來。
 function drawLoraTarot(pool, label) {
@@ -1123,24 +1105,23 @@ function loraCatLabel() {
   return curScope().cat === 'all' ? null : curScope().cat;
 }
 
-// 這格如果被鎖定（GEN_LORA_SLOT_LOCKED），範圍晶片就跟這次生圖無關了——鎖定的格子
-// L/K 完全不會重抽，調範圍也不會有任何效果，繼續顯示晶片只會讓人誤以為調了有用。
-// 鎖定時改顯示「目前鎖住的是哪顆 LoRA」，hover 用既有的 showSingleLoraPreviewTip
-// 預覽（跟大面板左欄清單/分頁卡 hover 同一套，不用另外做一套預覽邏輯）。
-function renderCsSlotLockState(slot) {
-  const lockedBox = document.querySelector(`.cs-scope-locked[data-slot="${slot}"]`);
+// 這格如果已經放了固定 LoRA，範圍晶片對 Concepts 判斷就沒意義了（固定 LoRA 的優先權
+// 比範圍晶片高，見 drawConceptsTarot() 的判斷順序）——改顯示「目前放的是哪顆 LoRA」，
+// hover 用既有的 showSingleLoraPreviewTip 預覽（跟大面板左欄清單/分頁卡 hover 同一套，
+// 不用另外做一套預覽邏輯）。
+function renderCsSlotFixedState(slot) {
+  const fixedBox = document.querySelector(`.cs-scope-locked[data-slot="${slot}"]`);
   const catBox = document.querySelector(`.cs-scope-cats[data-slot="${slot}"]`);
   const subBox = document.querySelector(`.cs-scope-subs[data-slot="${slot}"]`);
-  if (!lockedBox || !catBox || !subBox) return;
-  const locked = GEN_LORA_SLOT_LOCKED[slot];
-  lockedBox.hidden = !locked;
-  catBox.hidden = locked;
-  subBox.hidden = locked;
-  if (!locked) return;
-  lockedBox.innerHTML = '';
-  const card = document.createElement('div'); card.className = 'cs-locked-card';
+  if (!fixedBox || !catBox || !subBox) return;
   const lora = GEN_LORA_SLOTS[slot].lora;
-  if (lora && lora.preview) {
+  fixedBox.hidden = !lora;
+  catBox.hidden = !!lora;
+  subBox.hidden = !!lora;
+  if (!lora) return;
+  fixedBox.innerHTML = '';
+  const card = document.createElement('div'); card.className = 'cs-locked-card';
+  if (lora.preview) {
     card.appendChild(makeLoraPreviewEl(lora));
     card.addEventListener('mouseenter', () => showSingleLoraPreviewTip(card, lora));
     card.addEventListener('mouseleave', hideLoraPreviewTip);
@@ -1148,9 +1129,23 @@ function renderCsSlotLockState(slot) {
     const ph = document.createElement('span'); ph.className = 'ph'; card.appendChild(ph);
   }
   const label = document.createElement('span'); label.className = 'cs-locked-name';
-  label.textContent = lora ? (lora.title || lora.name) : '（這格還沒選 LoRA）';
+  label.textContent = lora.title || lora.name;
   card.appendChild(label);
-  lockedBox.appendChild(card);
+  fixedBox.appendChild(card);
+}
+// 這格的「參與判斷／跳過」切換——跳過的格子，不管放了什麼固定 LoRA、範圍晶片設什麼，
+// drawConceptsTarot() 判斷角色/情境時都當它不存在（見 findLockedSlot()/findScopePool()
+// 的 GEN_LORA_SLOT_SKIP 過濾）。切換按鈕跟顯示區塊都在「一般」分頁這裡集中管理——
+// 這是使用者明確要求的：「一般」分頁要是全域控制面板，不要拆到 LoRA 大面板分頁卡上。
+function renderCsSkipToggle(slot) {
+  const btn = document.querySelector(`.cs-skip-toggle[data-slot="${slot}"]`);
+  const block = document.querySelector(`.cs-scope-block[data-slot="${slot}"]`);
+  if (!btn) return;
+  const skip = GEN_LORA_SLOT_SKIP[slot];
+  btn.textContent = skip ? '已跳過' : '參與判斷';
+  btn.classList.toggle('skipped', skip);
+  btn.setAttribute('aria-pressed', skip ? 'true' : 'false');
+  if (block) block.classList.toggle('skipped', skip);
 }
 // 設定 modal「一般」分頁的 LoRA1/LoRA2 範圍晶片——跟大面板左欄晶片（renderLmCats/
 // renderLmSubcats）是同一份 GEN_LORA_SLOT_SCOPE 資料，視覺邏輯也完全比照(分類晶片＋
@@ -1158,8 +1153,9 @@ function renderCsSlotLockState(slot) {
 // （slot 0/1 都要看得到），不是只畫「目前作用格」那一份；晶片點擊直接改
 // GEN_LORA_SLOT_SCOPE[slot]，不透過 curScope()（curScope() 只會指到作用格）。
 function renderCsScopeChips(slot) {
-  renderCsSlotLockState(slot);
-  if (GEN_LORA_SLOT_LOCKED[slot]) return;   // 鎖定時晶片藏起來了，不用建內容
+  renderCsSkipToggle(slot);
+  renderCsSlotFixedState(slot);
+  if (GEN_LORA_SLOTS[slot].lora) return;   // 有固定 LoRA，晶片不用建內容
   const box = document.querySelector(`.cs-scope-cats[data-slot="${slot}"]`); if (!box) return;
   const scope = GEN_LORA_SLOT_SCOPE[slot];
   const items = GEN_LORAS || [];
@@ -1216,58 +1212,20 @@ function renderCsScopeSubChips(slot) {
 
 function drawLoraCategoryDispatch() { drawLoraTarot(loraCatPool(), loraCatLabel()); }
 
-// 一般生圖模式的「一鍵抽 LoRA」：跟 LoRA 隨機瀏覽（🎲 疊層，要點卡片選）不同層級——
-// 這裡是抽完直接套用、直接對目前選取的詞庫送出生圖，比照 Concepts C/X 鍵的操作體感。
-// 抽幾格看 GEN_LORA_SLOT_LOCKED：鎖定的格子（renderLmSlotTabs() 分頁卡上的 🔒 按鈕）
-// 完全跳過、原封不動，其餘沒鎖定的格子（🎲）才重抽。這樣「固定 LoRA1、只抽 LoRA2」
-// 只要把 LoRA1 鎖起來就好，不用另外去設定彈窗切「兩格都抽／只抽作用格」——後者切了
-// 只能整體生效，沒辦法「固定這格、只抽那格」，也是使用者反映看不懂的地方。
-// 每格自己的分類/子資料夾範圍算出來的抽取池，跟 loraCatPool()（永遠讀目前作用格）
-// 不同——這裡要能算「非作用格」那一格自己的池，K 鍵搭「兩格都抽」時才能讓兩格真的各自
-//套用各自記住的範圍，而不是都被目前作用格的範圍蓋掉。
+// 每格自己的分類/子資料夾範圍算出來的抽取池——跟 loraCatPool()（永遠讀目前作用格）不同，
+// 這裡要能算「任一格」自己的池，Concepts 判斷角色/情境時才能各自套用各自記住的範圍，
+// 不會被目前作用格的範圍蓋掉。findScopePool(cat) 是 Concepts 用的入口：在沒被標記
+// 「跳過判斷」的格子裡找一個範圍設成 cat 的，回傳它的抽取池；找不到就回 null（代表這個
+// 角色沒有範圍訊號，drawConceptsTarot() 會接著決定要整個跳過還是退回全庫）。
 function scopePool(i) {
   const scope = GEN_LORA_SLOT_SCOPE[i];
   return (GEN_LORAS || []).filter(l =>
     (scope.cat === 'all' || l.category === scope.cat) &&
     (!scope.subfolder || l.folder === scope.subfolder));
 }
-function scopeLabel(i) {
-  const scope = GEN_LORA_SLOT_SCOPE[i];
-  if (scope.subfolder) return scope.subfolder === scope.cat ? scope.cat : scope.subfolder;
-  return scope.cat === 'all' ? null : scope.cat;
-}
-// poolForSlot(i)：回傳這一格要抽的池。L 鍵（全庫）不管哪一格都是同一份 GEN_LORAS，直接
-// 傳函式回同一個陣列；K 鍵（本分類）要各自算 scopePool(i)，兩格範圍不同就真的各自套用。
-function drawGenLoraSlots(poolForSlot, labelForSlot) {
-  const indices = [0, 1].filter(i => !GEN_LORA_SLOT_LOCKED[i]);
-  if (!indices.length) { toast('LoRA1、LoRA2 都鎖定了，先解鎖至少一格才能抽'); return; }
-  const picks = [];
-  for (const i of indices) {
-    const pool = poolForSlot(i);
-    if (!pool.length) {
-      const label = labelForSlot(i);
-      toast(label ? `「${label}」沒有 LoRA 可抽` : '目前沒有 LoRA 可抽');
-      return;
-    }
-    picks.push({ i, l: pool[Math.floor(Math.random() * pool.length)] });
-  }
-  // 兩格都抽時各自獨立取樣、允許抽到同一顆（機率極低且沒有語意上的問題，不特別排除，
-  // 跟 Concepts 抽卡的 Character／concepts 兩側各自獨立隨機同一套邏輯）。
-  picks.forEach(({ i, l }) => {
-    const tw = l.trainedWords || [];
-    const twPicks = new Set();
-    if (tw.length) twPicks.add(0);   // 預設勾第一段觸發詞，跟 selectGenLora() 手動點選同一套規則
-    GEN_LORA_SLOTS[i] = { lora: l, strength: GEN_LORA_SLOTS[i].strength, twPicks };
-  });
-  renderGenCurrent();
-  if (!SEL.size) { toast('已抽到 LoRA，請先選要生成的詞庫再生圖'); return; }
-  runGen();
-}
-function drawGenLoraDispatch() {
-  fetchGenLoras().then((loras) => drawGenLoraSlots(() => loras, () => null));
-}
-function drawGenLoraCategoryDispatch() {
-  fetchGenLoras().then(() => drawGenLoraSlots(scopePool, scopeLabel));
+function findScopePool(cat) {
+  const i = [0, 1].find(i => !GEN_LORA_SLOT_SKIP[i] && GEN_LORA_SLOT_SCOPE[i].cat === cat);
+  return i === undefined ? null : scopePool(i);
 }
 
 // Concepts 抽卡的兩個抽選池：Character（角色 LoRA）與固定的 HENTAI/concepts 資料夾
@@ -1276,10 +1234,10 @@ function fullCharacterPool() { return (GEN_LORAS || []).filter(l => l.category =
 function fullConceptsPool() { return (GEN_LORAS || []).filter(l => l.folder === 'HENTAI/concepts'); }
 
 // 「鎖定」機制：不做另一套選單 UI，直接偵測 LoRA1/LoRA2 面板現在有沒有選到符合分類的
-// LoRA——有選到就鎖定那顆（用它跟它設定的強度，每張卡都一樣，不重新隨機），另一側維持
-// 隨機；兩格都沒對到就兩側都隨機（現行預設行為）。依 slot0→slot1 順序找第一個符合的，
-// 兩格剛好都是同分類時只有先出現的那格算數（另一格被忽略，不會誤判成「兩個都鎖定」）。
-function findLockedSlot(matchFn) { return GEN_LORA_SLOTS.find(s => s.lora && matchFn(s.lora)); }
+// LoRA——有選到就鎖定那顆（用它跟它設定的強度，每張卡都一樣，不重新隨機）。標成「跳過」
+// 的格子（GEN_LORA_SLOT_SKIP）完全不參與這個判斷，當它不存在。依 slot0→slot1 順序找
+// 第一個符合的，兩格剛好都是同分類時只有先出現的那格算數。
+function findLockedSlot(matchFn) { return GEN_LORA_SLOTS.find((s, i) => !GEN_LORA_SLOT_SKIP[i] && s.lora && matchFn(s.lora)); }
 function lockedCharacterSlot() { return findLockedSlot(l => l.category === 'Character'); }
 function lockedConceptSlot() { return findLockedSlot(l => l.folder === 'HENTAI/concepts'); }
 // Concepts 按鈕旁的鎖定狀態文字，隨 LoRA1/LoRA2 選擇即時更新（見 renderGenCurrent）。
@@ -1416,7 +1374,7 @@ function updateTarotProgress() {
 // 情境共用同一顆，原本沒檢查這兩個旗標，LoRA 隨機瀏覽／Concepts 抽卡疊層開著時點下去
 // 會誤觸目前 MODE 對應的一般抽卡（詞庫/生圖），不是重抽當下這種——鍵盤 R 走另一條
 // keydown 分支，同樣要各自補上判斷（見下方 window.addEventListener('keydown', …)）。
-const drawDispatch = () => (LORA_TAROT ? drawLoraTarot() : CONCEPTS_TAROT ? CONCEPTS_REDRAW() : MODE === 'gen' ? drawGenTarot() : MODE === 'tag' ? drawTagTarot() : drawTarot());
+const drawDispatch = () => (LORA_TAROT ? drawLoraTarot() : CONCEPTS_TAROT ? drawConceptsTarot() : MODE === 'gen' ? drawGenTarot() : MODE === 'tag' ? drawTagTarot() : drawTarot());
 $('draw-cards').onclick = drawDispatch;
 $('tarot-redraw').onclick = drawDispatch;
 $('tarot-close').onclick = closeTarot;
@@ -1604,13 +1562,15 @@ let CONCEPTS_WITH_TEMPLATE = localStorage.getItem('yz-concepts-tpl') === '1';
 // 全部詞庫（ALL）抽。刻意沿用 CUR_FOLDER 而不是另做一個詞庫分類選單：使用者已經在用
 // 左邊列表瀏覽/選資料夾了，不用為 Concepts 抽卡另外重複一套選擇 UI。
 let CONCEPTS_TPL_CUR_FOLDER = localStorage.getItem('yz-concepts-tpl-cur-folder') === '1';
-// 每格是否參與 L/K 隨機抽取——鎖定的格子（true）按 L/K 完全不會被重抽，讓使用者可以
-// 固定其中一格手動選好的 LoRA、只讓另一格隨機。跟 GEN_LORA_SLOTS 一樣 session-only，
+// 每格是否要參與 Concepts 抽卡的角色/情境判斷——標成「跳過」的格子，不管放了什麼固定
+// LoRA、範圍晶片設什麼，drawConceptsTarot() 判斷時都當它不存在（見 findLockedSlot()/
+// findScopePool()）。**預設是跳過（true）**：使用者要明確切成「參與判斷」，這格的
+// LoRA/範圍才會影響 Concepts——不然單純想用 LoRA1/2 手動生圖，會不小心也悄悄改變
+// Concepts 抽卡的行為，使用者反映過這個預設方向。跟 GEN_LORA_SLOTS 一樣 session-only，
 // 不存 localStorage：這是「這次生圖想怎麼搭」的暫時決定，不是需要跨分頁記住的偏好。
-// 切換入口在 renderLmSlotTabs() 每張分頁卡上的 🎲／🔒 按鈕，直接在使用者選 LoRA 的
-// 地方切換，不是另外塞進設定彈窗——之前塞在設定彈窗的「兩格都抽／只抽作用格」單選
-// 使用者反映看不懂在幹嘛，且只能整體切換、沒辦法「固定這格、只抽那格」。
-const GEN_LORA_SLOT_LOCKED = [false, false];
+// 切換入口集中在設定彈窗「一般」分頁（renderCsSkipToggle()），不是 LoRA 大面板——
+// 使用者明確要求「一般」分頁要是全域控制面板，不要拆到兩個地方。
+const GEN_LORA_SLOT_SKIP = [true, true];
 function setConceptsCharStrength(v) { CONCEPTS_CHAR_STRENGTH = v; localStorage.setItem('yz-concepts-char-str', v); }
 function setConceptsKeyStrength(v) { CONCEPTS_KEY_STRENGTH = v; localStorage.setItem('yz-concepts-key-str', v); }
 function setConceptsCount(v) { CONCEPTS_COUNT = v; localStorage.setItem('yz-concepts-count', v); }
@@ -1942,9 +1902,8 @@ function renderGenCurrent() {
 
 // 右欄最上面的「LoRA 1 / LoRA 2」分頁卡：點哪張就把它設為編輯中（GEN_ACTIVE_SLOT），
 // 左欄清單/隨機瀏覽點選都塞進編輯中那格。有選的顯示縮圖+標題，沒選顯示「未選擇」；
-// LoRA 2 常常留空（見 selectGenLora 的可留空設計），有選才顯示清空 ✕。每張卡固定有一顆
-// 🎲／🔒 按鈕（不管這格有沒有選 LoRA 都顯示）決定這格要不要參與 L/K 隨機抽取，見
-// GEN_LORA_SLOT_LOCKED／drawGenLoraSlots()。
+// LoRA 2 常常留空（見 selectGenLora 的可留空設計），有選才顯示清空 ✕。「參與判斷／跳過」
+// 切換不在這裡——集中在設定彈窗「一般」分頁（renderCsSkipToggle()），這裡只管選 LoRA。
 function renderLmSlotTabs() {
   const wrap = document.createElement('div'); wrap.className = 'lm-slot-tabs';
   GEN_LORA_SLOTS.forEach((slot, i) => {
@@ -1963,20 +1922,6 @@ function renderLmSlotTabs() {
       tab.addEventListener('mouseenter', () => showSingleLoraPreviewTip(tab, slot.lora));
       tab.addEventListener('mouseleave', hideLoraPreviewTip);
     }
-    const locked = GEN_LORA_SLOT_LOCKED[i];
-    const lock = document.createElement('button'); lock.type = 'button';
-    lock.className = 'lm-slot-lock' + (locked ? ' locked' : '');
-    lock.textContent = locked ? '🔒' : '🎲';
-    lock.title = locked ? `LoRA ${i + 1} 已鎖定：按 L／K 不會動這格` : `LoRA ${i + 1} 隨機：按 L／K 會重抽這格`;
-    lock.setAttribute('aria-label', lock.title);
-    lock.setAttribute('aria-pressed', locked ? 'true' : 'false');
-    lock.addEventListener('click', (e) => {
-      e.stopPropagation();
-      GEN_LORA_SLOT_LOCKED[i] = !GEN_LORA_SLOT_LOCKED[i];
-      renderLmCurrent();
-      renderCsScopeChips(i);   // 設定彈窗（如果開著）跟著切換顯示晶片／鎖定卡片
-    });
-    tab.appendChild(lock);
     if (slot.lora) {
       const clear = document.createElement('button'); clear.type = 'button'; clear.className = 'lm-slot-clear';
       clear.title = `清空 LoRA ${i + 1}`; clear.setAttribute('aria-label', `清空 LoRA ${i + 1}`); clear.textContent = '✕';
@@ -2091,8 +2036,8 @@ function renderLmCurrent() {
 }
 
 // 單一格（LoRA1 或 LoRA2）依 twPicks 組合出來的觸發詞——genTriggerText()、Concepts
-// 抽卡鎖定側（見 drawConceptsTarot/drawConceptsTarotByCategory）共用同一份邏輯，不要
-// 各自重寫一次「只取第一段」的簡化版，那樣使用者在面板勾的段落就白勾了。
+// 抽卡鎖定側（見 drawConceptsTarot）共用同一份邏輯，不要各自重寫一次「只取第一段」的
+// 簡化版，那樣使用者在面板勾的段落就白勾了。
 // 段落之間該不該加逗點是動態判斷、不是寫死加或寫死不加：每段 trainedWords 常常自己
 // 結尾就帶逗點（civitai metadata 常見格式），這種情況直接接空格就好，硬加 ", " 會變成
 // 連續逗點；但也有些段落沒有結尾逗點（純文字描述、或就是最後一段），這種不加分隔會讓
@@ -2169,10 +2114,7 @@ const SHORTCUT_GROUPS = [
   { title: '抽卡／生成', rows: [
     { keys: ['R'], desc: '重抽——依目前情境：一般抽卡（瀏覽/生圖/打標）、LoRA 隨機瀏覽、或 Concepts 疊層各自對應的重抽' },
     { keys: ['E'], desc: '重抽本分類（瀏覽/生圖模式看目前資料夾；LoRA 隨機瀏覽看左欄篩選晶片）' },
-    { keys: ['C'], desc: '<b>Concepts 抽卡</b>——鎖定 LoRA1/LoRA2 面板目前選的 Character／concepts LoRA，另一側隨機' },
-    { keys: ['X'], desc: '<b>Concepts 抽卡</b>——跟 C 一樣尊重 LoRA1/2 鎖定，沒鎖定的那側改用 LoRA 面板左欄目前的分類篩選縮小範圍' },
-    { keys: ['L'], desc: '<b>一般生圖模式</b>——隨機抽 LoRA 塞進 LoRA1/2（分頁卡標 🔒 的格子跳過不抽），直接對目前選取的詞庫生圖' },
-    { keys: ['K'], desc: '<b>一般生圖模式</b>——跟 L 一樣，但只在各格自己設定的分類/子資料夾範圍內抽' },
+    { keys: ['C'], desc: '<b>Concepts 抽卡</b>——角色/情境各自照「一般」分頁的設定判斷（固定 LoRA→鎖定，範圍晶片→縮小範圍，都沒有→角色跳過／情境全隨機），標「已跳過」的格子不參與判斷' },
   ]},
   { title: '打標模式', rows: [
     { keys: ['←', '→', '↑', '↓'], desc: '移動焦點到上／下一張或上／下一列' },
@@ -2219,8 +2161,8 @@ const FEATURE_GROUPS = [
     { desc: '<b>多選詞庫＋選 LoRA 生圖</b>——瀏覽格線點縮圖多選，右上「選 LoRA」開大面板挑 LoRA，genbar 按「生圖」送出' },
     { desc: '<b>LoRA 大面板</b>——左欄分類/子資料夾篩選＋搜尋＋翻頁，右欄每段觸發詞各自一張完整文字卡（勾選要用哪幾段）＋強度滑桿＋參考圖；左欄下方「🎲 隨機瀏覽」疊一批塔羅卡讓你點選' },
     { desc: '<b>雙 LoRA 疊加</b>——右欄「LoRA 1／LoRA 2」兩張分頁卡各自獨立選擇與強度，可疊加使用' },
-    { desc: '<b>各格獨立抽取範圍</b>——LoRA1/LoRA2 各自獨立記住自己的分類/子資料夾抽取範圍，設定彈窗「一般」分頁跟大面板左欄晶片雙向同步' },
-    { desc: '<b>各格鎖定／隨機</b>——LoRA1/LoRA2 分頁卡上各有一顆 🎲／🔒 按鈕，鎖定的格子按 <b>L</b>／<b>K</b> 不會被重抽，可以固定其中一格手動選好的 LoRA、只讓另一格隨機' },
+    { desc: '<b>各格獨立抽取範圍</b>——LoRA1/LoRA2 各自獨立記住自己的分類/子資料夾抽取範圍，設定彈窗「一般」分頁跟大面板左欄晶片雙向同步；哪格已經放了固定 LoRA，範圍晶片會自動換成顯示那顆 LoRA（含縮圖，滑鼠移上去有預覽）' },
+    { desc: '<b>Concepts 參與判斷</b>——設定彈窗「一般」分頁 LoRA1/LoRA2 各有一顆「參與判斷／已跳過」切換（預設跳過），只有切成參與的格子才會影響 <b>Concepts</b> 抽卡的角色/情境判斷，點旁邊「？ 詳細教學」看完整說明' },
     { desc: '<b>生成步數輸入框</b>——topbar 右側，範圍 1～150，即時套用到之後的生成（不是鎖 25，25 只是預設值）' },
   ]},
   { title: '抽卡', rows: [
@@ -2576,6 +2518,14 @@ $('cs-tab-seg').addEventListener('click', (e) => {
   $('cs-tab-general').hidden = btn.dataset.tab !== 'general';
   $('cs-tab-concepts').hidden = btn.dataset.tab !== 'concepts';
 });
+// 「參與判斷／已跳過」切換——事件委派掛在 cs-tab-general 上，用 data-slot 判斷是哪一格。
+$('cs-tab-general').addEventListener('click', (e) => {
+  const btn = e.target.closest('.cs-skip-toggle'); if (!btn) return;
+  const i = Number(btn.dataset.slot);
+  GEN_LORA_SLOT_SKIP[i] = !GEN_LORA_SLOT_SKIP[i];
+  renderCsSkipToggle(i);
+  updateConceptsLockLabel();   // Concepts 鈕旁的鎖定狀態文字可能因為跳過切換而改變，跟著更新
+});
 const $csCharStrength = $('cs-char-strength'), $csCharStrengthOut = $('cs-char-strength-out');
 const $csKeyStrength = $('cs-key-strength'), $csKeyStrengthOut = $('cs-key-strength-out');
 const $csCount = $('cs-count');
@@ -2719,56 +2669,36 @@ function openGalleryItem(gid) {
 // 設定，寫在後面會撞 TDZ：CLAUDE.md 記過的老坑，這次是動手前就避開，不是修出來的）。
 // 沒開模板就只用該卡那組 LoRA 的 trainword 當 prompt（rel 送空字串，後端
 // _gen_one_worker 會跳過詞庫載入，只留品質標籤）。
-// C 鍵版本：鎖定 LoRA1/LoRA2 面板現在選到的 Character／concepts LoRA（見
-// lockedCharacterSlot/lockedConceptSlot），另一側隨機；都沒鎖定就兩側都隨機。是否抽
-// 詞庫模板看 CONCEPTS_WITH_TEMPLATE 開關的實際狀態——X 鍵（drawConceptsTarotByCategory）
-// 對這個開關的反應完全一樣，兩鍵在「鎖定」跟「模板」這兩件事上是一致的，唯一差別只在
-// 沒鎖定那側的隨機池要不要先被左欄分類晶片縮小。
+// 唯一的 Concepts 抽卡入口（原本 C／X 兩顆鍵合併——角色/情境的判斷邏輯改成直接看
+// LoRA1/LoRA2 現在的樣子之後，兩鍵的差異已經不存在）。角色、情境分別照這個優先序判斷
+// （標「跳過」的格子，見 GEN_LORA_SLOT_SKIP，兩步都不看）：
+//   ①有格子固定放著符合分類的 LoRA → 鎖定用它，每張卡都一樣，不重新隨機
+//   ②沒有固定 LoRA，但有格子的範圍晶片設成符合的分類 → 隨機池縮小到那個範圍
+//   ③角色兩者都沒有 → 整個跳過，這次不套角色 LoRA；情境兩者都沒有 → 從全部 concepts 隨機抽
+// 情境跟角色不對稱：情境一定會套用一顆（至少全庫隨機），角色只有在有訊號時才套用——
+// 這是使用者要的行為，理由是「沒放角色 LoRA 就代表這次不想要角色」，不是「隨便配一個」。
 function drawConceptsTarot() {
   const lockedChar = lockedCharacterSlot(), lockedConcept = lockedConceptSlot();
-  const cPool = lockedChar ? null : fullCharacterPool();
-  const kPool = lockedConcept ? null : fullConceptsPool();
-  if (!lockedChar && !cPool.length) { toast('Character 底下沒有 LoRA 可抽'); return; }
-  if (!lockedConcept && !kPool.length) { toast('concepts 底下沒有 LoRA 可抽'); return; }
+  const charPool = lockedChar ? null : findScopePool('Character');
+  const hasCharSignal = !!(lockedChar || charPool);
+  const conceptPool = lockedConcept ? null : (findScopePool('HENTAI') || fullConceptsPool());
+  if (hasCharSignal && !lockedChar && !charPool.length) { toast('角色範圍內沒有 LoRA 可抽'); return; }
+  if (!lockedConcept && !conceptPool.length) { toast('concepts 底下沒有 LoRA 可抽'); return; }
   // 鎖定側的觸發詞要照 LoRA1/2 面板實際勾的段落組（slotTriggerText），不是隨便抓第一段
   // ——這是使用者選了一顆 LoRA 之後，那顆的觸發詞理應完全照面板上勾選的來，跟隨機側
   // 「沒有勾選狀態、只能抓第一段當預設」的情境不一樣（見 _runConceptsDraw 的 firstTw 退場）。
-  const pickChar = lockedChar
+  const pickChar = !hasCharSignal ? null : (lockedChar
     ? () => ({ lora: lockedChar.lora, strength: CONCEPTS_CHAR_STRENGTH, trigger: slotTriggerText(lockedChar) })
-    : () => ({ lora: cPool[Math.floor(Math.random() * cPool.length)], strength: CONCEPTS_CHAR_STRENGTH });
+    : () => ({ lora: charPool[Math.floor(Math.random() * charPool.length)], strength: CONCEPTS_CHAR_STRENGTH }));
   const pickConcept = lockedConcept
     ? () => ({ lora: lockedConcept.lora, strength: CONCEPTS_KEY_STRENGTH, trigger: slotTriggerText(lockedConcept) })
-    : () => ({ lora: kPool[Math.floor(Math.random() * kPool.length)], strength: CONCEPTS_KEY_STRENGTH });
-  CONCEPTS_REDRAW = drawConceptsTarot;
+    : () => ({ lora: conceptPool[Math.floor(Math.random() * conceptPool.length)], strength: CONCEPTS_KEY_STRENGTH });
   _runConceptsDraw(pickChar, pickConcept, CONCEPTS_WITH_TEMPLATE);
 }
 
-// X 鍵版本：跟 C 鍵一樣先看 LoRA1/2 有沒有鎖定（lockedCharacterSlot/lockedConceptSlot），
-// 鎖定的那側直接用鎖定的 LoRA；沒鎖定的那側才改用 LoRA 大面板左欄目前停的分類/子資料夾
-// 晶片（curScope()，跟隨機瀏覽 LoRA 的 E 鍵、loraCatPool() 同一套
-// 狀態）縮小範圍。跟 C 鍵唯一的差別就是「沒鎖定那側的隨機池要不要先被分類晶片縮小」，
-// 「鎖定」與「同時抽詞庫模板」開關這兩件事兩鍵完全一致、互相獨立——鎖定看 LoRA1/2，
-// 模板看 CONCEPTS_WITH_TEMPLATE，跟你用 C 還是 X 抽無關。
-function drawConceptsTarotByCategory() {
-  const lockedChar = lockedCharacterSlot(), lockedConcept = lockedConceptSlot();
-  const cPool = lockedChar ? null : (curScope().cat === 'Character' ? loraCatPool() : fullCharacterPool());
-  const kPool = lockedConcept ? null : (curScope().cat === 'HENTAI' ? loraCatPool() : fullConceptsPool());
-  if (!lockedChar && !cPool.length) { toast('目前範圍內 Character 沒有 LoRA 可抽'); return; }
-  if (!lockedConcept && !kPool.length) { toast('目前範圍內 concepts 沒有 LoRA 可抽'); return; }
-  const pickChar = lockedChar
-    ? () => ({ lora: lockedChar.lora, strength: CONCEPTS_CHAR_STRENGTH, trigger: slotTriggerText(lockedChar) })
-    : () => ({ lora: cPool[Math.floor(Math.random() * cPool.length)], strength: CONCEPTS_CHAR_STRENGTH });
-  const pickConcept = lockedConcept
-    ? () => ({ lora: lockedConcept.lora, strength: CONCEPTS_KEY_STRENGTH, trigger: slotTriggerText(lockedConcept) })
-    : () => ({ lora: kPool[Math.floor(Math.random() * kPool.length)], strength: CONCEPTS_KEY_STRENGTH });
-  CONCEPTS_REDRAW = drawConceptsTarotByCategory;
-  _runConceptsDraw(pickChar, pickConcept, CONCEPTS_WITH_TEMPLATE);
-}
-
-// C／X 共用的抽卡核心：pickChar()/pickConcept() 各自決定「這張卡」要用哪個 LoRA＋強度
-// （每張卡各呼叫一次，讓隨機的一側可以每張卡都不一樣，鎖定的一側每次都回傳同一個）。
-// withTemplate 由呼叫端明確傳入（不是這裡自己讀 CONCEPTS_WITH_TEMPLATE），因為 C／X
-// 對同一個開關的反應不一樣。
+// Concepts 抽卡核心：pickConcept() 決定「這張卡」的情境 LoRA＋強度（每張卡呼叫一次，
+// 讓隨機的一側可以每張卡都不一樣，鎖定的一側每次都回傳同一個）。pickChar 可以是
+// null——代表角色沒有訊號、整個跳過，這次每張卡都只套情境 LoRA 一顆。
 function _runConceptsDraw(pickChar, pickConcept, withTemplate) {
   // 鎖定了固定模板就不用管隨機池——鎖定自動視同「要抽模板」，checkbox 的狀態在這時候
   // 不重要（不用強制連動去改 UI 上的勾選框，鎖定本身就是更高優先權的判斷）。
@@ -2794,22 +2724,23 @@ function _runConceptsDraw(pickChar, pickConcept, withTemplate) {
   const firstTw = (l) => (l.trainedWords || [])[0] || '';
   const jobs = [], picks = [];
   for (let i = 0; i < want; i++) {
-    const { lora: c, strength: cStrength, trigger: cTrigger } = pickChar();
+    // pickChar 是 null 代表角色沒訊號、整個跳過——這張卡只套情境 LoRA 一顆，loras
+    // 陣列長度變成 1（後端 /api/gen 依陣列長度注入 0~2 個 LoraLoader，本來就支援）。
+    const charPick = pickChar ? pickChar() : null;
     const { lora: k, strength: kStrength, trigger: kTrigger } = pickConcept();
-    const loras = [
-      { folder: c.folder, file: c.file, title: c.title || c.name, strength: cStrength },
-      { folder: k.folder, file: k.file, title: k.title || k.name, strength: kStrength },
-    ];
+    const loras = [];
+    if (charPick) loras.push({ folder: charPick.lora.folder, file: charPick.lora.file, title: charPick.lora.title || charPick.lora.name, strength: charPick.strength });
+    loras.push({ folder: k.folder, file: k.file, title: k.title || k.name, strength: kStrength });
     // 強度 0 等於這顆 LoRA 完全不生效（inject_lora 送 strength_model/clip=0，數學上是
     // no-op），對應的觸發詞就不該還寫進 prompt——使用者拿「設強度 0」當「這次不要套用
     // concepts/character」的手動關閉開關，回報過如果沒濾掉會很意外：明明調成 0 了，
     // prompt 裡卻還看得到那些詞。
     let trigger = joinTriggerParts([
-      cStrength > 0 ? (cTrigger ?? firstTw(c)) : '',
+      charPick && charPick.strength > 0 ? (charPick.trigger ?? firstTw(charPick.lora)) : '',
       kStrength > 0 ? (kTrigger ?? firstTw(k)) : '',
     ]);
     let rel = '';
-    let label = `${c.title || c.name} × ${k.title || k.name}`;
+    let label = charPick ? `${charPick.lora.title || charPick.lora.name} × ${k.title || k.name}` : `${k.title || k.name}`;
     if (useTemplate) {
       const t = lockedTpl || tplPool[Math.floor(Math.random() * tplPool.length)];
       rel = t.rel;
