@@ -2046,9 +2046,24 @@ function renderShortcuts() {
     box.appendChild(g);
   });
 }
+function moveHelpPill() {
+  const seg = $('help-seg'), pill = $('help-pill');
+  const active = seg && seg.querySelector('button.on');
+  if (!active || !pill) return;
+  pill.style.width = active.offsetWidth + 'px';
+  pill.style.transform = `translateX(${active.offsetLeft}px)`;
+}
+$('help-seg').addEventListener('click', (e) => {
+  const btn = e.target.closest('button'); if (!btn) return;
+  $('help-seg').querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn));
+  moveHelpPill();
+  $('shortcuts-groups').hidden = btn.dataset.tab !== 'shortcuts';
+  $('feature-groups').hidden = btn.dataset.tab !== 'features';
+});
 function openShortcuts() {
   renderShortcuts();
   $('shortcuts-overlay').classList.add('open');
+  moveHelpPill();
 }
 // 收尾邏輯跟 closeLoraModal 同一套（element.animate() 取代加減 class，分頁在背景時
 // finished 不結算的老坑靠 setTimeout 保險），這裡不獨立寫註解重複解釋。

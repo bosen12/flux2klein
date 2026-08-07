@@ -112,20 +112,27 @@
   <div class="conn" id="conn"><span class="led"></span><span id="conn-text">…</span></div>
 </div>
 
-<!-- 快捷鍵一覽：按 ? 或 topbar ⌨ 鈕開。純展示，不影響任何狀態，Esc／點背景關閉。
-     內容照使用情境分組（不是照字母排），使用者記的是「我在做什麼時按什麼」而不是
-     「這個鍵是什麼」。 -->
+<!-- 使用說明：按 ? 或 topbar ⌨ 鈕開。純展示，不影響任何狀態，Esc／點背景關閉。
+     分兩頁：快捷鍵（照使用情境分組，不是照字母排，使用者記的是「我在做什麼時按什麼」
+     而不是「這個鍵是什麼」）／功能總覽（滑鼠驅動、容易被忽略的功能，例如生成步數輸入
+     框——這個分頁存在的起因）。兩頁共用同一個疊層外觀、同一組開關方式，不新增按鈕。 -->
 <div class="shortcuts-overlay" id="shortcuts-overlay">
   <div class="shortcuts-panel" id="shortcuts-panel">
     <button class="shortcuts-close" id="shortcuts-close" aria-label="關閉 (Esc)" title="關閉 (Esc)">✕</button>
     <div class="shortcuts-head">
       <span class="shortcuts-emblem">⌨</span>
       <div>
-        <h2>快捷鍵</h2>
+        <h2>使用說明</h2>
         <p>焦點不在輸入框、沒有其他疊層開著時皆可使用</p>
       </div>
     </div>
+    <div class="seg help-seg" id="help-seg" role="group" aria-label="說明分頁">
+      <span class="seg-pill" id="help-pill" aria-hidden="true"></span>
+      <button data-tab="shortcuts" class="on">快捷鍵</button>
+      <button data-tab="features">功能總覽</button>
+    </div>
     <div class="shortcuts-groups" id="shortcuts-groups"></div>
+    <div class="shortcuts-groups" id="feature-groups" hidden></div>
   </div>
 </div>
 
