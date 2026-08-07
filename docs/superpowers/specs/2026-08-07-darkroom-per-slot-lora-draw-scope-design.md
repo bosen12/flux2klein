@@ -1,16 +1,16 @@
-# 暗房：LoRA1/LoRA2 各自獨立的抽取範圍 ＋ 抽取設定搬進大面板
+# 暗房：LoRA1/LoRA2 各自獨立的抽取範圍 ＋ 設定彈窗改兩分頁
 
 ## 背景
 
 上一輪功能（`docs/superpowers/specs/2026-08-07-darkroom-lora-draw-and-help-panel-design.md`）做完 `L`/`K` 一鍵抽 LoRA 之後，使用者發現兩個問題：
 
 1. `K` 鍵（本分類抽）依賴 LoRA 大面板左欄的 `GEN_LORA_CAT`/`GEN_LORA_SUBFOLDER`，這是**整個面板共用的一份全域狀態**——LoRA1、LoRA2 沒辦法各自設定不同的子路徑範圍（例如 LoRA1 想固定抽 Character/若雞、LoRA2 想固定抽 HENTAI/杜情）。
-2. 「抽 LoRA 範圍（兩格都抽／只抽目前作用格）」這顆設定目前塞在 Concepts 設定彈窗裡，跟它實際影響的 LoRA1/LoRA2 選擇離得太遠，使用者覺得應該搬進大面板本身、做得更直觀。
+2. 「抽 LoRA 範圍（兩格都抽／只抽目前作用格）」這顆設定目前塞在 Concepts 設定彈窗裡，跟 Concepts 抽卡本身的強度/張數/模板鎖定混在一起，語意上不是同一件事（一個是給一般生圖模式的 L/K 用，一個是給 Concepts 的 C/X 用）。
 
 ## 目標
 
 - LoRA1、LoRA2 各自記住自己的分類/子資料夾抽取範圍，切分頁卡時自動切換範圍顯示。
-- 「抽 LoRA 範圍」單選搬進 LoRA 大面板，跟分頁卡放在一起。
+- 現有齒輪 ⚙ 設定彈窗改分兩分頁：「一般」（L/K 抽取範圍）／「Concepts」（原本的強度/張數/模板鎖定），不搬去別的地方，維持同一個入口。
 
 ## 設計：範圍跟「作用格」綁定，直接重用左欄晶片
 
@@ -47,21 +47,42 @@ function setActiveSlot(i) {
 
 `E`（🎲 隨機瀏覽疊層本分類重抽）與 Concepts 的 `X` 鍵也讀同一份 `GEN_LORA_CAT`/`GEN_LORA_SUBFOLDER`，行為會自動跟著「目前作用格」走——以前這兩個鍵抽的是「你上次點的分類」，之後會變成「目前作用格記住的分類」。這是設計的自然結果，不用另外處理例外。
 
-## 「抽 LoRA 範圍」單選搬進大面板
+## 設定彈窗改兩分頁：一般／Concepts
 
-`renderLmCurrent()`（`darkroom.js:1846`）在 `renderLmSlotTabs()` 之後、`curSlot()` 內容渲染之前插入一小列：
+沿用 `使用說明` 疊層剛做好的兩分頁模式（`.seg`/`.seg-pill` 分段切換 + 兩個內容容器切 `hidden`），套在既有的 `#concepts-settings` 彈窗上，不新增彈窗、不新增進入點。
 
+`darkroom/index.html`：`#concepts-settings` 內部最上方加一列分頁切換，原本的內容拆成兩個容器：
+
+```html
+<div class="concepts-settings" id="concepts-settings" hidden>
+  <div class="seg cs-tab-seg" id="cs-tab-seg" role="group" aria-label="設定分頁">
+    <span class="seg-pill" id="cs-tab-pill" aria-hidden="true"></span>
+    <button data-tab="general" class="on">一般</button>
+    <button data-tab="concepts">Concepts</button>
+  </div>
+  <div class="cs-tab-panel" id="cs-tab-general">
+    <div class="cs-row cs-row-check cs-row-radio">
+      <span>🎲 抽 LoRA 範圍（快捷鍵 L／K）</span>
+      <label><input type="radio" name="cs-lora-scope" id="cs-lora-scope-both" value="both">兩格都抽</label>
+      <label><input type="radio" name="cs-lora-scope" id="cs-lora-scope-active" value="active">只抽目前作用格</label>
+    </div>
+  </div>
+  <div class="cs-tab-panel" id="cs-tab-concepts" hidden>
+    <!-- 原本 Character 強度／concepts 強度／每次抽幾張／同時抽詞庫模板／模板只抽目前資料夾／
+         鎖定模板搜尋 這幾列整段搬進來，內容不變 -->
+  </div>
+</div>
 ```
-🎲 L/K 抽取：●只抽這格　○兩格都抽
-```
 
-沿用既有的 `GEN_LORA_DRAW_SCOPE`／`setGenLoraDrawScope()`（上一輪已做好，邏輯不變，只是換渲染位置）。
+`darkroom.css`：`.cs-tab-panel` 沿用 `.concepts-settings` 本來的 `display:flex; flex-direction:column; gap:12px`，並**務必**加 `.cs-tab-panel[hidden] { display: none; }`——這正是上一輪最終審查抓到的「共用 flex class 蓋掉 `[hidden]`」那個坑（`.shortcuts-groups[hidden]`），這次從一開始就直接加對，不要重蹈覆轍。
 
-Concepts 設定彈窗裡原本那顆單選（`#cs-lora-scope-both`/`#cs-lora-scope-active`，含 `.cs-row-radio` CSS）整組移除，改在 LoRA 大面板重新渲染同一套 radio、綁同一個 `setGenLoraDrawScope()`。
+`darkroom.js`：分頁切換邏輯直接複製「使用說明」那組 `moveHelpPill()`/click handler 的寫法（`moveCsTabPill()` + `#cs-tab-seg` 的 click handler，toggle `#cs-tab-general`/`#cs-tab-concepts` 的 `hidden`）。
+
+齒輪按鈕 `#concepts-settings-btn` 的 `title`/`aria-label` 從「Concepts 抽卡設定：強度／張數／是否抽詞庫模板」改成「設定：一般 LoRA 抽取／Concepts 抽卡」，反映裡面現在有兩件不同的事。
 
 ## 文件同步
 
-上一輪的 `SHORTCUT_GROUPS`（`L`/`K` 說明）、`FEATURE_GROUPS`（生圖分組提到「抽 LoRA 範圍」設定位置）、`README.md` 都提到這顆設定在 Concepts 設定彈窗——這次要一併改成「LoRA 大面板」，並補一句「LoRA1/LoRA2 各自記住自己的分類/子資料夾範圍」。
+上一輪的 `SHORTCUT_GROUPS`（`L`/`K` 說明）、`FEATURE_GROUPS`（生圖分組提到「抽 LoRA 範圍」設定位置）、`README.md` 目前沒特別點名「在哪個分頁」，這次要補一句「設定彈窗的『一般』分頁」，並補一句「LoRA1/LoRA2 各自記住自己的分類/子資料夾範圍」。
 
 ## 不做的事
 
@@ -72,4 +93,4 @@ Concepts 設定彈窗裡原本那顆單選（`#cs-lora-scope-both`/`#cs-lora-sco
 ## 驗收方式
 
 - `node --check darkroom/darkroom.js`
-- 隔離 `preview_ui.py` 實例＋瀏覽器工具：切 LoRA1 選 Character/若雞、切 LoRA2 選 HENTAI/杜情，切回 LoRA1 確認晶片＋列表都還原成 Character/若雞；按 `K` 確認抽取池符合目前作用格記住的範圍；Concepts 設定彈窗確認舊的單選已移除、大面板分頁卡下方新單選功能正常且雙向同步 `GEN_LORA_DRAW_SCOPE`。
+- 隔離 `preview_ui.py` 實例＋瀏覽器工具：切 LoRA1 選 Character/若雞、切 LoRA2 選 HENTAI/杜情，切回 LoRA1 確認晶片＋列表都還原成 Character/若雞；按 `K` 確認抽取池符合目前作用格記住的範圍；打開設定彈窗確認預設在「一般」分頁看得到 L/K 抽取範圍單選，切到「Concepts」分頁確認強度/張數/模板鎖定都還在且功能正常，且**用 `getComputedStyle(...).display` 而不是只看 `hidden` 屬性**驗證分頁切換真的有隱藏/顯示對應內容（上一輪的教訓）。
