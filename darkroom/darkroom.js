@@ -1181,9 +1181,10 @@ function drawLoraCategoryDispatch() { drawLoraTarot(loraCatPool(), loraCatLabel(
 
 // 一般生圖模式的「一鍵抽 LoRA」：跟 LoRA 隨機瀏覽（🎲 疊層，要點卡片選）不同層級——
 // 這裡是抽完直接套用、直接對目前選取的詞庫送出生圖，比照 Concepts C/X 鍵的操作體感。
-// 抽幾格看 GEN_LORA_DRAW_SCOPE：'both' 兩格都重抽（不判斷原本有沒有手動選，字面上就是
-// 兩格都換掉——這裡沒有 Concepts 那種 Character/concepts 角色區分，沒有「鎖定」的語意可
-// 套用）；'active' 只重抽 GEN_ACTIVE_SLOT 指到的那一格，另一格完全不動。
+// 抽幾格看 GEN_LORA_SLOT_LOCKED：鎖定的格子（renderLmSlotTabs() 分頁卡上的 🔒 按鈕）
+// 完全跳過、原封不動，其餘沒鎖定的格子（🎲）才重抽。這樣「固定 LoRA1、只抽 LoRA2」
+// 只要把 LoRA1 鎖起來就好，不用另外去設定彈窗切「兩格都抽／只抽作用格」——後者切了
+// 只能整體生效，沒辦法「固定這格、只抽那格」，也是使用者反映看不懂的地方。
 // 每格自己的分類/子資料夾範圍算出來的抽取池，跟 loraCatPool()（永遠讀目前作用格）
 // 不同——這裡要能算「非作用格」那一格自己的池，K 鍵搭「兩格都抽」時才能讓兩格真的各自
 //套用各自記住的範圍，而不是都被目前作用格的範圍蓋掉。
@@ -1201,7 +1202,8 @@ function scopeLabel(i) {
 // poolForSlot(i)：回傳這一格要抽的池。L 鍵（全庫）不管哪一格都是同一份 GEN_LORAS，直接
 // 傳函式回同一個陣列；K 鍵（本分類）要各自算 scopePool(i)，兩格範圍不同就真的各自套用。
 function drawGenLoraSlots(poolForSlot, labelForSlot) {
-  const indices = GEN_LORA_DRAW_SCOPE === 'both' ? [0, 1] : [GEN_ACTIVE_SLOT];
+  const indices = [0, 1].filter(i => !GEN_LORA_SLOT_LOCKED[i]);
+  if (!indices.length) { toast('LoRA1、LoRA2 都鎖定了，先解鎖至少一格才能抽'); return; }
   const picks = [];
   for (const i of indices) {
     const pool = poolForSlot(i);
@@ -1565,7 +1567,13 @@ let CONCEPTS_WITH_TEMPLATE = localStorage.getItem('yz-concepts-tpl') === '1';
 // 全部詞庫（ALL）抽。刻意沿用 CUR_FOLDER 而不是另做一個詞庫分類選單：使用者已經在用
 // 左邊列表瀏覽/選資料夾了，不用為 Concepts 抽卡另外重複一套選擇 UI。
 let CONCEPTS_TPL_CUR_FOLDER = localStorage.getItem('yz-concepts-tpl-cur-folder') === '1';
-let GEN_LORA_DRAW_SCOPE = localStorage.getItem('yz-lora-draw-scope') === 'both' ? 'both' : 'active';
+// 每格是否參與 L/K 隨機抽取——鎖定的格子（true）按 L/K 完全不會被重抽，讓使用者可以
+// 固定其中一格手動選好的 LoRA、只讓另一格隨機。跟 GEN_LORA_SLOTS 一樣 session-only，
+// 不存 localStorage：這是「這次生圖想怎麼搭」的暫時決定，不是需要跨分頁記住的偏好。
+// 切換入口在 renderLmSlotTabs() 每張分頁卡上的 🎲／🔒 按鈕，直接在使用者選 LoRA 的
+// 地方切換，不是另外塞進設定彈窗——之前塞在設定彈窗的「兩格都抽／只抽作用格」單選
+// 使用者反映看不懂在幹嘛，且只能整體切換、沒辦法「固定這格、只抽那格」。
+const GEN_LORA_SLOT_LOCKED = [false, false];
 function setConceptsCharStrength(v) { CONCEPTS_CHAR_STRENGTH = v; localStorage.setItem('yz-concepts-char-str', v); }
 function setConceptsKeyStrength(v) { CONCEPTS_KEY_STRENGTH = v; localStorage.setItem('yz-concepts-key-str', v); }
 function setConceptsCount(v) { CONCEPTS_COUNT = v; localStorage.setItem('yz-concepts-count', v); }
@@ -1576,10 +1584,6 @@ function setConceptsWithTemplate(v) {
 function setConceptsTplCurFolder(v) {
   CONCEPTS_TPL_CUR_FOLDER = v;
   localStorage.setItem('yz-concepts-tpl-cur-folder', v ? '1' : '0');
-}
-function setGenLoraDrawScope(v) {
-  GEN_LORA_DRAW_SCOPE = v === 'both' ? 'both' : 'active';
-  localStorage.setItem('yz-lora-draw-scope', GEN_LORA_DRAW_SCOPE);
 }
 // 鎖定一個固定的詞庫模板（見 Concepts 設定彈窗的搜尋清單）。跟 LoRA1/2 的鎖定同一種
 // 設計：不存 localStorage（session-only，跟 GEN_LORA_SLOTS 一致——詞庫內容可能隨掃描
@@ -1900,7 +1904,9 @@ function renderGenCurrent() {
 
 // 右欄最上面的「LoRA 1 / LoRA 2」分頁卡：點哪張就把它設為編輯中（GEN_ACTIVE_SLOT），
 // 左欄清單/隨機瀏覽點選都塞進編輯中那格。有選的顯示縮圖+標題，沒選顯示「未選擇」；
-// LoRA 2 常常留空（見 selectGenLora 的可留空設計），有選才顯示清空 ✕。
+// LoRA 2 常常留空（見 selectGenLora 的可留空設計），有選才顯示清空 ✕。每張卡固定有一顆
+// 🎲／🔒 按鈕（不管這格有沒有選 LoRA 都顯示）決定這格要不要參與 L/K 隨機抽取，見
+// GEN_LORA_SLOT_LOCKED／drawGenLoraSlots()。
 function renderLmSlotTabs() {
   const wrap = document.createElement('div'); wrap.className = 'lm-slot-tabs';
   GEN_LORA_SLOTS.forEach((slot, i) => {
@@ -1919,6 +1925,19 @@ function renderLmSlotTabs() {
       tab.addEventListener('mouseenter', () => showSingleLoraPreviewTip(tab, slot.lora));
       tab.addEventListener('mouseleave', hideLoraPreviewTip);
     }
+    const locked = GEN_LORA_SLOT_LOCKED[i];
+    const lock = document.createElement('button'); lock.type = 'button';
+    lock.className = 'lm-slot-lock' + (locked ? ' locked' : '');
+    lock.textContent = locked ? '🔒' : '🎲';
+    lock.title = locked ? `LoRA ${i + 1} 已鎖定：按 L／K 不會動這格` : `LoRA ${i + 1} 隨機：按 L／K 會重抽這格`;
+    lock.setAttribute('aria-label', lock.title);
+    lock.setAttribute('aria-pressed', locked ? 'true' : 'false');
+    lock.addEventListener('click', (e) => {
+      e.stopPropagation();
+      GEN_LORA_SLOT_LOCKED[i] = !GEN_LORA_SLOT_LOCKED[i];
+      renderLmCurrent();
+    });
+    tab.appendChild(lock);
     if (slot.lora) {
       const clear = document.createElement('button'); clear.type = 'button'; clear.className = 'lm-slot-clear';
       clear.title = `清空 LoRA ${i + 1}`; clear.setAttribute('aria-label', `清空 LoRA ${i + 1}`); clear.textContent = '✕';
@@ -2107,8 +2126,8 @@ const SHORTCUT_GROUPS = [
     { keys: ['E'], desc: '重抽本分類（瀏覽/生圖模式看目前資料夾；LoRA 隨機瀏覽看左欄篩選晶片）' },
     { keys: ['C'], desc: '<b>Concepts 抽卡</b>——鎖定 LoRA1/LoRA2 面板目前選的 Character／concepts LoRA，另一側隨機' },
     { keys: ['X'], desc: '<b>Concepts 抽卡</b>——跟 C 一樣尊重 LoRA1/2 鎖定，沒鎖定的那側改用 LoRA 面板左欄目前的分類篩選縮小範圍' },
-    { keys: ['L'], desc: '<b>一般生圖模式</b>——依「抽 LoRA 範圍」設定隨機抽 LoRA 塞進 LoRA1/2，直接對目前選取的詞庫生圖' },
-    { keys: ['K'], desc: '<b>一般生圖模式</b>——跟 L 一樣，但只在 LoRA 大面板左欄目前的分類/子資料夾範圍內抽' },
+    { keys: ['L'], desc: '<b>一般生圖模式</b>——隨機抽 LoRA 塞進 LoRA1/2（分頁卡標 🔒 的格子跳過不抽），直接對目前選取的詞庫生圖' },
+    { keys: ['K'], desc: '<b>一般生圖模式</b>——跟 L 一樣，但只在各格自己設定的分類/子資料夾範圍內抽' },
   ]},
   { title: '打標模式', rows: [
     { keys: ['←', '→', '↑', '↓'], desc: '移動焦點到上／下一張或上／下一列' },
@@ -2156,6 +2175,7 @@ const FEATURE_GROUPS = [
     { desc: '<b>LoRA 大面板</b>——左欄分類/子資料夾篩選＋搜尋＋翻頁，右欄每段觸發詞各自一張完整文字卡（勾選要用哪幾段）＋強度滑桿＋參考圖；左欄下方「🎲 隨機瀏覽」疊一批塔羅卡讓你點選' },
     { desc: '<b>雙 LoRA 疊加</b>——右欄「LoRA 1／LoRA 2」兩張分頁卡各自獨立選擇與強度，可疊加使用' },
     { desc: '<b>各格獨立抽取範圍</b>——LoRA1/LoRA2 各自獨立記住自己的分類/子資料夾抽取範圍，設定彈窗「一般」分頁跟大面板左欄晶片雙向同步' },
+    { desc: '<b>各格鎖定／隨機</b>——LoRA1/LoRA2 分頁卡上各有一顆 🎲／🔒 按鈕，鎖定的格子按 <b>L</b>／<b>K</b> 不會被重抽，可以固定其中一格手動選好的 LoRA、只讓另一格隨機' },
     { desc: '<b>生成步數輸入框</b>——topbar 右側，範圍 1～150，即時套用到之後的生成（不是鎖 25，25 只是預設值）' },
   ]},
   { title: '抽卡', rows: [
@@ -2496,9 +2516,6 @@ $csKeyStrength.value = CONCEPTS_KEY_STRENGTH; $csKeyStrengthOut.textContent = CO
 $csCount.value = CONCEPTS_COUNT;
 $csTpl.checked = CONCEPTS_WITH_TEMPLATE;
 $csTplCurFolder.checked = CONCEPTS_TPL_CUR_FOLDER;
-const $csLoraScopeBoth = $('cs-lora-scope-both'), $csLoraScopeActive = $('cs-lora-scope-active');
-$csLoraScopeBoth.checked = GEN_LORA_DRAW_SCOPE === 'both';
-$csLoraScopeActive.checked = GEN_LORA_DRAW_SCOPE === 'active';
 $csCharStrength.addEventListener('input', () => {
   const v = parseFloat($csCharStrength.value);
   $csCharStrengthOut.textContent = v.toFixed(2);
@@ -2518,8 +2535,6 @@ $csCount.addEventListener('change', () => {
 });
 $csTpl.addEventListener('change', () => setConceptsWithTemplate($csTpl.checked));
 $csTplCurFolder.addEventListener('change', () => setConceptsTplCurFolder($csTplCurFolder.checked));
-$csLoraScopeBoth.addEventListener('change', () => { if ($csLoraScopeBoth.checked) setGenLoraDrawScope('both'); });
-$csLoraScopeActive.addEventListener('change', () => { if ($csLoraScopeActive.checked) setGenLoraDrawScope('active'); });
 
 // 鎖定模板小選擇器：跟 LoRA 面板搜尋同一套「輸入就篩選、點一項就選中」互動，但這裡是
 // 純文字清單（不用縮圖），畢竟重點是「選中哪個詞庫」。搜尋比對名稱/資料夾，跟

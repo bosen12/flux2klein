@@ -703,11 +703,8 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 .cs-row-check { cursor: pointer; }
 .cs-row-check span { width: auto; flex: 1; line-height: 1.4; }
 .cs-row-check input { accent-color: var(--amber); flex: none; }
-.cs-row-radio { flex-direction: column; align-items: flex-start; gap: 4px; cursor: default; }
-.cs-row-radio > span:first-child { width: auto; }
-.cs-row-radio label { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--dim); cursor: pointer; }
-.cs-row-radio label:hover { color: var(--ink); }
-.cs-row-radio input { accent-color: var(--amber); }
+.cs-hint { margin: 0; font-size: 12px; color: var(--dim); line-height: 1.5; }
+.cs-hint b { color: var(--ink); font-weight: 600; }
 
 .cs-tab-seg { margin-bottom: 4px; }
 .cs-tab-panel { display: flex; flex-direction: column; gap: 12px; }
@@ -887,6 +884,14 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
   background: transparent; color: var(--faint); display: grid; place-items: center; cursor: pointer;
   font-size: 11px; transition: background var(--d-micro) var(--ease-out), color var(--d-micro) var(--ease-out); }
 .lm-slot-clear:hover { background: var(--line-2); color: var(--ink); }
+/* 🎲／🔒 切換：跟清空鈕同一套「小方塊置中符號」尺寸，永遠顯示（不像清空鈕只在有選
+   LoRA 時才出現）——這格空的時候也該看得到、能先設定鎖定狀態。鎖定時用琥珀色跟大面板
+   其他「已選中/已鎖定」的視覺語彙一致（.lm-cat.on 等都是同一個 --amber）。 */
+.lm-slot-lock { flex: none; width: 20px; height: 20px; padding: 0; border-radius: 6px; border: 0;
+  background: transparent; color: var(--faint); display: grid; place-items: center; cursor: pointer;
+  font-size: 12px; transition: background var(--d-micro) var(--ease-out), color var(--d-micro) var(--ease-out); }
+.lm-slot-lock:hover { background: var(--line-2); color: var(--ink); }
+.lm-slot-lock.locked { color: var(--amber); }
 
 /* 選了一個 LoRA、右欄整塊內容重繪時的進場節奏（呼應 animation-systems 的「hero 先動、
    次要元素跟著、小 stagger 建立閱讀順序」）：縮圖/標題先淡入，每段 trainedWords 卡片
