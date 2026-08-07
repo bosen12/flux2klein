@@ -412,6 +412,7 @@ STATIC_FILES = {
     "/index.html": ("index.html", "text/html; charset=utf-8"),
     "/darkroom.css": ("darkroom.css", "text/css; charset=utf-8"),
     "/darkroom.js": ("darkroom.js", "application/javascript; charset=utf-8"),
+    "/card3d.js": ("card3d.js", "application/javascript; charset=utf-8"),
     # 打標已併進同一頁（瀏覽/打標用頂列模式切換）。舊網址 /tag 保留：回同一個
     # index.html，前端依 location.pathname === '/tag' 自動進打標模式。
     "/tag": ("index.html", "text/html; charset=utf-8"),

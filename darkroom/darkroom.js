@@ -829,6 +829,12 @@ window.addEventListener('keydown', e => {
   // preventDefault——使用者回報「很多 Windows 預設快捷鍵都不能用」就是這個。任何組合鍵
   // 一律直接放行給瀏覽器/系統處理，不進這支 handler 的判斷邏輯。
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  // 3D 卡片展示（z-index 230，全站最高）排最前面：Esc／Enter 都收起——intro 模式沒有
+  // ✕ 鈕，鍵盤是唯一的鍵盤退出方式，兩個鍵都要接住，不能只認 Esc。
+  if ($('c3d-modal').classList.contains('open')) {
+    if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); closeCard3D(); }
+    return;
+  }
   // 快捷鍵一覽（z-index 210，蓋過所有其他疊層）排最前面：不管現在開著什麼，Esc 都先關
   // 這個說明疊層，不去動底下真正在操作的東西。
   if ($('shortcuts-overlay').classList.contains('open')) {
@@ -3077,10 +3083,171 @@ function hideBoot() {
   b.classList.add('hide');
   setTimeout(() => b.remove(), 600);
 }
+
+/* ---------------------------------------------------------------------------
+   3D 卡片展示模式（table/sphere/helix/grid）——card3d.js 只管矩陣運算跟拖曳/
+   縮放互動，這裡負責：準備卡片 DOM、資料量上限、intro／ondemand 兩種情境的
+   編排差異、開關生命週期。詳見
+   docs/superpowers/specs/2026-08-07-darkroom-3d-card-display-design.md。
+   --------------------------------------------------------------------------- */
+const C3D_BROWSE_SAMPLE = 130;   // 詞庫格線固定抽樣張數，不管目前篩選了多少
+const C3D_LORA_CAP = 200;        // LoRA 清單超過這個數字要求先用左欄晶片縮小範圍
+let c3dScene = null;             // 目前開著的 Card3D 實例（createCard3DScene 回傳值）
+let c3dMode = null;              // 'ondemand' | 'intro' | null（沒開）
+
+function c3dSupported() {
+  return !!(window.Card3D && window.CSS && CSS.supports('transform', 'perspective(1px) rotateX(1deg)'));
+}
+// 卡片是縮圖版，跟真實格線/清單卡片各自獨立的 DOM 節點（不重用 .card/.lm-slot-tab
+// 那套帶生成鈕/選取框的互動結構，這裡只需要一張圖＋一行標籤）。
+function c3dMakeCard(src, isVideo, label) {
+  const card = document.createElement('div'); card.className = 'c3d-card';
+  if (!src) {
+    const ph = document.createElement('span'); ph.className = 'ph'; card.appendChild(ph);
+  } else if (isVideo) {
+    const v = document.createElement('video'); v.muted = true; v.loop = true; v.autoplay = true; v.playsInline = true; v.src = src;
+    card.appendChild(v);
+  } else {
+    const img = document.createElement('img'); img.loading = 'lazy'; img.decoding = 'async'; img.src = src; img.alt = '';
+    card.appendChild(img);
+  }
+  if (label) { const lb = document.createElement('div'); lb.className = 'c3d-card-label'; lb.textContent = label; card.appendChild(lb); }
+  return card;
+}
+function c3dCardsFromTemplates(items) {
+  return items.map(it => c3dMakeCard(`/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`, false, it.name));
+}
+function c3dCardsFromLoras(items) {
+  // 沒有 preview 圖的 LoRA 用空白卡片（跟 renderLmCurrent 對沒有 preview 的處理一致，
+  // 不硬塞一個一定 404 的圖網址）。
+  return items.map(l => l.preview
+    ? c3dMakeCard(loraPreviewUrl(l), isLoraPreviewVideo(l), l.title || l.name)
+    : c3dMakeCard(null, false, l.title || l.name));
+}
+function c3dSetLayoutBtn(name) {
+  document.querySelectorAll('#c3d-controls button[data-layout]').forEach(b => b.classList.toggle('on', b.dataset.layout === name));
+}
+
+// 開啟 3D 展示疊層。cards：準備好的卡片 DOM 陣列。opts.mode 決定編排（見 spec 的
+// 「兩種觸發情境」）；opts.onCardClick(index) 是 ondemand 模式點卡片的行為（intro
+// 模式不需要，卡片在這個畫面本來就不能點進去選）。
+function openCard3D(cards, opts) {
+  opts = opts || {};
+  if (!cards.length) { toast('目前沒有東西可以展示'); return; }
+  const mode = opts.mode || 'ondemand';
+  c3dMode = mode;
+  const modal = $('c3d-modal'), scene = $('c3d-scene'), controls = $('c3d-controls'),
+        introHead = $('c3d-intro-head'), enterBtn = $('c3d-enter-btn'), closeBtn = $('c3d-close');
+  scene.innerHTML = '';
+  cards.forEach(c => scene.appendChild(c));
+  modal.classList.add('open');
+  const isIntro = mode === 'intro';
+  controls.hidden = isIntro;      // intro 不給切排列，避免使用者還沒進去就分心
+  closeBtn.hidden = isIntro;      // intro 只能用 Enter／進入暗房鈕收起，不給 ✕ 跳過視覺上的「必經」感
+  introHead.hidden = !isIntro; introHead.classList.remove('show');
+  enterBtn.hidden = !isIntro; enterBtn.classList.remove('show');
+  c3dSetLayoutBtn('grid');
+
+  c3dScene = window.Card3D.create({
+    scene, cards, stage: $('c3d-stage'),
+    onCardClick: opts.onCardClick ? (card, i) => opts.onCardClick(i) : null,
+  });
+
+  if (isIntro) {
+    // hero 進場：分 7 批飛入，批間隔 100ms、單批 560ms，總長落在 1.1~1.4 秒之間，
+    // 定位完成才淡入標題／「進入暗房」鈕（見 spec 的時間軸）。
+    // 保險：分頁載入當下如果剛好切到背景（document.visibilityState !== 'visible'），
+    // WAAPI 的 finished 不會結算（CLAUDE.md 記過的老坑），setLayout() 的 Promise 會
+    // 卡住不resolve——沒有這個 setTimeout，使用者切回分頁會卡在「卡片飛到一半、
+    // 永遠看不到進入暗房鈕」出不去。跟 closeCard3D() 同一套雙保險寫法。
+    let introSettled = false;
+    const showIntroChrome = () => {
+      if (introSettled) return; introSettled = true;
+      introHead.classList.add('show');
+      setTimeout(() => enterBtn.classList.add('show'), 200);
+    };
+    c3dScene.setLayout('grid', { duration: 560, batches: 7, batchDelay: 100 }).then(showIntroChrome);
+    setTimeout(showIntroChrome, 2200);
+  } else {
+    c3dScene.setLayout('grid', { duration: 300, batches: 1 });   // 隨手開的，一次性淡入就好，不用隆重進場
+  }
+}
+
+// 退場：intro 模式關閉時寫入「看過了」旗標，之後就不再自動播（想回味用 topbar
+// 地球儀鈕隨時開）。跟專案裡其他疊層一致的淡出＋setTimeout 保險收尾寫法。
+function closeCard3D() {
+  const modal = $('c3d-modal');
+  if (!modal.classList.contains('open')) return;
+  if (c3dMode === 'intro') localStorage.setItem('yz-c3d-intro-seen', '1');
+  const finish = () => {
+    modal.classList.remove('open');
+    if (c3dScene) { c3dScene.destroy(); c3dScene = null; }
+    $('c3d-scene').innerHTML = '';
+    c3dMode = null;
+  };
+  if (REDUCE_MOTION || document.visibilityState !== 'visible' || !modal.animate) { finish(); return; }
+  const anim = modal.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: 'cubic-bezier(.4,0,1,1)' });
+  let done = false;
+  const settle = () => { if (done) return; done = true; finish(); };
+  anim.finished.then(settle).catch(settle);
+  setTimeout(settle, 260);   // 分頁在背景時 finished 不結算的保險（CLAUDE.md 記過的老坑）
+}
+
+$('c3d-close').addEventListener('click', closeCard3D);
+$('c3d-enter-btn').addEventListener('click', closeCard3D);
+$('c3d-controls').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-layout]'); if (!btn || !c3dScene) return;
+  c3dSetLayoutBtn(btn.dataset.layout);
+  c3dScene.setLayout(btn.dataset.layout, { duration: 500, batches: 1 });
+});
+// topbar 地球儀鈕：抽樣「目前格線看得到的」（VISIBLE，篩選/搜尋/稀有度都算進去），
+// 固定 130 筆，不管目前篩選了多少——避免把整個詞庫（可能上千筆）塞進 DOM。點卡片
+// 跟格線本身一致：開大圖（沿用既有 openModalFromThumb，view transition 一併重用）。
+$('c3d-launch-btn').addEventListener('click', () => {
+  const pool = VISIBLE.length ? VISIBLE : baseList();
+  if (!pool.length) { toast('目前沒有東西可以展示'); return; }
+  const items = sampleN(pool, Math.min(C3D_BROWSE_SAMPLE, pool.length));
+  const cards = c3dCardsFromTemplates(items);
+  openCard3D(cards, {
+    mode: 'ondemand',
+    onCardClick: (i) => { closeCard3D(); openModalFromThumb(items[i].rel, cards[i].querySelector('img')); },
+  });
+});
+// LoRA 大面板：吃左欄目前篩選結果（跟 E 鍵重抽本分類同一份 loraCatPool()），超過
+// 上限要求先用晶片縮小範圍，不強行硬塞。點卡片：選進目前作用格（跟清單點選一致）。
+$('c3d-launch-btn-lora').addEventListener('click', () => {
+  const pool = loraCatPool();
+  if (!pool.length) { toast('目前範圍內沒有 LoRA'); return; }
+  if (pool.length > C3D_LORA_CAP) { toast(`目前範圍有 ${pool.length} 筆，先用左欄晶片縮小到 ${C3D_LORA_CAP} 筆以內再開 3D 展示`); return; }
+  openCard3D(c3dCardsFromLoras(pool), {
+    mode: 'ondemand',
+    onCardClick: (i) => { selectGenLora(pool[i]); closeCard3D(); },
+  });
+});
+// 不支援 3D transform 就整顆按鈕不顯示，不是點了才報錯。
+if (!c3dSupported()) {
+  const b1 = $('c3d-launch-btn'), b2 = $('c3d-launch-btn-lora');
+  if (b1) b1.hidden = true;
+  if (b2) b2.hidden = true;
+}
+
+// 首次進場：localStorage 旗標只讓它自動播一次；ALL 是 loadAll() 完成後才有資料，
+// 所以在那之後才呼叫（見下面的 loadAll().then）。不支援 3D 就直接補寫旗標跳過，
+// 不假裝播過。
+function maybeStartIntro() {
+  if (localStorage.getItem('yz-c3d-intro-seen') === '1') return;
+  if (!c3dSupported()) { localStorage.setItem('yz-c3d-intro-seen', '1'); return; }
+  if (!ALL.length) return;
+  openCard3D(c3dCardsFromTemplates(sampleN(ALL, Math.min(C3D_BROWSE_SAMPLE, ALL.length))), { mode: 'intro' });
+}
+
 // boot 只等「資料到＋首屏渲染完」就關。pollBatch 是常駐背景輪詢——批次執行中它
 // 的 while(true) 永不 resolve，所以**不能**把 hideBoot 鏈在它後面（`() => pollBatch()`
 // 會回傳那個永不結算的 promise），否則只要背景有批次在跑，boot 就會一直等到下面
 // 的 20s 保險逾時才關＝每次刷新都卡整整 20 秒。改成 loadAll 完成後「不 return」地
 // 啟動 pollBatch，讓 finally(hideBoot) 立刻收尾、pollBatch 自行在背景跑。
-loadAll().then(() => { pollBatch(); }).finally(hideBoot);
+// maybeStartIntro() 排在 pollBatch() 之前：intro 疊層（z-index 230）比 #boot（300）
+// 低，boot 淡出的 600ms 期間 intro 已經在底下飛卡片，boot 一收起就無縫接上，不會
+// 出現「boot 消失→空白→intro 才開始」的空窗。
+loadAll().then(() => { maybeStartIntro(); pollBatch(); }).finally(hideBoot);
 setTimeout(hideBoot, 20000);   // 保險：萬一 loadAll 本身卡住也別讓載入畫面永遠蓋著

@@ -29,6 +29,11 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
     <input type="text" id="search" placeholder="跨資料夾搜尋名稱…" autocomplete="off">
   </div>
+  <!-- 3D 卡片展示模式入口：地球儀圖示，隨時可點開（見 card3d.js／openCard3D）。
+       首次進暗房會自動播一次全螢幕版本（intro 模式），這顆鈕是之後想回味/把玩用的。 -->
+  <button class="c3d-launch-btn" id="c3d-launch-btn" title="3D 卡片展示" aria-label="開啟 3D 卡片展示">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18M4.3 7.5h15.4M4.3 16.5h15.4"/></svg>
+  </button>
   <!-- 瀏覽專屬控制項放在 spacer 之前：切模式時它們出現/消失只改變 spacer 寬度，
        不會推動 spacer 之後靠右錨定的共用群組（模式切換/抽卡/重掃/連線），共用按鈕位置不動。 -->
   <label class="steps-field browse-only" title="生成步數（套用到之後的生成）">
@@ -330,8 +335,14 @@
            Character/other、Character/manhwa）時才出現。獨立容器，跟 #lm-cats 分開重建。 -->
       <div id="lm-subcats" class="lm-subcats"></div>
       <!-- 隨機瀏覽：沿用詞庫抽卡同一套塔羅發牌/翻牌，改抽 LoRA。獨立一列（不塞進
-           #lm-cats，那個 div 每次 renderLmCats() 都會整個重建，塞進去會被清掉）。 -->
+           #lm-cats，那個 div 每次 renderLmCats() 都會整個重建，塞進去會被清掉）。
+           跟 3D 展示鈕同一列並排（.lm-left 是 column flex，這裡另包一層 row）。 -->
+      <div class="lm-tools-row">
       <button class="ghost lm-random-btn" id="lm-random-btn" title="隨機瀏覽 LoRA（塔羅式呈現，點一張直接選中）">🎲 隨機瀏覽</button>
+      <button class="c3d-launch-btn c3d-launch-btn-lora" id="c3d-launch-btn-lora" title="3D 展示 LoRA" aria-label="開啟 3D 卡片展示">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18M4.3 7.5h15.4M4.3 16.5h15.4"/></svg>
+      </button>
+      </div>
       <div class="lm-search-wrap">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input type="text" id="lm-search" placeholder="搜尋 LoRA…" autocomplete="off">
@@ -367,6 +378,26 @@
     <div class="tarot-hint" id="tarot-hint">點任一張看大圖與提示詞；R 重抽一批、Esc 關閉</div>
   </div>
 </div>
+<!-- 3D 卡片展示疊層：ondemand（地球儀鈕開）跟 intro（首次進暗房自動播）共用同一份
+     結構，差在 openCard3D() 傳的 mode——見 darkroom.js openCard3D()/card3d.js。 -->
+<div class="c3d-modal" id="c3d-modal">
+  <div class="c3d-stage" id="c3d-stage">
+    <div class="c3d-scene" id="c3d-scene"></div>
+  </div>
+  <div class="c3d-intro-head" id="c3d-intro-head" hidden>
+    <h2>詞庫暗房</h2>
+    <p>拖曳旋轉、滾輪縮放，看看裡面都放了些什麼</p>
+  </div>
+  <div class="c3d-controls" id="c3d-controls">
+    <button type="button" data-layout="grid" class="on">格線</button>
+    <button type="button" data-layout="table">陣列</button>
+    <button type="button" data-layout="sphere">球形</button>
+    <button type="button" data-layout="helix">螺旋</button>
+  </div>
+  <button type="button" class="c3d-enter-btn" id="c3d-enter-btn" hidden>進入暗房 →</button>
+  <button type="button" class="c3d-close" id="c3d-close" aria-label="關閉 (Esc)" title="關閉 (Esc)">✕</button>
+</div>
+<script src="/card3d.js" defer></script>
 <script src="/darkroom.js" defer></script>
 </body>
 </html>
