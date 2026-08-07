@@ -2011,6 +2011,8 @@ const SHORTCUT_GROUPS = [
     { keys: ['E'], desc: '重抽本分類（瀏覽/生圖模式看目前資料夾；LoRA 隨機瀏覽看左欄篩選晶片）' },
     { keys: ['C'], desc: '<b>Concepts 抽卡</b>——鎖定 LoRA1/LoRA2 面板目前選的 Character／concepts LoRA，另一側隨機' },
     { keys: ['X'], desc: '<b>Concepts 抽卡</b>——跟 C 一樣尊重 LoRA1/2 鎖定，沒鎖定的那側改用 LoRA 面板左欄目前的分類篩選縮小範圍' },
+    { keys: ['L'], desc: '<b>一般生圖模式</b>——依「抽 LoRA 範圍」設定隨機抽 LoRA 塞進 LoRA1/2，直接對目前選取的詞庫生圖' },
+    { keys: ['K'], desc: '<b>一般生圖模式</b>——跟 L 一樣，但只在 LoRA 大面板左欄目前的分類/子資料夾範圍內抽' },
   ]},
   { title: '打標模式', rows: [
     { keys: ['←', '→', '↑', '↓'], desc: '移動焦點到上／下一張或上／下一列' },
