@@ -50,62 +50,6 @@
     <button class="ghost" id="concepts-btn" title="Concepts 抽卡（快捷鍵 C）：隨機配對 Character LoRA + concepts LoRA 直接生圖">🧬 Concepts</button>
     <span class="concepts-lock" id="concepts-lock" title="目前偵測到的鎖定狀態，來自 LoRA 大面板 LoRA1/LoRA2 選格" role="status" aria-live="polite"></span>
     <button class="ghost icon-btn" id="concepts-settings-btn" title="設定：一般 LoRA 抽取／Concepts 抽卡" aria-label="設定">⚙</button>
-    <div class="concepts-settings" id="concepts-settings" hidden>
-      <div class="seg cs-tab-seg" id="cs-tab-seg" role="group" aria-label="設定分頁">
-        <span class="seg-pill" id="cs-tab-pill" aria-hidden="true"></span>
-        <button data-tab="general" class="on">一般</button>
-        <button data-tab="concepts">Concepts</button>
-      </div>
-      <div class="cs-tab-panel" id="cs-tab-general">
-        <div class="cs-row cs-row-check cs-row-radio">
-          <span>🎲 抽 LoRA 範圍（快捷鍵 L／K）</span>
-          <label><input type="radio" name="cs-lora-scope" id="cs-lora-scope-both" value="both">兩格都抽</label>
-          <label><input type="radio" name="cs-lora-scope" id="cs-lora-scope-active" value="active">只抽目前作用格</label>
-        </div>
-        <div class="cs-row cs-row-scope">
-          <span>LoRA1 範圍</span>
-          <select class="cs-scope-cat" data-slot="0" aria-label="LoRA1 分類範圍"></select>
-          <select class="cs-scope-sub" data-slot="0" aria-label="LoRA1 子資料夾範圍"></select>
-        </div>
-        <div class="cs-row cs-row-scope">
-          <span>LoRA2 範圍</span>
-          <select class="cs-scope-cat" data-slot="1" aria-label="LoRA2 分類範圍"></select>
-          <select class="cs-scope-sub" data-slot="1" aria-label="LoRA2 子資料夾範圍"></select>
-        </div>
-      </div>
-      <div class="cs-tab-panel" id="cs-tab-concepts" hidden>
-        <label class="cs-row">
-          <span>Character 強度</span>
-          <input type="range" id="cs-char-strength" min="0" max="1" step="0.05">
-          <output id="cs-char-strength-out"></output>
-        </label>
-        <label class="cs-row">
-          <span>concepts 強度</span>
-          <input type="range" id="cs-key-strength" min="0" max="1" step="0.05">
-          <output id="cs-key-strength-out"></output>
-        </label>
-        <label class="cs-row cs-row-count">
-          <span>每次抽幾張</span>
-          <input type="number" id="cs-count" min="1" max="24" step="1">
-        </label>
-        <label class="cs-row cs-row-check">
-          <input type="checkbox" id="cs-tpl">
-          <span>同時抽詞庫模板（不勾＝只用兩個 LoRA 的觸發詞）</span>
-        </label>
-        <label class="cs-row cs-row-check">
-          <input type="checkbox" id="cs-tpl-cur-folder">
-          <span>模板只抽左邊目前選中的資料夾（不勾＝從全部詞庫抽）</span>
-        </label>
-        <div class="cs-tpl-lock" id="cs-tpl-lock">
-          <div class="cs-tpl-lock-current" id="cs-tpl-lock-current" hidden>
-            <span id="cs-tpl-lock-name"></span>
-            <button type="button" id="cs-tpl-lock-clear" title="取消鎖定模板" aria-label="取消鎖定模板">✕</button>
-          </div>
-          <input type="text" id="cs-tpl-search" placeholder="搜尋要鎖定的模板…" autocomplete="off">
-          <div class="cs-tpl-results" id="cs-tpl-results"></div>
-        </div>
-      </div>
-    </div>
   </div>
   <!-- LoRA 大面板：只在生圖模式顯示（用 visibility 而非 display，切模式時不擠動旁邊固定的
        圖庫/分段/抽卡/重掃/連線鈕——見 darkroom.css .lora-panel-btn）。圖示鈕、不帶文字，
@@ -240,6 +184,68 @@
 
 <!-- LoRA 大面板：搜尋/翻頁挑 LoRA + 完整顯示每段觸發詞（不截斷）+ 強度。選擇即時生效，
      關閉只是收起檢視。由 topbar「🎨 LoRA」鈕或 genbar「🎨 選 LoRA」鈕開啟，同一個面板。 -->
+<!-- LoRA 抽取設定：⚙ 鈕開，跟 .lora-modal 同一種置中彈窗慣例（背景遮罩＋Esc＋✕都能關）。
+     內部兩分頁「一般」（L/K 抽取範圍設定，含 LoRA1/LoRA2 各自的分類/子資料夾晶片）／
+     「Concepts」（Concepts 抽卡強度/張數/模板鎖定，跟原本完全一樣，只是換了外殼）。 -->
+<div class="cs-modal" id="cs-modal">
+  <div class="cs-modal-inner" id="cs-modal-inner">
+    <button class="cs-modal-close" id="cs-modal-close" aria-label="關閉" title="關閉 (Esc)">✕</button>
+    <div class="seg cs-tab-seg" id="cs-tab-seg" role="group" aria-label="設定分頁">
+      <span class="seg-pill" id="cs-tab-pill" aria-hidden="true"></span>
+      <button data-tab="general" class="on">一般</button>
+      <button data-tab="concepts">Concepts</button>
+    </div>
+    <div class="cs-tab-panel" id="cs-tab-general">
+      <div class="cs-row cs-row-check cs-row-radio">
+        <span>🎲 抽 LoRA 範圍（快捷鍵 L／K）</span>
+        <label><input type="radio" name="cs-lora-scope" id="cs-lora-scope-both" value="both">兩格都抽</label>
+        <label><input type="radio" name="cs-lora-scope" id="cs-lora-scope-active" value="active">只抽目前作用格</label>
+      </div>
+      <div class="cs-scope-block">
+        <span class="cs-scope-label">LoRA1 範圍</span>
+        <div class="lm-cats cs-scope-cats" data-slot="0"></div>
+        <div class="lm-subcats cs-scope-subs" data-slot="0"></div>
+      </div>
+      <div class="cs-scope-block">
+        <span class="cs-scope-label">LoRA2 範圍</span>
+        <div class="lm-cats cs-scope-cats" data-slot="1"></div>
+        <div class="lm-subcats cs-scope-subs" data-slot="1"></div>
+      </div>
+    </div>
+    <div class="cs-tab-panel" id="cs-tab-concepts" hidden>
+      <label class="cs-row">
+        <span>Character 強度</span>
+        <input type="range" id="cs-char-strength" min="0" max="1" step="0.05">
+        <output id="cs-char-strength-out"></output>
+      </label>
+      <label class="cs-row">
+        <span>concepts 強度</span>
+        <input type="range" id="cs-key-strength" min="0" max="1" step="0.05">
+        <output id="cs-key-strength-out"></output>
+      </label>
+      <label class="cs-row cs-row-count">
+        <span>每次抽幾張</span>
+        <input type="number" id="cs-count" min="1" max="24" step="1">
+      </label>
+      <label class="cs-row cs-row-check">
+        <input type="checkbox" id="cs-tpl">
+        <span>同時抽詞庫模板（不勾＝只用兩個 LoRA 的觸發詞）</span>
+      </label>
+      <label class="cs-row cs-row-check">
+        <input type="checkbox" id="cs-tpl-cur-folder">
+        <span>模板只抽左邊目前選中的資料夾（不勾＝從全部詞庫抽）</span>
+      </label>
+      <div class="cs-tpl-lock" id="cs-tpl-lock">
+        <div class="cs-tpl-lock-current" id="cs-tpl-lock-current" hidden>
+          <span id="cs-tpl-lock-name"></span>
+          <button type="button" id="cs-tpl-lock-clear" title="取消鎖定模板" aria-label="取消鎖定模板">✕</button>
+        </div>
+        <input type="text" id="cs-tpl-search" placeholder="搜尋要鎖定的模板…" autocomplete="off">
+        <div class="cs-tpl-results" id="cs-tpl-results"></div>
+      </div>
+    </div>
+  </div>
+</div>
 <div id="lora-modal" class="lora-modal">
   <div class="lora-modal-inner">
     <button class="lora-modal-close" id="lora-modal-close" aria-label="關閉 (Esc)" title="關閉 (Esc)">✕</button>

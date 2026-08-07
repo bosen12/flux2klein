@@ -672,12 +672,29 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 /* 設定彈窗：強度×2／張數／模板開關，是 Concepts 抽卡唯一的強度來源（不讀 LoRA1/2
    slot 自己的強度滑桿）。用 hidden 屬性＋max-height 過渡展開/收起，不用 element.animate()
    ——內容固定不需要每次重新播放進場動畫，只是單純顯示/隱藏。 */
-.concepts-settings { position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
-  width: 260px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px;
-  box-shadow: var(--shadow); padding: 14px 16px; display: flex; flex-direction: column; gap: 12px;
-  animation: lmFadeUp var(--d-ui) var(--ease-entrance) both; }
-.concepts-settings[hidden] { display: none; }
-@media (prefers-reduced-motion: reduce) { .concepts-settings { animation: none; } }
+/* LoRA 抽取設定：⚙ 鈕開，比照 .lora-modal 同一套置中彈窗慣例（見該規則旁的說明），
+   這裡不重用 .lora-modal 這個 class，是因為兩個彈窗的開關時機、內容都各自獨立，
+   共用 class 容易在其中一個開著時被另一個的開關邏輯誤觸。 */
+.cs-modal { position: fixed; inset: 0; z-index: 200; display: none;
+  align-items: center; justify-content: center; padding: 24px;
+  background: rgba(8,8,11,.8); backdrop-filter: blur(6px); }
+.cs-modal.open { display: flex; animation: fadeIn var(--d-pop) var(--ease-out); }
+.cs-modal-inner { position: relative; width: min(720px, 92vw); max-height: 86vh; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 24px; display: flex; flex-direction: column; gap: 14px;
+  animation: modalPop var(--d-pop) var(--ease-entrance); }
+@media (prefers-reduced-motion: reduce) { .cs-modal.open, .cs-modal-inner { animation: none; } }
+.cs-modal-close { position: absolute; top: 10px; right: 10px; z-index: 2;
+  width: 32px; height: 32px; padding: 0; border-radius: 8px; border: 0; background: var(--sunk); color: var(--dim);
+  display: grid; place-items: center; cursor: pointer; font-size: 15px; line-height: 1;
+  transition: color var(--d-micro) var(--ease-out), background var(--d-micro) var(--ease-out), transform var(--d-micro) var(--ease-out); }
+.cs-modal-close:hover { color: var(--ink); background: var(--line-2); }
+.cs-modal-close:active { transform: scale(.9); }
+.cs-scope-block { display: flex; flex-direction: column; gap: 4px; }
+.cs-scope-label { font-size: 12px; color: var(--dim); }
+/* .lm-cats/.lm-subcats 原本的 padding（14px 14px 0 / 0 14px）是配合 LoRA 大面板左欄
+   那個側欄版面，這裡是彈窗裡的獨立區塊，蓋掉 padding 改用 gap 控制間距。 */
+.cs-scope-cats, .cs-scope-subs { padding: 0; }
 .cs-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--dim); cursor: default; }
 .cs-row > span:first-child { flex: none; width: 92px; }
 .cs-row input[type=range] { flex: 1; }
@@ -695,8 +712,6 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 .cs-tab-seg { margin-bottom: 4px; }
 .cs-tab-panel { display: flex; flex-direction: column; gap: 12px; }
 .cs-tab-panel[hidden] { display: none; }
-.cs-row-scope select { flex: 1; min-width: 0; font-size: 11.5px; padding: 3px 6px; }
-.cs-row-scope select[hidden] { display: none; }
 
 /* 鎖定模板小選擇器：跟 LoRA1/2「搜尋→點選鎖定」同一套心智模型，但縮小成塞得進設定
    彈窗的迷你版——沒有縮圖，純文字列表，畢竟這裡的重點是「選中哪個詞庫」不是看預覽圖
