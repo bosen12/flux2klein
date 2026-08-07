@@ -1822,6 +1822,7 @@ function renderLmCats() {
     b.addEventListener('click', () => {
       curScope().cat = key;
       curScope().subfolder = '';   // 換頂層分類，子資料夾篩選跟著清掉——上次選的子資料夾對新分類沒意義
+      GEN_LORA_SLOT_SKIP[GEN_ACTIVE_SLOT] = false;   // 選了範圍就是明確的參與意圖，自動切回「參與判斷」
       renderLmCats(); renderLmSubcats(); renderLmList($('lm-search').value, true);
       renderCsScopeChips(GEN_ACTIVE_SLOT);   // 設定 modal 的晶片要跟著大面板左欄同步
     });
@@ -1851,6 +1852,7 @@ function renderLmSubcats() {
     b.append(lb, nb);
     b.addEventListener('click', () => {
       curScope().subfolder = key;
+      GEN_LORA_SLOT_SKIP[GEN_ACTIVE_SLOT] = false;   // 選了子資料夾一樣是明確的參與意圖
       renderLmSubcats(); renderLmList($('lm-search').value, true);
       renderCsScopeChips(GEN_ACTIVE_SLOT);   // 設定 modal 的晶片要跟著大面板左欄同步
     });
