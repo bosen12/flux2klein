@@ -2046,6 +2046,47 @@ function renderShortcuts() {
     box.appendChild(g);
   });
 }
+// 「功能總覽」分頁：跟 SHORTCUT_GROUPS 同一種分組資料結構，但這裡列的是滑鼠/UI 驅動的
+// 功能（沒有鍵位可標），內容固定不會變，只在第一次切到這頁時建 DOM（見 renderFeatures）。
+const FEATURE_GROUPS = [
+  { title: '瀏覽／打標', rows: [
+    { desc: '<b>收藏</b>——縮圖右上角星號，點一下收藏（金色實心星常駐），再點取消；桌面平常隱藏、hover 卡片才浮現' },
+    { desc: '<b>稀有度標記</b>——打標模式選取縮圖，下方點稀有度即時寫入（含「移除標記」），選取自動清空可接著標下一批' },
+    { desc: '<b>資料夾搜尋</b>——左側導覽列上方的搜尋框，即時篩選資料夾清單' },
+    { desc: '<b>缺圖／已有篩選</b>——主區右上「全部／缺圖／已有」分段，只看還沒生預覽圖或已經有的詞庫' },
+  ]},
+  { title: '生圖', rows: [
+    { desc: '<b>多選詞庫＋選 LoRA 生圖</b>——瀏覽格線點縮圖多選，右上「選 LoRA」開大面板挑 LoRA，genbar 按「生圖」送出' },
+    { desc: '<b>LoRA 大面板</b>——左欄分類/子資料夾篩選＋搜尋＋翻頁，右欄每段觸發詞各自一張完整文字卡（勾選要用哪幾段）＋強度滑桿＋參考圖；左欄下方「🎲 隨機瀏覽」疊一批塔羅卡讓你點選' },
+    { desc: '<b>雙 LoRA 疊加</b>——右欄「LoRA 1／LoRA 2」兩張分頁卡各自獨立選擇與強度，可疊加使用' },
+    { desc: '<b>生成步數輸入框</b>——topbar 右側，範圍 1～150，即時套用到之後的生成（不是鎖 25，25 只是預設值）' },
+  ]},
+  { title: '抽卡', rows: [
+    { desc: '<b>一般抽卡</b>——R 全庫、E 本分類，瀏覽模式看圖、打標模式逐張標稀有度、生圖模式隨機生圖' },
+    { desc: '<b>Concepts 抽卡</b>——C／X 鍵，每張卡隨機配對一顆 Character LoRA＋一顆 concepts LoRA 直接生圖，強度／張數／是否同時抽詞庫模板在齒輪設定裡調' },
+    { desc: '<b>鎖定模板／鎖定 LoRA</b>——Concepts 設定裡搜尋鎖定固定模板；LoRA1/2 面板選好某個 Character 或 concepts 分類的 LoRA 就自動視為鎖定那一側' },
+  ]},
+  { title: '圖庫', rows: [
+    { desc: '<b>即時預覽</b>——生成中的卡片直接顯示採樣過程畫面，不用等完成才看得到' },
+    { desc: '<b>取消生圖</b>——塔羅疊層上取消當批；圖庫左上「取消全部」一次停掉所有還在跑的' },
+    { desc: '<b>大圖資訊</b>——點圖庫縮圖看大圖，附詞庫／資料夾／LoRA／強度／觸發詞／seed／生成時間' },
+  ]},
+];
+function renderFeatures() {
+  const box = $('feature-groups'); if (!box || box.children.length) return;   // 只建一次
+  FEATURE_GROUPS.forEach((group, gi) => {
+    const g = document.createElement('div'); g.className = 'shortcut-group';
+    g.style.setProperty('--i', gi);
+    const h = document.createElement('h3'); h.textContent = group.title; g.appendChild(h);
+    group.rows.forEach(row => {
+      const r = document.createElement('div'); r.className = 'shortcut-row no-keys';
+      const desc = document.createElement('div'); desc.className = 'shortcut-desc'; desc.innerHTML = row.desc;
+      r.appendChild(desc);
+      g.appendChild(r);
+    });
+    box.appendChild(g);
+  });
+}
 function moveHelpPill() {
   const seg = $('help-seg'), pill = $('help-pill');
   const active = seg && seg.querySelector('button.on');
@@ -2062,6 +2103,7 @@ $('help-seg').addEventListener('click', (e) => {
 });
 function openShortcuts() {
   renderShortcuts();
+  renderFeatures();
   $('shortcuts-overlay').classList.add('open');
   moveHelpPill();
 }
