@@ -1451,6 +1451,11 @@ const GEN_LORA_SLOTS = [
 let GEN_ACTIVE_SLOT = 0;
 function curSlot() { return GEN_LORA_SLOTS[GEN_ACTIVE_SLOT]; }
 function otherSlotIndex() { return GEN_ACTIVE_SLOT === 0 ? 1 : 0; }
+function setActiveSlot(i) {
+  GEN_ACTIVE_SLOT = i;
+  renderLmCats();
+  renderLmSubcats();
+}
 let GEN_LORA_PAGE = 0;                // LoRA 清單目前頁（搜尋變動時歸零，見 renderLmList）
 // Concepts 抽卡設定（強度×2／張數／「同時抽詞庫模板」開關，見 _runConceptsDraw）。
 // 宣告放這裡、不是靠近 drawConceptsTarot 本身，是因為設定彈窗控制項的初始值要在腳本
@@ -1820,7 +1825,7 @@ function renderLmSlotTabs() {
     ti.textContent = slot.lora ? (slot.lora.title || slot.lora.name) : '未選擇';
     meta.append(lb, ti);
     tab.appendChild(meta);
-    tab.addEventListener('click', () => { hideLoraPreviewTip(); GEN_ACTIVE_SLOT = i; renderLmCurrent(); renderLmList($('lm-search').value); });
+    tab.addEventListener('click', () => { hideLoraPreviewTip(); setActiveSlot(i); renderLmCurrent(); renderLmList($('lm-search').value); });
     if (slot.lora) {
       tab.addEventListener('mouseenter', () => showSingleLoraPreviewTip(tab, slot.lora));
       tab.addEventListener('mouseleave', hideLoraPreviewTip);
@@ -1831,7 +1836,7 @@ function renderLmSlotTabs() {
       clear.addEventListener('click', (e) => {
         e.stopPropagation();
         GEN_LORA_SLOTS[i] = { lora: null, strength: slot.strength, twPicks: new Set() };
-        GEN_ACTIVE_SLOT = i;
+        setActiveSlot(i);
         renderGenCurrent(); renderLmCurrent(); renderLmList($('lm-search').value);
       });
       tab.appendChild(clear);
@@ -2272,7 +2277,7 @@ async function applyLoraPush(d) {
   // 編輯中那格（GEN_ACTIVE_SLOT 是「上次編輯到哪」的殘留狀態，不該直接沿用來決定
   // 推送蓋到哪一格，否則使用者很難預期會蓋掉哪個）。
   const emptyIdx = GEN_LORA_SLOTS.findIndex(s => !s.lora);
-  if (emptyIdx !== -1) GEN_ACTIVE_SLOT = emptyIdx;
+  if (emptyIdx !== -1) setActiveSlot(emptyIdx);
   selectGenLora(match);
   toast(`已從 LoRA Manager 選入 LoRA ${GEN_ACTIVE_SLOT + 1}：「${match.title || match.name}」`);
 }
