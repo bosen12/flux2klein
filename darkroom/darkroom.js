@@ -3154,22 +3154,21 @@ function openCard3D(cards, opts) {
   });
 
   if (isIntro) {
-    // hero 進場：分 7 批飛入，批間隔 100ms、單批 560ms，總長落在 1.1~1.4 秒之間，
-    // 定位完成才淡入標題／「進入暗房」鈕（見 spec 的時間軸）。
-    // 保險：分頁載入當下如果剛好切到背景（document.visibilityState !== 'visible'），
-    // WAAPI 的 finished 不會結算（CLAUDE.md 記過的老坑），setLayout() 的 Promise 會
-    // 卡住不resolve——沒有這個 setTimeout，使用者切回分頁會卡在「卡片飛到一半、
-    // 永遠看不到進入暗房鈕」出不去。跟 closeCard3D() 同一套雙保險寫法。
+    // hero 進場：每張卡片各自隨機時長(650~1150ms)＋隨機延遲(0~500ms)才起飛，組群
+    // 看起來是陸續飛向定位（不是同步挪動），最長個案落在 1.65 秒左右，定位完成才
+    // 淡入標題／「進入暗房」鈕（見 spec 的時間軸）。
+    // 保險：setLayout() 回傳的 Promise 本身已經是估計時間、不掛在 finished 上（見
+    // card3d.js），但這裡再加一層更寬鬆的 setTimeout，雙保險不留死角。
     let introSettled = false;
     const showIntroChrome = () => {
       if (introSettled) return; introSettled = true;
       introHead.classList.add('show');
       setTimeout(() => enterBtn.classList.add('show'), 200);
     };
-    c3dScene.setLayout('grid', { duration: 560, batches: 7, batchDelay: 100 }).then(showIntroChrome);
-    setTimeout(showIntroChrome, 2200);
+    c3dScene.setLayout('grid', { minDuration: 650, maxDuration: 1150, maxDelay: 500 }).then(showIntroChrome);
+    setTimeout(showIntroChrome, 2400);
   } else {
-    c3dScene.setLayout('grid', { duration: 300, batches: 1 });   // 隨手開的，一次性淡入就好，不用隆重進場
+    c3dScene.setLayout('grid', { minDuration: 450, maxDuration: 750, maxDelay: 260 });   // 隨手開的，仍要有飛入感，但範圍窄一點、不用隆重進場
   }
 }
 
@@ -3198,7 +3197,7 @@ $('c3d-enter-btn').addEventListener('click', closeCard3D);
 $('c3d-controls').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-layout]'); if (!btn || !c3dScene) return;
   c3dSetLayoutBtn(btn.dataset.layout);
-  c3dScene.setLayout(btn.dataset.layout, { duration: 500, batches: 1 });
+  c3dScene.setLayout(btn.dataset.layout, { minDuration: 600, maxDuration: 1000, maxDelay: 320 });
 });
 // topbar 地球儀鈕：抽樣「目前格線看得到的」（VISIBLE，篩選/搜尋/稀有度都算進去），
 // 固定 130 筆，不管目前篩選了多少——避免把整個詞庫（可能上千筆）塞進 DOM。點卡片

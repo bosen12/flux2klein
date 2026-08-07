@@ -1248,7 +1248,7 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 .c3d-modal.open { display: block; animation: fadeIn var(--d-pop) var(--ease-out); }
 @media (prefers-reduced-motion: reduce) { .c3d-modal.open { animation: none; } }
 
-.c3d-stage { position: absolute; inset: 0; perspective: 1400px; perspective-origin: 50% 45%;
+.c3d-stage { position: absolute; inset: 0; perspective: 2600px; perspective-origin: 50% 45%;
   touch-action: none; cursor: grab; }
 .c3d-stage:active { cursor: grabbing; }
 .c3d-scene { position: absolute; top: 50%; left: 50%; width: 0; height: 0;
