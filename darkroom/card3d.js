@@ -12,53 +12,95 @@
   const REDUCE_MOTION = matchMedia('(prefers-reduced-motion: reduce)').matches;
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
-  // ---- 排列公式：輸入索引 i、總數 n，輸出 {x,y,z,rotX,rotY}（角度制）----
-  // 四種都是通用參數化數學公式的重新實作，不是複製任何範例的程式碼。尺度（間距/
-  // 半徑）刻意抓比較開闊的數字，配合 CSS perspective 拉遠的鏡頭感，不然卡片會擠成
-  // 一團、看起來很平、沒有縱深。
+  // ---- 朝向計算：完整重現 three.js Object3D.lookAt() 對「一般物件」（不是攝影機/
+  // 燈光）的行為，這是 sphere/helix 排列「卡片要面向哪裡」的正確算法來源，不是憑
+  // 感覺湊 atan2/asin（上一版就是這樣湊出來的，角度在極點附近會不對）。
+  //
+  // three.js 對一般物件呼叫 obj.lookAt(target) 時，內部是拿「target 當眼睛、物件
+  // 自己的位置當被看的點」建 lookAt 矩陣（跟攝影機的 lookAt 用法相反——這樣算出來
+  // 的旋轉才會讓物件的「正面」朝向 target，不是背對它）。這裡把那段矩陣運算＋
+  // Euler 'XYZ' 角度反推原封不動搬過來，用 (px,py,pz)＝物件位置、(vx,vy,vz)＝要
+  // 面向的點、upY＝世界「上」是 +Y 還是 -Y（CSS 螢幕座標 Y 朝下，跟 three.js 的
+  // Y-up 相反，所以呼叫端會傳 -1，讓這裡的矩陣運算全程在同一個座標系裡自洽，不用
+  // 另外事後修正符號）。
+  function cross3(ax, ay, az, bx, by, bz) { return [ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx]; }
+  function norm3(x, y, z) { const l = Math.hypot(x, y, z) || 1e-9; return [x / l, y / l, z / l]; }
+  function lookAtEuler(px, py, pz, vx, vy, vz, upY) {
+    let zx = vx - px, zy = vy - py, zz = vz - pz;
+    if (zx === 0 && zy === 0 && zz === 0) zz = 1;
+    [zx, zy, zz] = norm3(zx, zy, zz);
+    let [xx, xy, xz] = cross3(0, upY, 0, zx, zy, zz);
+    if (Math.hypot(xx, xy, xz) < 1e-6) {   // up 跟 z 幾乎平行的退化情況，微調 z 再重算（跟 three.js 同款保險）
+      zx += 1e-4; [zx, zy, zz] = norm3(zx, zy, zz);
+      [xx, xy, xz] = cross3(0, upY, 0, zx, zy, zz);
+    }
+    [xx, xy, xz] = norm3(xx, xy, xz);
+    const [yx, yy, yz] = cross3(zx, zy, zz, xx, xy, xz);
+    // 矩陣欄 [x軸, y軸, z軸]，對照 three.js Euler.setFromRotationMatrix(order='XYZ')
+    // 的元素命名：m11=xx, m12=yx, m13=zx, m22=yy, m23=zy, m32=yz, m33=zz。
+    const rY = Math.asin(clamp(zx, -1, 1));
+    let rX, rZ;
+    if (Math.abs(zx) < 0.9999999) {
+      rX = Math.atan2(-zy, zz);
+      rZ = Math.atan2(-yx, xx);
+    } else {
+      rX = Math.atan2(yz, yy);
+      rZ = 0;
+    }
+    return { rotX: rX * 180 / Math.PI, rotY: rY * 180 / Math.PI, rotZ: rZ * 180 / Math.PI };
+  }
+
+  // ---- 排列公式：輸入索引 i、總數 n，輸出 {x,y,z,rotX,rotY,rotZ}（角度制）----
+  // grid/table 是通用參數化格線公式的重新實作；sphere/helix 的位置公式＋朝向計算
+  // 沿用參考範例（three.js css3d_periodictable.html）的結構，不是憑感覺湊的（見上
+  // 面 lookAtEuler 的說明）——這是使用者要求「直接照原程式做」之後的版本。座標
+  // 全程走 CSS 的 Y-down 世界（跟 grid/table 一致），所以 y 的正負號、lookAtEuler
+  // 的 upY 都跟 three.js 原版的 Y-up 相反，不是照抄數字，是照抄「邏輯」換算過來。
   const LAYOUTS = {
     grid(i, n) {
       const cols = Math.max(1, Math.ceil(Math.sqrt(n)));
       const rows = Math.ceil(n / cols);
       const spacing = 190;
       const col = i % cols, row = Math.floor(i / cols);
-      return { x: (col - (cols - 1) / 2) * spacing, y: (row - (rows - 1) / 2) * spacing, z: 0, rotX: 0, rotY: 0 };
+      return { x: (col - (cols - 1) / 2) * spacing, y: (row - (rows - 1) / 2) * spacing, z: 0, rotX: 0, rotY: 0, rotZ: 0 };
     },
     table(i, n) {
       const cols = Math.max(1, Math.ceil(Math.sqrt(n * 1.6)));   // 比 grid 扁一點、密一點，視覺上跟 grid 有區別
       const rows = Math.ceil(n / cols);
       const spacing = 132;
       const col = i % cols, row = Math.floor(i / cols);
-      return { x: (col - (cols - 1) / 2) * spacing, y: (row - (rows - 1) / 2) * spacing, z: 0, rotX: 0, rotY: 0 };
+      return { x: (col - (cols - 1) / 2) * spacing, y: (row - (rows - 1) / 2) * spacing, z: 0, rotX: 0, rotY: 0, rotZ: 0 };
     },
     sphere(i, n) {
-      const radius = 80 * Math.sqrt(Math.max(n, 1)) + 480;
-      // Fibonacci sphere：均勻分布在球面上，不會兩極擠成一團。
-      const phi = Math.acos(1 - 2 * (i + 0.5) / Math.max(n, 1));
-      const theta = Math.PI * (1 + Math.sqrt(5)) * i;
-      const x = radius * Math.sin(phi) * Math.cos(theta);
-      const y = radius * Math.sin(phi) * Math.sin(theta);
-      const z = radius * Math.cos(phi);
-      // 卡片面向球心外側（法向量方向朝外，從外面看得到正面，不是看到卡片背面）。
-      const rotY = Math.atan2(x, z) * 180 / Math.PI;
-      const rotX = -Math.asin(clamp(y / radius, -1, 1)) * 180 / Math.PI;
-      return { x, y, z, rotX, rotY };
+      n = Math.max(n, 1);
+      const radius = 70 * Math.sqrt(n) + 420;
+      // 跟參考範例同一種螺旋分布：phi 從 0 掃到 π，theta 依 phi 累加，均勻覆蓋整個
+      // 球面、兩極不會擠成一團。
+      const phi = Math.acos(-1 + (2 * i) / n);
+      const theta = Math.sqrt(n * Math.PI) * phi;
+      const x = radius * Math.sin(phi) * Math.sin(theta);
+      const y = -radius * Math.cos(phi);   // 換算成 CSS 的 Y-down：three.js 原本是 +cos(phi)（Y-up）
+      const z = radius * Math.sin(phi) * Math.cos(theta);
+      // 面向「自己位置往外延伸兩倍」的點＝法向量朝外，從球外側看得到正面，不是背面。
+      const rot = lookAtEuler(x, y, z, x * 2, y * 2, z * 2, -1);
+      return { x, y, z, rotX: rot.rotX, rotY: rot.rotY, rotZ: rot.rotZ };
     },
     helix(i, n) {
-      const radius = 55 * Math.sqrt(Math.max(n, 1)) + 380;
-      const angleStep = 0.5;   // 每張卡片繞軸多轉的弧度
-      const vStep = clamp(4200 / Math.max(n, 1), 18, 50);
-      const theta = i * angleStep;
-      const x = radius * Math.sin(theta);
-      const z = radius * Math.cos(theta);
-      const y = (i - n / 2) * vStep;
-      const rotY = theta * 180 / Math.PI;
-      return { x, y, z, rotX: 0, rotY };
+      n = Math.max(n, 1);
+      const radius = 50 * Math.sqrt(n) + 320;
+      const theta = i * 0.175 + Math.PI;   // 沿用參考範例的角度增量／起始偏移
+      const vStep = clamp(4600 / n, 16, 42);
+      const x = radius * Math.cos(theta);
+      const z = radius * Math.sin(theta);
+      const y = i * vStep - (n / 2) * vStep;   // Y-down 版本：i 越大越往下（參考範例 Y-up 是越大越往上）
+      // 面向「水平方向往外延伸兩倍、高度不變」的點——卡片只繞軸轉，不會上下傾斜。
+      const rot = lookAtEuler(x, y, z, x * 2, y, z * 2, -1);
+      return { x, y, z, rotX: rot.rotX, rotY: rot.rotY, rotZ: rot.rotZ };
     },
   };
 
   function transformStr(p) {
-    return `translate3d(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px, ${p.z.toFixed(1)}px) rotateX(${p.rotX.toFixed(2)}deg) rotateY(${p.rotY.toFixed(2)}deg)`;
+    return `translate3d(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px, ${p.z.toFixed(1)}px) rotateX(${p.rotX.toFixed(2)}deg) rotateY(${p.rotY.toFixed(2)}deg) rotateZ(${(p.rotZ || 0).toFixed(2)}deg)`;
   }
   function randRange(a, b) { return a + Math.random() * (b - a); }
   // 起始散開位置：仿照參考範例，卡片一開始隨機散在一個大立方體裡（不是疊在原點），
