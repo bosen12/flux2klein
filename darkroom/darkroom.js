@@ -2318,7 +2318,14 @@ function renderConceptsTplResults() {
     const folder = document.createElement('span'); folder.className = 'ctr-folder'; folder.textContent = item.folder || '(根目錄)';
     text.append(name, folder);
     row.appendChild(text);
-    row.addEventListener('click', () => {
+    row.addEventListener('click', (e) => {
+      // 一定要 stopPropagation：這個 handler 會把自己（row）從 DOM 移除
+      // （$csTplResults.innerHTML = ''），等事件冒泡到 document 層級的「點外面關閉」
+      // 判斷式時 e.target 已經不在文件裡，Node.contains() 對已離線節點一律回傳
+      // false，面板會被誤判成「點在外面」而自動關閉。使用者回報選詞庫模板、清除
+      // 鎖定的 ✕ 都「沒反應」，根源其實是同一個：選模板當下面板就被關掉了，✕
+      // 是在一個已經（看似還開著，實則下一步就要關）的面板上點的，時序上很難注意到。
+      e.stopPropagation();
       setConceptsLockedTemplate(item);
       $csTplSearch.value = '';
       $csTplResults.innerHTML = '';
