@@ -1112,6 +1112,52 @@ function loraCatLabel() {
   if (curScope().subfolder) return curScope().subfolder === curScope().cat ? curScope().cat : curScope().subfolder;
   return curScope().cat === 'all' ? null : curScope().cat;
 }
+
+// 設定彈窗「一般」分頁的 LoRA1/LoRA2 範圍下拉——跟左欄晶片（renderLmCats/
+// renderLmSubcats）是同一份 GEN_LORA_SLOT_SCOPE 資料，只是畫成 select 而不是晶片
+// （設定彈窗窄，兩組並排用晶片會擠爆）。改到「目前作用格」那組會連動重繪左欄晶片，
+// 改到「另一格」大面板當下看不到，不用重繪（見 change handler）。
+function renderCsScopeSelects() {
+  const items = GEN_LORAS || [];
+  const counts = {};
+  for (const l of items) counts[l.category] = (counts[l.category] || 0) + 1;
+  const cats = Object.keys(counts).sort();
+  [0, 1].forEach((slot) => {
+    const scope = GEN_LORA_SLOT_SCOPE[slot];
+    const catSel = document.querySelector(`.cs-scope-cat[data-slot="${slot}"]`);
+    if (!catSel) return;
+    catSel.innerHTML = '';
+    const allOpt = document.createElement('option'); allOpt.value = 'all'; allOpt.textContent = `全部 (${items.length})`;
+    catSel.appendChild(allOpt);
+    cats.forEach((c) => {
+      const opt = document.createElement('option'); opt.value = c; opt.textContent = `${c} (${counts[c]})`;
+      catSel.appendChild(opt);
+    });
+    catSel.value = scope.cat;
+    renderCsScopeSubSelect(slot);
+  });
+}
+function renderCsScopeSubSelect(slot) {
+  const scope = GEN_LORA_SLOT_SCOPE[slot];
+  const subSel = document.querySelector(`.cs-scope-sub[data-slot="${slot}"]`);
+  if (!subSel) return;
+  subSel.innerHTML = '';
+  if (scope.cat === 'all') { subSel.hidden = true; return; }
+  const items = (GEN_LORAS || []).filter(l => l.category === scope.cat);
+  const counts = {};
+  for (const l of items) counts[l.folder] = (counts[l.folder] || 0) + 1;
+  const subfolders = Object.keys(counts).sort();
+  if (subfolders.length <= 1) { subSel.hidden = true; return; }
+  subSel.hidden = false;
+  const allOpt = document.createElement('option'); allOpt.value = ''; allOpt.textContent = `${scope.cat} 全部`;
+  subSel.appendChild(allOpt);
+  subfolders.forEach((f) => {
+    const opt = document.createElement('option'); opt.value = f; opt.textContent = `${f} (${counts[f]})`;
+    subSel.appendChild(opt);
+  });
+  subSel.value = scope.subfolder;
+}
+
 function drawLoraCategoryDispatch() { drawLoraTarot(loraCatPool(), loraCatLabel()); }
 
 // 一般生圖模式的「一鍵抽 LoRA」：跟 LoRA 隨機瀏覽（🎲 疊層，要點卡片選）不同層級——
@@ -2356,11 +2402,44 @@ const $csPanel = $('concepts-settings');
 $('concepts-settings-btn').onclick = (e) => {
   e.stopPropagation();
   $csPanel.hidden = !$csPanel.hidden;
+  if (!$csPanel.hidden) { renderCsScopeSelects(); moveCsTabPill(); }
 };
 document.addEventListener('click', (e) => {
   if (!$csPanel.hidden && !$csPanel.contains(e.target) && e.target.id !== 'concepts-settings-btn') {
     $csPanel.hidden = true;
   }
+});
+function moveCsTabPill() {
+  const seg = $('cs-tab-seg'), pill = $('cs-tab-pill');
+  const active = seg && seg.querySelector('button.on');
+  if (!active || !pill) return;
+  pill.style.width = active.offsetWidth + 'px';
+  pill.style.transform = `translateX(${active.offsetLeft}px)`;
+}
+$('cs-tab-seg').addEventListener('click', (e) => {
+  const btn = e.target.closest('button'); if (!btn) return;
+  $('cs-tab-seg').querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn));
+  moveCsTabPill();
+  $('cs-tab-general').hidden = btn.dataset.tab !== 'general';
+  $('cs-tab-concepts').hidden = btn.dataset.tab !== 'concepts';
+});
+// 兩組 LoRA1/LoRA2 範圍下拉共用同一個 change 委派，用 data-slot 判斷改的是哪一格。
+// i === GEN_ACTIVE_SLOT 是雙向同步的關鍵：改到目前作用格那組，大面板左欄晶片要跟著重繪；
+// 改到另一格，那格的晶片畫面當下看不到，不用重繪。
+$('cs-tab-general').addEventListener('change', (e) => {
+  const slotAttr = e.target.dataset.slot; if (slotAttr === undefined) return;
+  const i = Number(slotAttr);
+  const scope = GEN_LORA_SLOT_SCOPE[i];
+  if (e.target.classList.contains('cs-scope-cat')) {
+    scope.cat = e.target.value;
+    scope.subfolder = '';
+    renderCsScopeSubSelect(i);
+  } else if (e.target.classList.contains('cs-scope-sub')) {
+    scope.subfolder = e.target.value;
+  } else {
+    return;
+  }
+  if (i === GEN_ACTIVE_SLOT) { renderLmCats(); renderLmSubcats(); renderLmList($('lm-search').value, true); }
 });
 const $csCharStrength = $('cs-char-strength'), $csCharStrengthOut = $('cs-char-strength-out');
 const $csKeyStrength = $('cs-key-strength'), $csKeyStrengthOut = $('cs-key-strength-out');

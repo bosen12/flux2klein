@@ -692,6 +692,12 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 .cs-row-radio label:hover { color: var(--ink); }
 .cs-row-radio input { accent-color: var(--amber); }
 
+.cs-tab-seg { margin-bottom: 4px; }
+.cs-tab-panel { display: flex; flex-direction: column; gap: 12px; }
+.cs-tab-panel[hidden] { display: none; }
+.cs-row-scope select { flex: 1; min-width: 0; font-size: 11.5px; padding: 3px 6px; }
+.cs-row-scope select[hidden] { display: none; }
+
 /* 鎖定模板小選擇器：跟 LoRA1/2「搜尋→點選鎖定」同一套心智模型，但縮小成塞得進設定
    彈窗的迷你版——沒有縮圖，純文字列表，畢竟這裡的重點是「選中哪個詞庫」不是看預覽圖
    （預覽圖已經在 genbar/面板 hover 預覽處理過了）。 */
