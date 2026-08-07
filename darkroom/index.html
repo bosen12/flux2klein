@@ -367,9 +367,9 @@
     <div class="tarot-hint" id="tarot-hint">點任一張看大圖與提示詞；R 重抽一批、Esc 關閉</div>
   </div>
 </div>
-<!-- 首次進暗房的進場畫面：兩行縮圖橫向跑馬燈（一行往左、一行往右），中間疊題字＋
+<!-- 進暗房的進場畫面：四行縮圖橫向跑馬燈（方向左右交錯），中間疊題字＋
      「進入暗房」鈕。只用 CSS animation 做橫向捲動，不用 3D/矩陣運算——單純、好驗證。
-     只播一次（localStorage 旗標），見 darkroom.js maybeStartIntro()。 -->
+     每次載入頁面都會播，見 darkroom.js maybeStartIntro()。 -->
 <div class="intro-modal" id="intro-modal">
   <div class="intro-sprocket top" aria-hidden="true"></div>
   <div class="intro-rows" id="intro-rows"></div>

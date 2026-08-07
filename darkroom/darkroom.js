@@ -3079,10 +3079,10 @@ function hideBoot() {
 }
 
 /* ---------------------------------------------------------------------------
-   首次進暗房的進場畫面：四行縮圖橫向跑馬燈填滿整個高度（純 CSS animation，
-   方向左右交錯），中間兩行大而亮、外側兩行小而暗——靠尺寸/透明度差製造淺焦
-   距的縱深感，不用模糊濾鏡。中間疊題字＋「進入暗房」鈕。只播一次
-   （localStorage 旗標），之後重整就直接進真正介面。
+   進暗房的進場畫面：四行縮圖橫向跑馬燈填滿整個高度（純 CSS animation，方向
+   左右交錯），中間兩行大而亮、外側兩行小而暗——靠尺寸/透明度差製造淺焦距的
+   縱深感，不用模糊濾鏡。中間疊題字＋「進入暗房」鈕。**每次載入頁面都會播**
+   （不用 localStorage 旗標記「看過了」，使用者要每次重整都看得到）。
    --------------------------------------------------------------------------- */
 // 手機/弱網路裝置抽樣少一點、行數少一點——桌機 4 行 18 張、手機 2 行 10 張，
 // 首次載入時對 /api/thumb 的併發請求數跟著砍半以上，見 web-interface-guidelines
@@ -3121,7 +3121,6 @@ function buildIntroRow(items, durS, px) {
   return track;
 }
 function maybeStartIntro() {
-  if (localStorage.getItem('yz-intro-seen') === '1') return;
   if (!ALL.length) return;
   const mobile = isMobile();
   const rowsCfg = mobile ? INTRO_ROWS_MOBILE : INTRO_ROWS_DESKTOP;
@@ -3142,7 +3141,6 @@ function maybeStartIntro() {
 function closeIntro() {
   const modal = $('intro-modal');
   if (!modal.classList.contains('open')) return;
-  localStorage.setItem('yz-intro-seen', '1');
   const finish = () => { modal.classList.remove('open'); $('intro-rows').innerHTML = ''; };
   if (REDUCE_MOTION || document.visibilityState !== 'visible' || !modal.animate) { finish(); return; }
   const anim = modal.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: 'cubic-bezier(.4,0,1,1)' });
