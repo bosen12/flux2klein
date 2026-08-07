@@ -76,6 +76,11 @@
         <input type="checkbox" id="cs-tpl-cur-folder">
         <span>模板只抽左邊目前選中的資料夾（不勾＝從全部詞庫抽）</span>
       </label>
+      <div class="cs-row cs-row-check cs-row-radio">
+        <span>🎲 抽 LoRA 範圍（快捷鍵 L／K）</span>
+        <label><input type="radio" name="cs-lora-scope" id="cs-lora-scope-both" value="both">兩格都抽</label>
+        <label><input type="radio" name="cs-lora-scope" id="cs-lora-scope-active" value="active">只抽目前作用格</label>
+      </div>
       <!-- 鎖定一個固定模板：跟 LoRA1/LoRA2 選格同一套「搜尋→點選鎖定」互動，鎖定後
            每張卡固定用這個模板，自動視同勾了上面「同時抽詞庫模板」，兩個控制項不衝突
            （鎖定優先，checkbox 只在沒鎖定時才決定要不要隨機抽）。 -->

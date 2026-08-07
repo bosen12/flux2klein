@@ -686,6 +686,11 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 .cs-row-check { cursor: pointer; }
 .cs-row-check span { width: auto; flex: 1; line-height: 1.4; }
 .cs-row-check input { accent-color: var(--amber); flex: none; }
+.cs-row-radio { flex-direction: column; align-items: flex-start; gap: 4px; cursor: default; }
+.cs-row-radio > span:first-child { width: auto; }
+.cs-row-radio label { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--dim); cursor: pointer; }
+.cs-row-radio label:hover { color: var(--ink); }
+.cs-row-radio input { accent-color: var(--amber); }
 
 /* 鎖定模板小選擇器：跟 LoRA1/2「搜尋→點選鎖定」同一套心智模型，但縮小成塞得進設定
    彈窗的迷你版——沒有縮圖，純文字列表，畢竟這裡的重點是「選中哪個詞庫」不是看預覽圖

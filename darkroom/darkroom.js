@@ -1434,6 +1434,7 @@ let CONCEPTS_WITH_TEMPLATE = localStorage.getItem('yz-concepts-tpl') === '1';
 // 全部詞庫（ALL）抽。刻意沿用 CUR_FOLDER 而不是另做一個詞庫分類選單：使用者已經在用
 // 左邊列表瀏覽/選資料夾了，不用為 Concepts 抽卡另外重複一套選擇 UI。
 let CONCEPTS_TPL_CUR_FOLDER = localStorage.getItem('yz-concepts-tpl-cur-folder') === '1';
+let GEN_LORA_DRAW_SCOPE = localStorage.getItem('yz-lora-draw-scope') === 'both' ? 'both' : 'active';
 function setConceptsCharStrength(v) { CONCEPTS_CHAR_STRENGTH = v; localStorage.setItem('yz-concepts-char-str', v); }
 function setConceptsKeyStrength(v) { CONCEPTS_KEY_STRENGTH = v; localStorage.setItem('yz-concepts-key-str', v); }
 function setConceptsCount(v) { CONCEPTS_COUNT = v; localStorage.setItem('yz-concepts-count', v); }
@@ -1444,6 +1445,10 @@ function setConceptsWithTemplate(v) {
 function setConceptsTplCurFolder(v) {
   CONCEPTS_TPL_CUR_FOLDER = v;
   localStorage.setItem('yz-concepts-tpl-cur-folder', v ? '1' : '0');
+}
+function setGenLoraDrawScope(v) {
+  GEN_LORA_DRAW_SCOPE = v === 'both' ? 'both' : 'active';
+  localStorage.setItem('yz-lora-draw-scope', GEN_LORA_DRAW_SCOPE);
 }
 // 鎖定一個固定的詞庫模板（見 Concepts 設定彈窗的搜尋清單）。跟 LoRA1/2 的鎖定同一種
 // 設計：不存 localStorage（session-only，跟 GEN_LORA_SLOTS 一致——詞庫內容可能隨掃描
@@ -2264,6 +2269,9 @@ $csKeyStrength.value = CONCEPTS_KEY_STRENGTH; $csKeyStrengthOut.textContent = CO
 $csCount.value = CONCEPTS_COUNT;
 $csTpl.checked = CONCEPTS_WITH_TEMPLATE;
 $csTplCurFolder.checked = CONCEPTS_TPL_CUR_FOLDER;
+const $csLoraScopeBoth = $('cs-lora-scope-both'), $csLoraScopeActive = $('cs-lora-scope-active');
+$csLoraScopeBoth.checked = GEN_LORA_DRAW_SCOPE === 'both';
+$csLoraScopeActive.checked = GEN_LORA_DRAW_SCOPE === 'active';
 $csCharStrength.addEventListener('input', () => {
   const v = parseFloat($csCharStrength.value);
   $csCharStrengthOut.textContent = v.toFixed(2);
@@ -2283,6 +2291,8 @@ $csCount.addEventListener('change', () => {
 });
 $csTpl.addEventListener('change', () => setConceptsWithTemplate($csTpl.checked));
 $csTplCurFolder.addEventListener('change', () => setConceptsTplCurFolder($csTplCurFolder.checked));
+$csLoraScopeBoth.addEventListener('change', () => { if ($csLoraScopeBoth.checked) setGenLoraDrawScope('both'); });
+$csLoraScopeActive.addEventListener('change', () => { if ($csLoraScopeActive.checked) setGenLoraDrawScope('active'); });
 
 // 鎖定模板小選擇器：跟 LoRA 面板搜尋同一套「輸入就篩選、點一項就選中」互動，但這裡是
 // 純文字清單（不用縮圖），畢竟重點是「選中哪個詞庫」。搜尋比對名稱/資料夾，跟
