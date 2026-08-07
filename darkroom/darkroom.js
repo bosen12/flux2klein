@@ -1165,13 +1165,37 @@ function drawLoraCategoryDispatch() { drawLoraTarot(loraCatPool(), loraCatLabel(
 // 抽幾格看 GEN_LORA_DRAW_SCOPE：'both' 兩格都重抽（不判斷原本有沒有手動選，字面上就是
 // 兩格都換掉——這裡沒有 Concepts 那種 Character/concepts 角色區分，沒有「鎖定」的語意可
 // 套用）；'active' 只重抽 GEN_ACTIVE_SLOT 指到的那一格，另一格完全不動。
-function drawGenLoraSlots(pool, label) {
-  if (!pool.length) { toast(label ? `「${label}」沒有 LoRA 可抽` : '目前沒有 LoRA 可抽'); return; }
+// 每格自己的分類/子資料夾範圍算出來的抽取池，跟 loraCatPool()（永遠讀目前作用格）
+// 不同——這裡要能算「非作用格」那一格自己的池，K 鍵搭「兩格都抽」時才能讓兩格真的各自
+//套用各自記住的範圍，而不是都被目前作用格的範圍蓋掉。
+function scopePool(i) {
+  const scope = GEN_LORA_SLOT_SCOPE[i];
+  return (GEN_LORAS || []).filter(l =>
+    (scope.cat === 'all' || l.category === scope.cat) &&
+    (!scope.subfolder || l.folder === scope.subfolder));
+}
+function scopeLabel(i) {
+  const scope = GEN_LORA_SLOT_SCOPE[i];
+  if (scope.subfolder) return scope.subfolder === scope.cat ? scope.cat : scope.subfolder;
+  return scope.cat === 'all' ? null : scope.cat;
+}
+// poolForSlot(i)：回傳這一格要抽的池。L 鍵（全庫）不管哪一格都是同一份 GEN_LORAS，直接
+// 傳函式回同一個陣列；K 鍵（本分類）要各自算 scopePool(i)，兩格範圍不同就真的各自套用。
+function drawGenLoraSlots(poolForSlot, labelForSlot) {
   const indices = GEN_LORA_DRAW_SCOPE === 'both' ? [0, 1] : [GEN_ACTIVE_SLOT];
+  const picks = [];
+  for (const i of indices) {
+    const pool = poolForSlot(i);
+    if (!pool.length) {
+      const label = labelForSlot(i);
+      toast(label ? `「${label}」沒有 LoRA 可抽` : '目前沒有 LoRA 可抽');
+      return;
+    }
+    picks.push({ i, l: pool[Math.floor(Math.random() * pool.length)] });
+  }
   // 兩格都抽時各自獨立取樣、允許抽到同一顆（機率極低且沒有語意上的問題，不特別排除，
   // 跟 Concepts 抽卡的 Character／concepts 兩側各自獨立隨機同一套邏輯）。
-  indices.forEach((i) => {
-    const l = pool[Math.floor(Math.random() * pool.length)];
+  picks.forEach(({ i, l }) => {
     const tw = l.trainedWords || [];
     const twPicks = new Set();
     if (tw.length) twPicks.add(0);   // 預設勾第一段觸發詞，跟 selectGenLora() 手動點選同一套規則
@@ -1182,10 +1206,10 @@ function drawGenLoraSlots(pool, label) {
   runGen();
 }
 function drawGenLoraDispatch() {
-  fetchGenLoras().then((loras) => drawGenLoraSlots(loras, null));
+  fetchGenLoras().then((loras) => drawGenLoraSlots(() => loras, () => null));
 }
 function drawGenLoraCategoryDispatch() {
-  fetchGenLoras().then(() => drawGenLoraSlots(loraCatPool(), loraCatLabel()));
+  fetchGenLoras().then(() => drawGenLoraSlots(scopePool, scopeLabel));
 }
 
 // Concepts 抽卡的兩個抽選池：Character（角色 LoRA）與固定的 HENTAI/concepts 資料夾
@@ -2403,7 +2427,7 @@ const $csPanel = $('concepts-settings');
 $('concepts-settings-btn').onclick = (e) => {
   e.stopPropagation();
   $csPanel.hidden = !$csPanel.hidden;
-  if (!$csPanel.hidden) { renderCsScopeSelects(); moveCsTabPill(); }
+  if (!$csPanel.hidden) { fetchGenLoras().then(renderCsScopeSelects); moveCsTabPill(); }
 };
 document.addEventListener('click', (e) => {
   if (!$csPanel.hidden && !$csPanel.contains(e.target) && e.target.id !== 'concepts-settings-btn') {
