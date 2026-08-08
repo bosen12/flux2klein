@@ -3187,9 +3187,14 @@ function mulberry32(seed) {
   };
 }
 
-const INTRO_CHUNK_SIZE = 380;     // 一個區塊立方體的邊長（CSS px／世界單位）
+// 使用者回報畫面太擠——原程式雖然 CHUNK_SIZE=110、每區塊 5 張，但它是用真的
+// 3D 相機（FOV 60°）繪製，只有落在視錐範圍內的才看得到，視覺上遠比「27 個
+// 區塊全部同時存在」稀疏；CSS 3D 這裡沒有視錐剔除，所有區塊的卡片都在畫面
+// 附近，所以直接把區塊放大、每區塊卡片數砍半，湊出接近 demo 那種大量留白的
+// 疏密感（27 區塊 × 2 張＝54 張，不是 135 張）。
+const INTRO_CHUNK_SIZE = 620;     // 一個區塊立方體的邊長（CSS px／世界單位）
 const INTRO_RENDER_DIST = 1;      // 區塊 Chebyshev 半徑，1 = 3×3×3 = 27 個區塊同時存在
-const INTRO_ITEMS_PER_CHUNK = 5;  // 每個區塊放幾張卡（跟參考範例一致）
+const INTRO_ITEMS_PER_CHUNK = 2;  // 每個區塊放幾張卡
 const introCanvasPan = { x: 0, y: 0, z: 0 };   // 「相機」目前的平移量
 let introPool = [];               // 這次進場抽樣好的候選詞庫（區塊內選哪張卡從這裡挑，決定性）
 let introChunks = new Map();      // chunkKey -> DOM 元素陣列，目前實際存在的區塊
@@ -3211,14 +3216,32 @@ function genChunkCards(cx, cy, cz) {
   }
   return cards;
 }
+// 讀了 scene.tsx（實際的相機控制器）才發現：跟原程式差最多的不是視覺，是
+// 「手感」——原程式不是滑鼠拖多少畫面就跟著平移多少，是一整套帶慣性的物理
+// 系統：拖曳只改「目標速度」，真正的速度用 lerp 逐幀追上目標速度、放開後
+// 目標速度用指數衰減慢慢歸零（= 慣性滑行），滾輪同理累加後逐幀消化；就算
+// 完全沒拖曳，滑鼠位置本身也會讓畫面有一圈很輕的環境漂移（drift）。這些全部
+// 照搬過來，係數依我們的世界尺度（CHUNK_SIZE=380 對照三.js 的 110）重新換算，
+// 不是照抄三.js 那組給小單位世界用的數字。
+const INTRO_VEL_LERP = 0.16, INTRO_VEL_DECAY = 0.9, INTRO_MAX_VEL = 26;
+const INTRO_DRIFT_AMOUNT = 22, INTRO_DRIFT_LERP = 0.12;
+const INTRO_DEPTH_FADE_START = 420, INTRO_DEPTH_FADE_END = 1000;   // 對照 CHUNK_SIZE 換算，超過這個距離的卡片淡出
+const introVel = { x: 0, y: 0, z: 0 };
+const introTargetVel = { x: 0, y: 0, z: 0 };
+const introDrift = { x: 0, y: 0 };
+const introMouseN = { x: 0, y: 0 };   // 滑鼠位置正規化到 -1..1，只用來算環境漂移
+let introScrollAccum = 0;
+let introRAF = null;
+
 function applyIntroCanvasTransform() {
-  $('intro-canvas-grid').style.transform =
-    `translate3d(${introCanvasPan.x}px, ${introCanvasPan.y}px, ${introCanvasPan.z}px)`;
+  const tx = introCanvasPan.x + introDrift.x, ty = introCanvasPan.y + introDrift.y;
+  $('intro-canvas-grid').style.transform = `translate3d(${tx.toFixed(1)}px, ${ty.toFixed(1)}px, ${introCanvasPan.z.toFixed(1)}px)`;
   updateIntroChunks();
+  updateIntroDepthFade();
 }
 // 依目前相機位置算出「應該存在」的區塊集合，跟目前實際存在的區塊（introChunks）
 // 做差集：多的移除、少的新增。只有相機跨過區塊邊界（中心區塊變了）才會真的
-// 重算，單純在同一區塊裡小幅拖曳不會每個 pixel 都觸發，避免 DOM 抖動。
+// 重算，單純在同一區塊裡小幅移動不會每幀都觸發，避免 DOM 抖動。
 function updateIntroChunks() {
   const cx0 = Math.round(-introCanvasPan.x / INTRO_CHUNK_SIZE);
   const cy0 = Math.round(-introCanvasPan.y / INTRO_CHUNK_SIZE);
@@ -3236,24 +3259,22 @@ function updateIntroChunks() {
     }
   }
   // 移除超出範圍的區塊
-  for (const [key, els] of introChunks) {
-    if (!wanted.has(key)) { els.forEach(el => el.remove()); introChunks.delete(key); }
+  for (const [key, entry] of introChunks) {
+    if (!wanted.has(key)) { entry.forEach(c => c.el.remove()); introChunks.delete(key); }
   }
   if (!introPool.length) return;
-  // 新增剛進範圍的區塊
+  // 新增剛進範圍的區塊——邊緣區塊（Chebyshev 距離等於 RENDER_DIST 那圈）淡一點，
+  // 呼應原程式的區塊淡入/淡出邊界，不是每個區塊一出現就滿不透明硬切。
   const grid = $('intro-canvas-grid');
   wanted.forEach(({ cx, cy, cz, dist }, key) => {
     if (introChunks.has(key)) return;
     const cardPx = isMobile() ? 100 : 130;
-    // 邊緣區塊（快要進/出範圍那圈）淡一點，呼應參考範例的區塊淡入/淡出邊界，
-    // 不是每個區塊一出現就滿不透明地硬切。
-    const opacity = dist >= INTRO_RENDER_DIST ? 0.5 : 1;
-    const els = genChunkCards(cx, cy, cz).map(c => {
+    const gridOpacity = dist >= INTRO_RENDER_DIST ? 0.5 : 1;
+    const entry = genChunkCards(cx, cy, cz).map(c => {
       const it = introPool[Math.floor(c.pickSeed * introPool.length) % introPool.length];
       const card = document.createElement('div'); card.className = 'intro-canvas-card';
       card.style.width = cardPx + 'px'; card.style.margin = `-${cardPx / 2}px 0 0 -${cardPx / 2}px`;
       card.style.transform = `translate3d(${c.x.toFixed(0)}px, ${c.y.toFixed(0)}px, ${c.z.toFixed(0)}px)`;
-      card.style.opacity = opacity;
       const img = document.createElement('img');
       img.loading = 'lazy'; img.decoding = 'async'; img.fetchPriority = 'low'; img.alt = '';
       img.width = cardPx; img.height = cardPx;
@@ -3262,46 +3283,109 @@ function updateIntroChunks() {
       name.textContent = it.display_name || it.name;
       card.append(img, name);
       grid.appendChild(card);
-      return card;
+      return { el: card, z: c.z, gridOpacity };
     });
-    introChunks.set(key, els);
+    introChunks.set(key, entry);
   });
+  updateIntroDepthFade();   // 剛新增的區塊也要立刻套用一次目前的景深透明度，不用等下一幀
+}
+// 景深淡出：跟區塊網格的淡出（上面 gridOpacity）是兩套獨立機制疊乘，呼應原
+// 程式 Math.min(gridFade, depthFade²)——不管卡片在哪個區塊，只要跟相機的 Z
+// 距離超過門檻就會淡出，即使它還在可視區塊網格範圍內。這裡直接算最終值寫
+// style.opacity（沒有另外做逐幀 lerp 平滑，135 張卡片的量級沒有必要，肉眼
+// 看每幀都已經在動態更新，不會有硬切感）。
+function updateIntroDepthFade() {
+  const camZ = -introCanvasPan.z;
+  introChunks.forEach(entry => entry.forEach(({ el, z, gridOpacity }) => {
+    const depth = Math.abs(z - camZ);
+    const depthFade = depth <= INTRO_DEPTH_FADE_START ? 1
+      : Math.max(0, 1 - (depth - INTRO_DEPTH_FADE_START) / (INTRO_DEPTH_FADE_END - INTRO_DEPTH_FADE_START));
+    el.style.opacity = Math.min(gridOpacity, depthFade * depthFade).toFixed(2);
+  }));
 }
 function renderIntroCanvas() {
-  introChunks.forEach(els => els.forEach(el => el.remove()));
+  introChunks.forEach(entry => entry.forEach(c => c.el.remove()));
   introChunks = new Map();
   introLastCenterKey = null;
   introCanvasPan.x = 0; introCanvasPan.y = 0; introCanvasPan.z = 0;
+  introVel.x = introVel.y = introVel.z = 0;
+  introTargetVel.x = introTargetVel.y = introTargetVel.z = 0;
+  introDrift.x = introDrift.y = 0;
+  introScrollAccum = 0;
   // 候選池抽樣一次就好（不是每個區塊各自抽），區塊內用種子決定的 pickSeed 從
   // 這個池子裡挑——同一個區塊永遠挑到同一張，跟池子本身用哪批詞庫無關，這樣
   // 才符合「同一個位置再訪要長一樣」的決定性規則。
   introPool = sampleN(ALL, Math.min(90, ALL.length));
   applyIntroCanvasTransform();
+  startIntroFrameLoop();
 }
-// 拖曳平移／滾輪縮放：拖曳改 x/y（左右上下漫遊），滾輪改 z（前後穿梭景深，
-// 呼應參考範例滾輪/WASD 在 3D 空間裡移動相機的操作）。跟這系列改動裡「3D 卡片
-// 展示」拖曳邏輯同一套手刻風格。只在 canvas 樣式開著時才生效（getIntroStyle()
-// 判斷），marquee 樣式不受影響。
+// 帶慣性的物理迴圈：每幀把 velocity 逐步追向 targetVel（拖曳/滾輪只改
+// targetVel，不是直接改位置），再用 velocity 更新 pan；放開後 targetVel 每幀
+// 乘衰減係數，速度會自然滑行變慢而不是瞬間停下。滑鼠沒有按下拖曳時，游標
+// 位置本身也會讓畫面有一圈很輕的環境漂移，呼應原程式「連沒在操作都感覺畫面
+// 活著」的手感。reduced-motion 使用者不跑這個持續迴圈（見 startIntroFrameLoop）。
+function introFrameStep() {
+  if (getIntroStyle() !== 'canvas' || !$('intro-modal').classList.contains('open')) { introRAF = null; return; }
+  if (!introDragging && !isMobile()) {
+    introDrift.x += (introMouseN.x * INTRO_DRIFT_AMOUNT - introDrift.x) * INTRO_DRIFT_LERP;
+    introDrift.y += (introMouseN.y * INTRO_DRIFT_AMOUNT - introDrift.y) * INTRO_DRIFT_LERP;
+  }
+  introTargetVel.z += introScrollAccum;
+  introScrollAccum *= 0.8;
+  introTargetVel.x = clampNum(introTargetVel.x, -INTRO_MAX_VEL, INTRO_MAX_VEL);
+  introTargetVel.y = clampNum(introTargetVel.y, -INTRO_MAX_VEL, INTRO_MAX_VEL);
+  introTargetVel.z = clampNum(introTargetVel.z, -INTRO_MAX_VEL, INTRO_MAX_VEL);
+  introVel.x += (introTargetVel.x - introVel.x) * INTRO_VEL_LERP;
+  introVel.y += (introTargetVel.y - introVel.y) * INTRO_VEL_LERP;
+  introVel.z += (introTargetVel.z - introVel.z) * INTRO_VEL_LERP;
+  introCanvasPan.x += introVel.x;
+  introCanvasPan.y += introVel.y;
+  introCanvasPan.z += introVel.z;
+  introTargetVel.x *= INTRO_VEL_DECAY;
+  introTargetVel.y *= INTRO_VEL_DECAY;
+  introTargetVel.z *= INTRO_VEL_DECAY;
+  applyIntroCanvasTransform();
+  introRAF = requestAnimationFrame(introFrameStep);
+}
+function startIntroFrameLoop() {
+  if (introRAF || REDUCE_MOTION) return;
+  introRAF = requestAnimationFrame(introFrameStep);
+}
+// 拖曳／滾輪／滑鼠移動：全部只餵「目標速度」或「環境漂移用的滑鼠位置」進去，
+// 真正的位置更新統一在 introFrameStep() 那個持續迴圈裡發生（見上）。只在
+// canvas 樣式開著時才生效（getIntroStyle() 判斷），marquee 樣式不受影響。
 let introDragging = false, introLastX = 0, introLastY = 0;
 function onIntroPointerDown(e) {
   if (getIntroStyle() !== 'canvas') return;
   introDragging = true; introLastX = e.clientX; introLastY = e.clientY;
 }
 function onIntroPointerMove(e) {
+  introMouseN.x = (e.clientX / window.innerWidth) * 2 - 1;
+  introMouseN.y = (e.clientY / window.innerHeight) * 2 - 1;
   if (!introDragging) return;
-  introCanvasPan.x += e.clientX - introLastX;
-  introCanvasPan.y += e.clientY - introLastY;
+  const dx = e.clientX - introLastX, dy = e.clientY - introLastY;
   introLastX = e.clientX; introLastY = e.clientY;
-  applyIntroCanvasTransform();
+  // reduced-motion 使用者的持續物理迴圈（introFrameStep）沒有在跑，慣性/漂移
+  // 這些「裝飾性」動態拿掉沒關係，但拖曳本身是功能不是裝飾——直接改 pan 並
+  // 立刻套用，不能因為迴圈沒開就讓拖曳整個沒反應。
+  if (REDUCE_MOTION) {
+    introCanvasPan.x += dx; introCanvasPan.y += dy;
+    applyIntroCanvasTransform();
+    return;
+  }
+  introTargetVel.x += dx * 0.12;
+  introTargetVel.y += dy * 0.12;
 }
 function onIntroPointerUp() { introDragging = false; }
 function onIntroWheel(e) {
   if (getIntroStyle() !== 'canvas') return;
   e.preventDefault();
-  // 用 perspective(900px) 當有效範圍，超過會穿過鏡頭產生詭異的翻轉，夾在
-  // 安全區間內。
-  introCanvasPan.z = clampNum(introCanvasPan.z - e.deltaY * 0.6, -1800, 700);
-  applyIntroCanvasTransform();
+  if (REDUCE_MOTION) {
+    introCanvasPan.z = clampNum(introCanvasPan.z - e.deltaY * 0.6, -2900, 1150);
+    applyIntroCanvasTransform();
+    return;
+  }
+  introScrollAccum += e.deltaY * 0.16;
 }
 $('intro-canvas').addEventListener('pointerdown', onIntroPointerDown);
 window.addEventListener('pointermove', onIntroPointerMove);
@@ -3327,6 +3411,8 @@ function closeIntro() {
   if (!modal.classList.contains('open')) return;
   $('intro-style-menu').hidden = true;
   $('intro-style-btn').setAttribute('aria-expanded', 'false');
+  if (introRAF) { cancelAnimationFrame(introRAF); introRAF = null; }
+  introChunks = new Map();   // DOM 隨 innerHTML='' 一起清掉，這裡同步清空記錄，避免下次打開誤判「區塊還在」
   const finish = () => { modal.classList.remove('open'); $('intro-rows').innerHTML = ''; $('intro-canvas-grid').innerHTML = ''; };
   if (REDUCE_MOTION || document.visibilityState !== 'visible' || !modal.animate) { finish(); return; }
   const anim = modal.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: 'cubic-bezier(.4,0,1,1)' });
