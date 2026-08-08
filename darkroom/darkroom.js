@@ -3285,9 +3285,17 @@ function applyIntroCanvasTransform() {
 // 做差集：多的移除、少的新增。只有相機跨過區塊邊界（中心區塊變了）才會真的
 // 重算，單純在同一區塊裡小幅移動不會每幀都觸發，避免 DOM 抖動。
 function updateIntroChunks() {
-  const cx0 = Math.round(-introCanvasPan.x / INTRO_CHUNK_SIZE);
-  const cy0 = Math.round(-introCanvasPan.y / INTRO_CHUNK_SIZE);
-  const cz0 = Math.round(-introCanvasPan.z / INTRO_CHUNK_SIZE);
+  // 用 Math.floor 不是 Math.round：genChunkCards() 把區塊 cx 定義成
+  // [cx*SIZE, (cx+1)*SIZE) 這個半開區間（從 cx*SIZE 開始往正方向延伸，不是
+  // 以 cx*SIZE 為中心），「相機在哪個區塊裡」正確算法就是 floor(camPos/SIZE)。
+  // 用 round 等於誤把區塊當成「以 cx*SIZE 為中心」，會在區塊中點（而不是真
+  // 正的區塊邊界）提早切換 cx0，導致算出來的中心區塊系統性地偏向正方向半個
+  // 區塊寬——使用者回報「左側還是很容易沒有圖片」正是這個系統性偏移，不是
+  // 統計運氣：不管相機在哪，範圍永遠往正方向多蓋一點、負方向少蓋一點。
+  const camX = -introCanvasPan.x, camY = -introCanvasPan.y, camZ = -introCanvasPan.z;
+  const cx0 = Math.floor(camX / INTRO_CHUNK_SIZE);
+  const cy0 = Math.floor(camY / INTRO_CHUNK_SIZE);
+  const cz0 = Math.floor(camZ / INTRO_CHUNK_SIZE);
   const centerKey = introChunkKey(cx0, cy0, cz0);
   if (centerKey === introLastCenterKey) return;
   introLastCenterKey = centerKey;
@@ -3308,7 +3316,12 @@ function updateIntroChunks() {
   // opacity 蓋回去。
   for (const [key, entry] of introChunks) {
     if (!wanted.has(key)) {
-      entry.forEach(c => { c.el.style.opacity = '0'; setTimeout(() => c.el.remove(), 560); });
+      // cancelled=true：卡片可能還在 introScheduleLoad 的排隊佇列裡、還沒真
+      // 的發出縮圖請求（見下方 startLoad）。不標記的話，就算畫面上已經看不
+      // 到這張卡，佇列輪到它時還是會照樣 fetch＋decode，白白佔用全域載入節
+      // 奏跟伺服器縮圖產生的併發額度（server 端只有 2 個併發生成名額），
+      // 排擠真正看得到的卡片，這是「有時會卡」的另一個成因。
+      entry.forEach(c => { c.cancelled = true; c.el.style.opacity = '0'; setTimeout(() => c.el.remove(), 560); });
       introChunks.delete(key);
     }
   }
@@ -3331,7 +3344,7 @@ function updateIntroChunks() {
       name.textContent = it.display_name || it.name;
       card.append(img, name);
       grid.appendChild(card);
-      const rec = { el: card, x: c.x, y: c.y, z: c.z, ready: false };
+      const rec = { el: card, x: c.x, y: c.y, z: c.z, ready: false, cancelled: false };
       // 卡片還沒 ready 就跳過景深計算（維持 opacity:0），等縮圖真的解碼完
       // 成才標記 ready 並補一次淡出計算，讓「卡片出現」跟「圖片能看見」是
       // 同一個時間點，不會框先出現、圖片慢半拍才貼上去。introScheduleLoad
@@ -3342,8 +3355,10 @@ function updateIntroChunks() {
       // 出的請求都照同一個全域節奏排隊，不會疊加。
       const src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
       const startLoad = () => {
+        if (rec.cancelled) return;   // 排隊等待期間卡片已經被移除，不用再發這個請求
         let retried = false;
         const tryLoad = () => {
+          if (rec.cancelled) return;   // 重試等待的 400ms 內也可能被移除
           img.src = src;
           const onOk = () => { rec.ready = true; updateIntroDepthFade(); };
           const onFail = () => {
@@ -3393,7 +3408,9 @@ function updateIntroDepthFade() {
   }));
 }
 function renderIntroCanvas() {
-  introChunks.forEach(entry => entry.forEach(c => c.el.remove()));
+  // cancelled=true 同上一段的說明：重新渲染（例如切換樣式又切回來）不能讓
+  // 舊一批還在 introScheduleLoad 佇列裡等的卡片繼續發縮圖請求。
+  introChunks.forEach(entry => entry.forEach(c => { c.cancelled = true; c.el.remove(); }));
   introChunks = new Map();
   introLastCenterKey = null;
   introCanvasPan.x = 0; introCanvasPan.y = 0;
@@ -3519,6 +3536,10 @@ function closeIntro() {
   $('intro-style-menu').hidden = true;
   $('intro-style-btn').setAttribute('aria-expanded', 'false');
   if (introRAF) { cancelAnimationFrame(introRAF); introRAF = null; }
+  // cancelled=true：關閉時可能還有卡片在 introScheduleLoad 佇列裡排隊，不
+  // 標記的話使用者關掉暗房進場動畫後，背景還會繼續發一批沒人看得到的縮圖
+  // 請求，白白佔用伺服器縮圖產生的併發額度。
+  introChunks.forEach(entry => entry.forEach(c => { c.cancelled = true; }));
   introChunks = new Map();   // DOM 隨 innerHTML='' 一起清掉，這裡同步清空記錄，避免下次打開誤判「區塊還在」
   const finish = () => { modal.classList.remove('open'); $('intro-rows').innerHTML = ''; $('intro-canvas-grid').innerHTML = ''; };
   if (REDUCE_MOTION || document.visibilityState !== 'visible' || !modal.animate) { finish(); return; }
