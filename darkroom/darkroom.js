@@ -3226,12 +3226,28 @@ function genChunkCards(cx, cy, cz) {
 // 不是照抄三.js 那組給小單位世界用的數字。
 const INTRO_VEL_LERP = 0.16, INTRO_VEL_DECAY = 0.9, INTRO_MAX_VEL = 26;
 const INTRO_DRIFT_AMOUNT = 22, INTRO_DRIFT_LERP = 0.12;
+// 使用者說清楚了：「慣性」要是永久的，不是滑一段就完全停下——拖曳/滾輪放開
+// 後 introTargetVel 還是會照原本邏輯衰減到 0（急停的手感由使用者操作決
+// 定），但每一幀都疊加一份「不會衰減」的環境漂移速度，讓鏡頭永遠有一點點在
+// 動，不會真的靜止。不是隨機亂數（每幀重新算亂數方向會抖動），是拿時間戳
+// 餵進去疊幾個頻率不成整數倍的正弦波，連續且不明顯週期重複，效果類似水流
+// 的緩慢漂移，跟使用者原本要的「自己隨機動」是同一件事，只是換成確定性函式
+// 實作（好處是不用另外管狀態、reduced-motion 使用者也不會跑，見 introFrameStep）。
+const INTRO_AMBIENT_SPEED = { x: 0.5, y: 0.4, z: 0.35 };
+function introAmbientVel(t) {
+  return {
+    x: Math.sin(t * 0.00023) * 0.6 + Math.sin(t * 0.00071 + 1.7) * 0.4,
+    y: Math.sin(t * 0.00031 + 0.9) * 0.6 + Math.sin(t * 0.00059 + 3.1) * 0.4,
+    z: Math.sin(t * 0.00019 + 2.4) * 0.6 + Math.sin(t * 0.00043 + 4.8) * 0.4,
+  };
+}
 // 開場鏡頭：先貼近一點（Z 正值＝離相機比較近），給一個往後（負值）的初始
 // 「目標速度」丟進既有的慣性系統，不是另外寫一段開場動畫——這樣開場的減速
 // 手感跟使用者拖曳放開後的滑行手感是同一套物理，不會兩種質感對不上。用
 // node 模擬過：Z=780、初速=-26（即 INTRO_MAX_VEL，會被逐幀 clamp）大約 68
-// 幀（約 1.1 秒）滑行到 velocity<0.05 停下，最終停在約 520，退了 260px，
-// 是一個「先貼近、鏡頭後退拉開視野」的開場，不是瞬間定住。
+// 幀（約 1.1 秒）這份初速滑行到 velocity<0.05，最終這段位移停在約 520
+// （退了 260px，「先貼近、鏡頭後退拉開視野」的開場）；之後接手的是下面那份
+// 不會衰減的環境漂移（INTRO_AMBIENT_SPEED），鏡頭不會真的靜止。
 const INTRO_ENTRANCE_Z = 780;
 const INTRO_DEPTH_FADE_START = 420, INTRO_DEPTH_FADE_END = 1000;   // 對照 CHUNK_SIZE 換算，超過這個距離的卡片淡出
 const introVel = { x: 0, y: 0, z: 0 };
@@ -3355,7 +3371,7 @@ function renderIntroCanvas() {
 // 乘衰減係數，速度會自然滑行變慢而不是瞬間停下。滑鼠沒有按下拖曳時，游標
 // 位置本身也會讓畫面有一圈很輕的環境漂移，呼應原程式「連沒在操作都感覺畫面
 // 活著」的手感。reduced-motion 使用者不跑這個持續迴圈（見 startIntroFrameLoop）。
-function introFrameStep() {
+function introFrameStep(ts) {
   if (getIntroStyle() !== 'canvas' || !$('intro-modal').classList.contains('open')) { introRAF = null; return; }
   if (!introDragging && !isMobile()) {
     introDrift.x += (introMouseN.x * INTRO_DRIFT_AMOUNT - introDrift.x) * INTRO_DRIFT_LERP;
@@ -3369,9 +3385,13 @@ function introFrameStep() {
   introVel.x += (introTargetVel.x - introVel.x) * INTRO_VEL_LERP;
   introVel.y += (introTargetVel.y - introVel.y) * INTRO_VEL_LERP;
   introVel.z += (introTargetVel.z - introVel.z) * INTRO_VEL_LERP;
-  introCanvasPan.x += introVel.x;
-  introCanvasPan.y += introVel.y;
-  introCanvasPan.z += introVel.z;
+  // 拖曳/滾輪帶來的 introVel 一樣會衰減到 0（急停感由操作決定），但下面這份
+  // 環境漂移速度不衰減，永遠疊加在最終位移上——這才是「永久慣性」，鏡頭不會
+  // 真的靜止下來。
+  const amb = introAmbientVel(ts || performance.now());
+  introCanvasPan.x += introVel.x + amb.x * INTRO_AMBIENT_SPEED.x;
+  introCanvasPan.y += introVel.y + amb.y * INTRO_AMBIENT_SPEED.y;
+  introCanvasPan.z += introVel.z + amb.z * INTRO_AMBIENT_SPEED.z;
   introTargetVel.x *= INTRO_VEL_DECAY;
   introTargetVel.y *= INTRO_VEL_DECAY;
   introTargetVel.z *= INTRO_VEL_DECAY;
