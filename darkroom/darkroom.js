@@ -3262,16 +3262,16 @@ function genChunkCards(cx, cy, cz) {
 // 快」——拖曳/滾輪的靈敏度（INTRO_VEL_LERP 以及下面拖曳/滾輪的係數）不用
 // 再動，是最終「永遠會漂移的速度上限」要再壓低，這樣不管使用者怎麼用力
 // 甩，最後穩定漂移的速度都不會超過這個更慢的上限。使用者又回饋「速度再
-// 低」，6 還是太快，再往下壓到 3。
-const INTRO_VEL_LERP = 0.16, INTRO_MAX_VEL = 3;
+// 低」，6 還是太快，再往下壓到 3；接著直接指定「速度改成1」。
+const INTRO_VEL_LERP = 0.16, INTRO_MAX_VEL = 1;
 const INTRO_DRIFT_AMOUNT = 22, INTRO_DRIFT_LERP = 0.12;
 // 開場鏡頭：先貼近一點（Z 正值＝離相機比較近），給一個隨機大小、方向固定
 // 往後（負值）的初始速度，外加 x/y 也給一點隨機初速（不是死板只退後）——這
 // 就是使用者說的「一開始那只是初始慣性而已，隨機給」，數值不用刻意調成某個
 // 精確的模擬結果，因為後面不會衰減、永遠不會定格，多一點隨機性反而更自然。
 const INTRO_ENTRANCE_Z = 780;
-const INTRO_ENTRANCE_VEL_Z = [1, 3];    // 往後的初速範圍（負值），[最小,最大]，跟 INTRO_MAX_VEL 同量級
-const INTRO_ENTRANCE_VEL_XY = 0.6;      // x/y 初速的隨機範圍是 ±這個值
+const INTRO_ENTRANCE_VEL_Z = [0.3, 1];  // 往後的初速範圍（負值），[最小,最大]，跟 INTRO_MAX_VEL 同量級
+const INTRO_ENTRANCE_VEL_XY = 0.25;     // x/y 初速的隨機範圍是 ±這個值
 const introVel = { x: 0, y: 0, z: 0 };
 const introTargetVel = { x: 0, y: 0, z: 0 };
 const introDrift = { x: 0, y: 0 };
@@ -3359,7 +3359,6 @@ function updateIntroChunks() {
   // 那段同樣的「分層」理由）：離相機越近的區塊先顯影，越遠的越晚，一整面
   // 區塊牆不會同一瞬間全部冒出來。
   const grid = $('intro-canvas-grid');
-  const freshCards = [];
   const newChunkList = [];
   wanted.forEach((info, key) => { if (!introChunks.has(key)) newChunkList.push(info); });
   newChunkList
@@ -3370,7 +3369,12 @@ function updateIntroChunks() {
     .sort((a, b) => a.dist - b.dist)
     .forEach(({ cx, cy, cz }, layerIdx) => {
     const key = introChunkKey(cx, cy, cz);
-    const revealAt = performance.now() + Math.min(layerIdx * INTRO_LAYER_STEP_MS, 400);
+    // +16（約一影格）確保「就算是最近那層」也不會跟卡片剛建立時的
+    // opacity:0 落在同一個同步 tick 裡結算——不然沒有中間插入一次繪製，
+    // CSS transition 就不會觸發（起訖值同一 tick 內改完，瀏覽器只畫得到
+    // 最終值）。下面因此不再需要 void grid.offsetHeight 強制同步 reflow
+    // 那招。
+    const revealAt = performance.now() + Math.min(16 + layerIdx * INTRO_LAYER_STEP_MS, 400);
     const cardPx = isMobile() ? 100 : 130;
     const entry = genChunkCards(cx, cy, cz).map(c => {
       const it = introPool[Math.floor(c.pickSeed * introPool.length) % introPool.length];
@@ -3390,7 +3394,6 @@ function updateIntroChunks() {
       card.append(img, name);
       grid.appendChild(card);
       const rec = { el: card, x: c.x, y: c.y, z: c.z, cancelled: false, revealAt };
-      freshCards.push(rec);
       // introScheduleLoad 是全域的排隊時鐘（見上方定義），不是每次
       // updateIntroChunks() 各自從 0 開始算——使用者回報「有時會卡」，原本
       // loadIdx 只在單次呼叫內錯開，連續好幾次呼叫（例如快速拖曳連續跨過
@@ -3422,7 +3425,11 @@ function updateIntroChunks() {
     });
     introChunks.set(key, entry);
   });
-  if (freshCards.length) void grid.offsetHeight;   // 強制 reflow：讓 opacity:0 先被畫一幀，下面改真正值才有淡入動畫而不是硬切出現
+  // 不用強制 reflow（曾經寫過 void grid.offsetHeight）——revealAt 保證每張
+  // 新卡片至少要等下一次 updateIntroDepthFade()（下一個動畫影格）才會套用
+  // 真正的透明度，天然跨過一次繪製，CSS transition 吃得到 0→目標值的變化。
+  // 強制 reflow 會同步 flush 整份文件的版面配置，是實測會造成「頓頓」的
+  // 主要成本之一，跨區塊時常發生（每次都要付一次），拿掉後應該順很多。
   updateIntroDepthFade();
 }
 // 淡出：改成純粹依「卡片跟相機的真實 3D 距離」算連續透明度（Euclidean
