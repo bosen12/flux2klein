@@ -3243,16 +3243,17 @@ function genChunkCards(cx, cy, cz) {
 // 使用者後續補充「慣性改成慢一點，我施力照常，但最後慣性大小固定，不要太
 // 快」——拖曳/滾輪的靈敏度（INTRO_VEL_LERP 以及下面拖曳/滾輪的係數）不用
 // 再動，是最終「永遠會漂移的速度上限」要再壓低，這樣不管使用者怎麼用力
-// 甩，最後穩定漂移的速度都不會超過這個更慢的上限。
-const INTRO_VEL_LERP = 0.16, INTRO_MAX_VEL = 6;
+// 甩，最後穩定漂移的速度都不會超過這個更慢的上限。使用者又回饋「速度再
+// 低」，6 還是太快，再往下壓到 3。
+const INTRO_VEL_LERP = 0.16, INTRO_MAX_VEL = 3;
 const INTRO_DRIFT_AMOUNT = 22, INTRO_DRIFT_LERP = 0.12;
 // 開場鏡頭：先貼近一點（Z 正值＝離相機比較近），給一個隨機大小、方向固定
 // 往後（負值）的初始速度，外加 x/y 也給一點隨機初速（不是死板只退後）——這
 // 就是使用者說的「一開始那只是初始慣性而已，隨機給」，數值不用刻意調成某個
 // 精確的模擬結果，因為後面不會衰減、永遠不會定格，多一點隨機性反而更自然。
 const INTRO_ENTRANCE_Z = 780;
-const INTRO_ENTRANCE_VEL_Z = [2, 5];    // 往後的初速範圍（負值），[最小,最大]
-const INTRO_ENTRANCE_VEL_XY = 1.2;      // x/y 初速的隨機範圍是 ±這個值
+const INTRO_ENTRANCE_VEL_Z = [1, 3];    // 往後的初速範圍（負值），[最小,最大]，跟 INTRO_MAX_VEL 同量級
+const INTRO_ENTRANCE_VEL_XY = 0.6;      // x/y 初速的隨機範圍是 ±這個值
 const introVel = { x: 0, y: 0, z: 0 };
 const introTargetVel = { x: 0, y: 0, z: 0 };
 const introDrift = { x: 0, y: 0 };
