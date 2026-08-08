@@ -3079,11 +3079,25 @@ function hideBoot() {
 }
 
 /* ---------------------------------------------------------------------------
-   進暗房的進場畫面：四行縮圖橫向跑馬燈填滿整個高度（純 CSS animation，方向
-   左右交錯），中間兩行大而亮、外側兩行小而暗——靠尺寸/透明度差製造淺焦距的
-   縱深感，不用模糊濾鏡。中間疊題字＋「進入暗房」鈕。**每次載入頁面都會播**
-   （不用 localStorage 旗標記「看過了」，使用者要每次重整都看得到）。
+   進暗房的進場畫面：兩種樣式，右上角 ⚙ 切換、記在 localStorage（下次載入沿用
+   上次選的）：
+   - 'marquee'（預設）：四行縮圖橫向跑馬燈填滿整個高度，方向左右交錯，中間兩
+     行大而亮、外側兩行小而暗——靠尺寸/透明度差製造淺焦距的縱深感，不用模糊
+     濾鏡。
+   - 'canvas'：參考 github.com/edoardolunardi/infinite-canvas 的概念（整片縮圖
+     網格），但那專案本身可拖曳/縮放是用 React Three Fiber 做的 3D 場景，這裡
+     不需要互動，改成純 CSS 讓整片網格自己緩慢漂移過幾個不規則中間點——效果
+     像自己在動，不用 JS 逐幀算、不用矩陣運算。
+   中間疊題字＋「進入暗房」鈕。**每次載入頁面都會播**（不用旗標記「看過了」，
+   使用者要每次重整都看得到）。
    --------------------------------------------------------------------------- */
+const INTRO_STYLE_KEY = 'yz-intro-style';
+function getIntroStyle() {
+  const v = localStorage.getItem(INTRO_STYLE_KEY);
+  return v === 'canvas' ? 'canvas' : 'marquee';
+}
+
+// ---- marquee 樣式 ----
 // 手機/弱網路裝置抽樣少一點、行數少一點——桌機 4 行 18 張、手機 2 行 10 張，
 // 首次載入時對 /api/thumb 的併發請求數跟著砍半以上，見 web-interface-guidelines
 // 的效能檢查（大量非關鍵圖片不該無差別跟桌機吃一樣的量）。
@@ -3120,8 +3134,7 @@ function buildIntroRow(items, durS, px) {
   }
   return track;
 }
-function maybeStartIntro() {
-  if (!ALL.length) return;
+function renderIntroMarquee() {
   const mobile = isMobile();
   const rowsCfg = mobile ? INTRO_ROWS_MOBILE : INTRO_ROWS_DESKTOP;
   const sizeMap = mobile ? INTRO_IMG_SIZE_MOBILE : INTRO_IMG_SIZE;
@@ -3136,12 +3149,55 @@ function maybeStartIntro() {
     row.appendChild(buildIntroRow(items, cfg.durS, sizeMap[cfg.size]));
     rowsBox.appendChild(row);
   });
+}
+
+// ---- canvas（無限畫布）樣式 ----
+// 網格比容器大一圈（CSS 裡 .intro-canvas-grid 是 130%），依目前視窗大小算出
+// 剛好填滿這一圈範圍要幾張圖，抽樣數量不夠就循環重複（i % picks.length）——
+// 這是純裝飾用的背景牆，不是清單，同一張圖重複出現沒關係。上限 260 張防止
+// 超寬螢幕把 DOM 塞爆。
+function renderIntroCanvas() {
+  const tile = isMobile() ? 114 : 164;   // 對照 darkroom.css 的 tile+gap
+  const imgPx = isMobile() ? 100 : 150;
+  const cols = Math.ceil((window.innerWidth * 1.3) / tile) + 1;
+  const rows = Math.ceil((window.innerHeight * 1.3) / tile) + 1;
+  const count = Math.min(cols * rows, 260);
+  const picks = sampleN(ALL, Math.min(count, ALL.length));
+  if (!picks.length) return;
+  const grid = $('intro-canvas-grid');
+  grid.innerHTML = '';
+  const eagerCount = cols * 2;   // 前兩排是畫面一開始就看得到的，優先載
+  for (let i = 0; i < count; i++) {
+    const it = picks[i % picks.length];
+    const img = document.createElement('img');
+    img.loading = i < eagerCount ? 'eager' : 'lazy';
+    img.decoding = 'async'; img.fetchPriority = 'low'; img.alt = '';
+    img.width = imgPx; img.height = imgPx;
+    img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
+    grid.appendChild(img);
+  }
+}
+
+function renderIntro(style) {
+  if (style === 'canvas') { renderIntroCanvas(); $('intro-rows').hidden = true; $('intro-canvas').hidden = false; }
+  else { renderIntroMarquee(); $('intro-canvas').hidden = true; $('intro-rows').hidden = false; }
+}
+function maybeStartIntro() {
+  if (!ALL.length) return;
+  const style = getIntroStyle();
+  setIntroStyleMenuState(style);
+  renderIntro(style);
   $('intro-modal').classList.add('open');
+}
+function setIntroStyleMenuState(style) {
+  document.querySelectorAll('#intro-style-menu button').forEach(b => b.classList.toggle('on', b.dataset.style === style));
 }
 function closeIntro() {
   const modal = $('intro-modal');
   if (!modal.classList.contains('open')) return;
-  const finish = () => { modal.classList.remove('open'); $('intro-rows').innerHTML = ''; };
+  $('intro-style-menu').hidden = true;
+  $('intro-style-btn').setAttribute('aria-expanded', 'false');
+  const finish = () => { modal.classList.remove('open'); $('intro-rows').innerHTML = ''; $('intro-canvas-grid').innerHTML = ''; };
   if (REDUCE_MOTION || document.visibilityState !== 'visible' || !modal.animate) { finish(); return; }
   const anim = modal.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: 'cubic-bezier(.4,0,1,1)' });
   let done = false;
@@ -3150,6 +3206,28 @@ function closeIntro() {
   setTimeout(settle, 260);   // 分頁在背景時 finished 不結算的保險（CLAUDE.md 記過的老坑）
 }
 $('intro-enter-btn').addEventListener('click', closeIntro);
+$('intro-style-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const menu = $('intro-style-menu');
+  const willOpen = menu.hidden;
+  menu.hidden = !willOpen;
+  $('intro-style-btn').setAttribute('aria-expanded', String(willOpen));
+});
+$('intro-style-menu').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-style]'); if (!btn) return;
+  const style = btn.dataset.style;
+  localStorage.setItem(INTRO_STYLE_KEY, style);
+  setIntroStyleMenuState(style);
+  renderIntro(style);   // 立刻換畫面預覽，不用等下次重整
+  $('intro-style-menu').hidden = true;
+  $('intro-style-btn').setAttribute('aria-expanded', 'false');
+});
+document.addEventListener('click', (e) => {
+  if (!$('intro-style-menu') || $('intro-style-menu').hidden) return;
+  if ($('intro-style-switch').contains(e.target)) return;
+  $('intro-style-menu').hidden = true;
+  $('intro-style-btn').setAttribute('aria-expanded', 'false');
+});
 window.addEventListener('keydown', (e) => {
   if (!$('intro-modal').classList.contains('open')) return;
   if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); closeIntro(); }

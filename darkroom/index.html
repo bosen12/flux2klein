@@ -367,12 +367,23 @@
     <div class="tarot-hint" id="tarot-hint">點任一張看大圖與提示詞；R 重抽一批、Esc 關閉</div>
   </div>
 </div>
-<!-- 進暗房的進場畫面：四行縮圖橫向跑馬燈（方向左右交錯），中間疊題字＋
-     「進入暗房」鈕。只用 CSS animation 做橫向捲動，不用 3D/矩陣運算——單純、好驗證。
-     每次載入頁面都會播，見 darkroom.js maybeStartIntro()。 -->
+<!-- 進暗房的進場畫面：兩種樣式可選（右上角 ⚙ 切換，記在 localStorage）——
+     「跑馬燈」是四行縮圖橫向跑馬燈（方向左右交錯）；「無限畫布」參考
+     github.com/edoardolunardi/infinite-canvas 的概念（不可互動、不拖曳，改成
+     整片縮圖網格自己緩慢漂移，走一段不規則路徑，感覺像自己在動）。兩種都只用
+     CSS animation，不用 3D/矩陣運算、不用 JS 逐幀算——單純、好驗證。中間疊題字
+     ＋「進入暗房」鈕，每次載入頁面都會播，見 darkroom.js maybeStartIntro()。 -->
 <div class="intro-modal" id="intro-modal">
   <div class="intro-sprocket top" aria-hidden="true"></div>
   <div class="intro-rows" id="intro-rows"></div>
+  <div class="intro-canvas" id="intro-canvas" hidden><div class="intro-canvas-grid" id="intro-canvas-grid"></div></div>
+  <div class="intro-style-switch" id="intro-style-switch">
+    <button type="button" class="intro-style-btn" id="intro-style-btn" title="切換進場畫面樣式" aria-label="切換進場畫面樣式" aria-haspopup="true" aria-expanded="false">⚙</button>
+    <div class="intro-style-menu" id="intro-style-menu" hidden role="menu">
+      <button type="button" data-style="marquee" role="menuitemradio">跑馬燈</button>
+      <button type="button" data-style="canvas" role="menuitemradio">無限畫布</button>
+    </div>
+  </div>
   <div class="intro-copy">
     <h2>詞庫暗房</h2>
     <p>在琥珀色的安全燈下，讓每一批詞庫慢慢顯影</p>
