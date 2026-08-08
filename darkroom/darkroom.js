@@ -3127,6 +3127,7 @@ function buildIntroRow(items, durS, px) {
       img.loading = rep === 0 ? 'eager' : 'lazy';
       img.decoding = 'async';
       img.fetchPriority = 'low';
+      img.draggable = false;
       img.alt = ''; img.width = px; img.height = px;
       img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
       track.appendChild(img);
@@ -3258,14 +3259,23 @@ function updateIntroChunks() {
       }
     }
   }
-  // 移除超出範圍的區塊
+  // 移除超出範圍的區塊——不是直接 remove()，卡片會在畫面上憑空消失（使用者
+  // 回報「左右移動圖片會突然消失」正是這裡）。先淡出（靠 CSS 的 opacity
+  // transition）再移除，et 值要比 CSS 的 .32s 長一點點當保險（分頁在背景時
+  // transitionend 不一定會結算，這個坑 CLAUDE.md 記過）。同時要立刻從
+  // introChunks 移掉，這樣 updateIntroDepthFade() 才不會在淡出過程中又把
+  // opacity 蓋回去。
   for (const [key, entry] of introChunks) {
-    if (!wanted.has(key)) { entry.forEach(c => c.el.remove()); introChunks.delete(key); }
+    if (!wanted.has(key)) {
+      entry.forEach(c => { c.el.style.opacity = '0'; setTimeout(() => c.el.remove(), 360); });
+      introChunks.delete(key);
+    }
   }
   if (!introPool.length) return;
   // 新增剛進範圍的區塊——邊緣區塊（Chebyshev 距離等於 RENDER_DIST 那圈）淡一點，
   // 呼應原程式的區塊淡入/淡出邊界，不是每個區塊一出現就滿不透明硬切。
   const grid = $('intro-canvas-grid');
+  const freshCards = [];   // 剛建立、opacity 還沒套用最終值的卡片，等下面強制 reflow 後才進場淡入
   wanted.forEach(({ cx, cy, cz, dist }, key) => {
     if (introChunks.has(key)) return;
     const cardPx = isMobile() ? 100 : 130;
@@ -3275,18 +3285,23 @@ function updateIntroChunks() {
       const card = document.createElement('div'); card.className = 'intro-canvas-card';
       card.style.width = cardPx + 'px'; card.style.margin = `-${cardPx / 2}px 0 0 -${cardPx / 2}px`;
       card.style.transform = `translate3d(${c.x.toFixed(0)}px, ${c.y.toFixed(0)}px, ${c.z.toFixed(0)}px)`;
+      card.style.opacity = '0';   // 起始值先是 0，強制 reflow 後才寫入真正的景深透明度，才觸發得了 transition
       const img = document.createElement('img');
       img.loading = 'lazy'; img.decoding = 'async'; img.fetchPriority = 'low'; img.alt = '';
+      img.draggable = false;
       img.width = cardPx; img.height = cardPx;
       img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
       const name = document.createElement('div'); name.className = 'intro-canvas-name';
       name.textContent = it.display_name || it.name;
       card.append(img, name);
       grid.appendChild(card);
-      return { el: card, z: c.z, gridOpacity };
+      const rec = { el: card, z: c.z, gridOpacity };
+      freshCards.push(rec);
+      return rec;
     });
     introChunks.set(key, entry);
   });
+  if (freshCards.length) void grid.offsetHeight;   // 強制 reflow：讓 opacity:0 先被瀏覽器畫一幀，下面改真正值才會有淡入動畫而不是硬切出現
   updateIntroDepthFade();   // 剛新增的區塊也要立刻套用一次目前的景深透明度，不用等下一幀
 }
 // 景深淡出：跟區塊網格的淡出（上面 gridOpacity）是兩套獨立機制疊乘，呼應原
@@ -3360,6 +3375,10 @@ function onIntroPointerDown(e) {
   introDragging = true; introLastX = e.clientX; introLastY = e.clientY;
 }
 function onIntroPointerMove(e) {
+  // 掛在 window 上是因為拖曳中滑鼠移出 .intro-canvas 範圍也要繼續追蹤，但
+  // 這代表沒開 intro 或不是 canvas 樣式時也會每次滑鼠移動都算一次正規化座標
+  // ——整個網站到處都在做這個無意義的計算，先擋掉。
+  if (!$('intro-modal').classList.contains('open') || getIntroStyle() !== 'canvas') return;
   introMouseN.x = (e.clientX / window.innerWidth) * 2 - 1;
   introMouseN.y = (e.clientY / window.innerHeight) * 2 - 1;
   if (!introDragging) return;

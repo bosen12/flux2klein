@@ -1272,7 +1272,7 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
   animation-name: introScroll; animation-duration: var(--intro-dur, 50s);
   animation-timing-function: linear; animation-iteration-count: infinite; }
 .intro-row.right .intro-track { animation-direction: reverse; }
-.intro-track img { border-radius: 10px; object-fit: cover; display: block; flex: none;
+.intro-track img { -webkit-user-drag: none; user-select: none; border-radius: 10px; object-fit: cover; display: block; flex: none;
   background: var(--sunk); box-shadow: 0 8px 20px rgba(0,0,0,.4); }
 .intro-row.edge .intro-track img { width: 108px; height: 108px; }
 .intro-row.mid .intro-track img { width: 168px; height: 168px; box-shadow: 0 10px 28px rgba(0,0,0,.5); }
@@ -1300,9 +1300,14 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 .intro-canvas-card { position: absolute; top: 0; left: 0; width: 130px; margin: -65px 0 0 -65px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
   box-shadow: 0 8px 20px rgba(0,0,0,.4); pointer-events: none;
-  backface-visibility: hidden; transition: opacity .3s var(--ease-out); }
+  backface-visibility: hidden; transition: opacity .32s var(--ease-out); }
 .intro-canvas-card img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block;
-  background: var(--sunk); }
+  background: var(--sunk); -webkit-user-drag: none; user-select: none; }
+/* 拖曳橫移時滑鼠常常掃過中間的文案或卡片名稱，瀏覽器原生文字選取會整片反白、
+   圖片本身也可能被當成可拖曳物件產生殘影——這片區域只用來拖曳平移，不需要
+   任何文字/圖片選取，整片關掉比逐一補 pointer-events 更不會漏。 */
+.intro-modal { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.intro-modal input, .intro-modal textarea { user-select: text; -webkit-user-select: text; }
 .intro-canvas-name { padding: 6px 9px 7px; font-size: 11px; font-weight: 600; color: var(--ink);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 640px) {
