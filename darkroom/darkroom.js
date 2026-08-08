@@ -3226,6 +3226,13 @@ function genChunkCards(cx, cy, cz) {
 // 不是照抄三.js 那組給小單位世界用的數字。
 const INTRO_VEL_LERP = 0.16, INTRO_VEL_DECAY = 0.9, INTRO_MAX_VEL = 26;
 const INTRO_DRIFT_AMOUNT = 22, INTRO_DRIFT_LERP = 0.12;
+// 開場鏡頭：先貼近一點（Z 正值＝離相機比較近），給一個往後（負值）的初始
+// 「目標速度」丟進既有的慣性系統，不是另外寫一段開場動畫——這樣開場的減速
+// 手感跟使用者拖曳放開後的滑行手感是同一套物理，不會兩種質感對不上。用
+// node 模擬過：Z=780、初速=-26（即 INTRO_MAX_VEL，會被逐幀 clamp）大約 68
+// 幀（約 1.1 秒）滑行到 velocity<0.05 停下，最終停在約 520，退了 260px，
+// 是一個「先貼近、鏡頭後退拉開視野」的開場，不是瞬間定住。
+const INTRO_ENTRANCE_Z = 780;
 const INTRO_DEPTH_FADE_START = 420, INTRO_DEPTH_FADE_END = 1000;   // 對照 CHUNK_SIZE 換算，超過這個距離的卡片淡出
 const introVel = { x: 0, y: 0, z: 0 };
 const introTargetVel = { x: 0, y: 0, z: 0 };
@@ -3322,11 +3329,20 @@ function renderIntroCanvas() {
   introChunks.forEach(entry => entry.forEach(c => c.el.remove()));
   introChunks = new Map();
   introLastCenterKey = null;
-  introCanvasPan.x = 0; introCanvasPan.y = 0; introCanvasPan.z = 0;
+  introCanvasPan.x = 0; introCanvasPan.y = 0;
   introVel.x = introVel.y = introVel.z = 0;
-  introTargetVel.x = introTargetVel.y = introTargetVel.z = 0;
+  introTargetVel.x = introTargetVel.y = 0;
   introDrift.x = introDrift.y = 0;
   introScrollAccum = 0;
+  // reduced-motion 使用者沒有持續的 rAF 迴圈（見 startIntroFrameLoop），開場
+  // 後退這段本身就是裝飾性動態，不是功能，直接跳過、鏡頭定在預設位置。
+  if (REDUCE_MOTION) {
+    introCanvasPan.z = 0;
+    introTargetVel.z = 0;
+  } else {
+    introCanvasPan.z = INTRO_ENTRANCE_Z;
+    introTargetVel.z = -INTRO_MAX_VEL;
+  }
   // 候選池抽樣一次就好（不是每個區塊各自抽），區塊內用種子決定的 pickSeed 從
   // 這個池子裡挑——同一個區塊永遠挑到同一張，跟池子本身用哪批詞庫無關，這樣
   // 才符合「同一個位置再訪要長一樣」的決定性規則。
