@@ -3195,6 +3195,19 @@ function mulberry32(seed) {
 // 疏密感（27 區塊 × 2 張＝54 張，不是 135 張）。
 const INTRO_CHUNK_SIZE = 620;     // 一個區塊立方體的邊長（CSS px／世界單位）
 const INTRO_RENDER_DIST = 1;      // 區塊 Chebyshev 半徑，1 = 3×3×3 = 27 個區塊同時存在
+// 使用者要「盡可能照 demo」——讀了原程式的 constants.ts 才發現它真正渲染
+// 的範圍比「視覺上看得到」的範圍還大一圈：RENDER_DISTANCE=2 加
+// CHUNK_FADE_MARGIN=1，真正建立 mesh／發 texture 請求的半徑是 3，不是 2。
+// 多出來的那一圈當緩衝：卡片已經真的存在、縮圖已經真的在載入，只是靠淡出
+// 幾乎看不見，等相機真的靠近時淡入進度已經超前，不會是「這一刻才開始载
+// 入」。CHUNK_FADE_MARGIN 這個名字也照抄過來，代表「多渲染這一圈純粹是緩
+// 衝，不是給人看的」。以前我們選了較保守的作法（只暖機圖片、不建真正的
+// DOM 卡片，見 prefetchAheadChunks()）是因為當時縮圖現場生成的成本還沒
+// 被磁碟快取蓋掉；現在 .thumb_cache 已經幾乎覆蓋全庫（16000+ 張），大部分
+// 請求就算真的建了緩衝圈的卡片，縮圖也是磁碟快取秒回，可以比較放心地照
+// demo 的做法多渲染一圈。
+const INTRO_FADE_MARGIN = 1;
+const INTRO_TOTAL_DIST = INTRO_RENDER_DIST + INTRO_FADE_MARGIN;   // 真正建立區塊的半徑（含緩衝圈）
 // 使用者回報「左邊明顯很空」——27 個區塊 × 2 張只有 54 張卡，且卡片位置在
 // 區塊內是均勻亂數，量少時單看某個瞬間的畫面很容易某一側剛好沒分到卡片
 // （純統計上的空洞，不是 bug，但看起來像沒畫對）。稍微加回一點密度到 3
@@ -3297,9 +3310,9 @@ function prefetchAheadChunks(cx0, cy0, cz0) {
   const dz = Math.abs(introVel.z) > VEL_EPS ? Math.sign(introVel.z) : 0;
   if (!dx && !dy && !dz) return;
   const pcx0 = cx0 + dx, pcy0 = cy0 + dy, pcz0 = cz0 + dz;
-  for (let ddx = -INTRO_RENDER_DIST; ddx <= INTRO_RENDER_DIST; ddx++) {
-    for (let ddy = -INTRO_RENDER_DIST; ddy <= INTRO_RENDER_DIST; ddy++) {
-      for (let ddz = -INTRO_RENDER_DIST; ddz <= INTRO_RENDER_DIST; ddz++) {
+  for (let ddx = -INTRO_TOTAL_DIST; ddx <= INTRO_TOTAL_DIST; ddx++) {
+    for (let ddy = -INTRO_TOTAL_DIST; ddy <= INTRO_TOTAL_DIST; ddy++) {
+      for (let ddz = -INTRO_TOTAL_DIST; ddz <= INTRO_TOTAL_DIST; ddz++) {
         const cx = pcx0 + ddx, cy = pcy0 + ddy, cz = pcz0 + ddz;
         const key = introChunkKey(cx, cy, cz);
         if (introChunks.has(key) || introPrefetchedChunks.has(key)) continue;
@@ -3332,10 +3345,13 @@ function updateIntroChunks() {
   const centerKey = introChunkKey(cx0, cy0, cz0);
   if (centerKey === introLastCenterKey) return;
   introLastCenterKey = centerKey;
+  // 半徑用 INTRO_TOTAL_DIST（= RENDER_DIST + FADE_MARGIN），照 demo 的做法
+  // 真正渲染的範圍比「看起來看得到」的範圍多一圈緩衝，見上面 INTRO_FADE_MARGIN
+  // 的說明。
   const wanted = new Map();   // key -> {cx,cy,cz,dist}
-  for (let dx = -INTRO_RENDER_DIST; dx <= INTRO_RENDER_DIST; dx++) {
-    for (let dy = -INTRO_RENDER_DIST; dy <= INTRO_RENDER_DIST; dy++) {
-      for (let dz = -INTRO_RENDER_DIST; dz <= INTRO_RENDER_DIST; dz++) {
+  for (let dx = -INTRO_TOTAL_DIST; dx <= INTRO_TOTAL_DIST; dx++) {
+    for (let dy = -INTRO_TOTAL_DIST; dy <= INTRO_TOTAL_DIST; dy++) {
+      for (let dz = -INTRO_TOTAL_DIST; dz <= INTRO_TOTAL_DIST; dz++) {
         const cx = cx0 + dx, cy = cy0 + dy, cz = cz0 + dz;
         wanted.set(introChunkKey(cx, cy, cz), { cx, cy, cz, dist: Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz)) });
       }
