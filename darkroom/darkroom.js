@@ -3152,30 +3152,53 @@ function renderIntroMarquee() {
 }
 
 // ---- canvas（無限畫布）樣式 ----
-// 網格比容器大一圈（CSS 裡 .intro-canvas-grid 是 130%），依目前視窗大小算出
-// 剛好填滿這一圈範圍要幾張圖，抽樣數量不夠就循環重複（i % picks.length）——
-// 這是純裝飾用的背景牆，不是清單，同一張圖重複出現沒關係。上限 260 張防止
-// 超寬螢幕把 DOM 塞爆。
+// 參考範例（tympanus 那個 demo）不是整齊網格：大小不一、鬆散隨機散佈、大量
+// 留白，偶爾夾雜幾張還沒顯影完全的淡色佔位塊。這裡用一個粗略的虛擬格子
+// （cellSize）當「放置基準」，但每格只有 fillRate 機率真的放一張圖、尺寸/
+// 位置都在格子範圍內隨機偏移，做出鬆散感，不是每格都塞滿的規則網格。
+// 上限 220 張防止超寬螢幕把 DOM 塞爆。
+function randRange(a, b) { return a + Math.random() * (b - a); }
 function renderIntroCanvas() {
-  const tile = isMobile() ? 114 : 164;   // 對照 darkroom.css 的 tile+gap
-  const imgPx = isMobile() ? 100 : 150;
-  const cols = Math.ceil((window.innerWidth * 1.3) / tile) + 1;
-  const rows = Math.ceil((window.innerHeight * 1.3) / tile) + 1;
-  const count = Math.min(cols * rows, 260);
-  const picks = sampleN(ALL, Math.min(count, ALL.length));
+  const mobile = isMobile();
+  const cellSize = mobile ? 130 : 210;
+  const fillRate = 0.6;   // 不是每格都放，留白才有 demo 那種鬆散感
+  const cols = Math.ceil((window.innerWidth * 1.3) / cellSize) + 1;
+  const rows = Math.ceil((window.innerHeight * 1.3) / cellSize) + 1;
+  const cells = [];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) cells.push({ r, c });
+  const chosenCells = sampleN(cells, Math.min(Math.round(cells.length * fillRate), 220));
+  const picks = sampleN(ALL, Math.min(chosenCells.length, ALL.length));
   if (!picks.length) return;
   const grid = $('intro-canvas-grid');
   grid.innerHTML = '';
-  const eagerCount = cols * 2;   // 前兩排是畫面一開始就看得到的，優先載
-  for (let i = 0; i < count; i++) {
+  grid.style.width = (cols * cellSize) + 'px';
+  grid.style.height = (rows * cellSize) + 'px';
+  const eagerRowCutoff = 2;   // 最上面兩排虛擬格子是畫面一開始就看得到的，優先載
+  chosenCells.forEach((cell, i) => {
     const it = picks[i % picks.length];
+    // 尺寸桶：中等最常見，大的偶爾點綴一下（呼應 demo 大部分中等縮圖夾雜幾張
+    // 明顯比較大的），寬高各自獨立隨機，不是統一正方形——才會有橫幅/直幅的
+    // 混雜感，不是「一樣大小只是位置亂」。
+    const roll = Math.random();
+    const [lo, hi] = roll < 0.14 ? [cellSize * 1.25, cellSize * 1.85]
+      : roll < 0.55 ? [cellSize * 0.7, cellSize * 1.0]
+      : [cellSize * 0.4, cellSize * 0.62];
+    const w = randRange(lo, hi), h = randRange(lo, hi);
+    const jitterX = randRange(-cellSize * 0.18, cellSize * 0.18);
+    const jitterY = randRange(-cellSize * 0.18, cellSize * 0.18);
     const img = document.createElement('img');
-    img.loading = i < eagerCount ? 'eager' : 'lazy';
+    img.loading = cell.r < eagerRowCutoff ? 'eager' : 'lazy';
     img.decoding = 'async'; img.fetchPriority = 'low'; img.alt = '';
-    img.width = imgPx; img.height = imgPx;
+    img.width = Math.round(w); img.height = Math.round(h);
+    img.style.width = w.toFixed(0) + 'px'; img.style.height = h.toFixed(0) + 'px';
+    img.style.left = (cell.c * cellSize + jitterX).toFixed(0) + 'px';
+    img.style.top = (cell.r * cellSize + jitterY).toFixed(0) + 'px';
+    // 少數幾張刻意淡出，呼應 demo 裡「還沒顯影完全」的淡色佔位塊，不是每張都
+    // 滿不透明地齊刷刷排好。
+    if (Math.random() < 0.14) img.style.opacity = randRange(0.12, 0.32).toFixed(2);
     img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
     grid.appendChild(img);
-  }
+  });
 }
 
 function renderIntro(style) {
