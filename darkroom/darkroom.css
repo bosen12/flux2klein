@@ -1290,7 +1290,14 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
   box-shadow: 0 8px 20px rgba(0,0,0,.4); pointer-events: none;
   backface-visibility: hidden; transition: opacity .5s var(--ease-out); }
 .intro-canvas-card img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block;
-  background: var(--sunk); -webkit-user-drag: none; user-select: none; }
+  background: var(--sunk); -webkit-user-drag: none; user-select: none;
+  opacity: 0; transition: opacity .4s var(--ease-out); }
+.intro-canvas-card img.on { opacity: 1; }
+/* 使用者回報「左右移動時圖片載入比較慢，導致空間空」——原本整張卡片（含
+   卡框、名稱標籤）都要等縮圖真的載入完成才顯示，等於在圖還沒到之前那個
+   位置什麼都看不到，移動快一點時前方就是一片空白。改成卡框跟景深淡出立
+   刻照常出現（用 --sunk 底色＋名稱字卡佔位），只有縮圖本身額外疊一層淡
+   入，圖還沒到之前看到的是「正在顯影的卡片」而不是純粹的空洞。 */
 /* 拖曳橫移時滑鼠常常掃過中間的文案或卡片名稱，瀏覽器原生文字選取會整片反白、
    圖片本身也可能被當成可拖曳物件產生殘影——這片區域只用來拖曳平移，不需要
    任何文字/圖片選取，整片關掉比逐一補 pointer-events 更不會漏。 */

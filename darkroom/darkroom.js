@@ -3326,7 +3326,14 @@ function updateIntroChunks() {
     }
   }
   if (!introPool.length) return;
+  // 使用者回報「左右移動時圖片載入比較慢，導致空間空」——原本整張卡片（含
+  // 卡框、名稱標籤）都要等縮圖真的解碼完成才顯示，等於移動快一點時，前方
+  // 還沒載完縮圖的區域看起來就是純粹的空白。改成卡框跟景深淡出立刻照常出
+  // 現（下面 freshCards 收集，強制 reflow 後跟其他卡片一起套用真正的透明
+  // 度），縮圖本身另外用 CSS class（.on）淡入，圖還沒到之前那個位置看到的
+  // 是「正在顯影中的卡框＋名稱」而不是空洞，圖載完再疊上去。
   const grid = $('intro-canvas-grid');
+  const freshCards = [];
   wanted.forEach(({ cx, cy, cz }, key) => {
     if (introChunks.has(key)) return;
     const cardPx = isMobile() ? 100 : 130;
@@ -3344,15 +3351,13 @@ function updateIntroChunks() {
       name.textContent = it.display_name || it.name;
       card.append(img, name);
       grid.appendChild(card);
-      const rec = { el: card, x: c.x, y: c.y, z: c.z, ready: false, cancelled: false };
-      // 卡片還沒 ready 就跳過景深計算（維持 opacity:0），等縮圖真的解碼完
-      // 成才標記 ready 並補一次淡出計算，讓「卡片出現」跟「圖片能看見」是
-      // 同一個時間點，不會框先出現、圖片慢半拍才貼上去。introScheduleLoad
-      // 是全域的排隊時鐘（見上方定義），不是每次 updateIntroChunks() 各自
-      // 從 0 開始算——使用者回報「有時會卡」，原本 loadIdx 只在單次呼叫內
-      // 錯開，連續好幾次呼叫（例如快速拖曳連續跨過好幾個區塊邊界）各自的
-      // 錯開會疊在同一個時間點，還是會擠爆；改成共用佇列後，不管哪一批發
-      // 出的請求都照同一個全域節奏排隊，不會疊加。
+      const rec = { el: card, x: c.x, y: c.y, z: c.z, cancelled: false };
+      freshCards.push(rec);
+      // introScheduleLoad 是全域的排隊時鐘（見上方定義），不是每次
+      // updateIntroChunks() 各自從 0 開始算——使用者回報「有時會卡」，原本
+      // loadIdx 只在單次呼叫內錯開，連續好幾次呼叫（例如快速拖曳連續跨過
+      // 好幾個區塊邊界）各自的錯開會疊在同一個時間點，還是會擠爆；改成共
+      // 用佇列後，不管哪一批發出的請求都照同一個全域節奏排隊，不會疊加。
       const src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
       const startLoad = () => {
         if (rec.cancelled) return;   // 排隊等待期間卡片已經被移除，不用再發這個請求
@@ -3360,14 +3365,14 @@ function updateIntroChunks() {
         const tryLoad = () => {
           if (rec.cancelled) return;   // 重試等待的 400ms 內也可能被移除
           img.src = src;
-          const onOk = () => { rec.ready = true; updateIntroDepthFade(); };
+          const onOk = () => { img.classList.add('on'); };
           const onFail = () => {
             // 使用者回報「有時會破圖」——網路/伺服器縮圖生成偶爾抖動失敗，
-            // 先重試一次；還是失敗就直接把卡片藏起來（display:none），總比
-            // 讓瀏覽器內建的破圖圖示留在畫面上好看。rec.ready 保持 false，
-            // updateIntroDepthFade() 不會再去動它的 opacity。
-            if (!retried) { retried = true; setTimeout(tryLoad, 400); return; }
-            card.style.display = 'none';
+            // 先重試一次；還是失敗就放著不管，img 的 opacity 預設是 0（只
+            // 有成功才加 .on class），瀏覽器的破圖圖示本來就渲染在一個
+            // opacity:0 的元素裡，永遠不會被看到，不用額外把整張卡藏起來
+            // ——卡框跟名稱繼續顯示，比整張消失更好。
+            if (!retried) { retried = true; setTimeout(tryLoad, 400); }
           };
           if (img.decode) img.decode().then(onOk).catch(onFail);
           else { img.addEventListener('load', onOk, { once: true }); img.addEventListener('error', onFail, { once: true }); }
@@ -3379,6 +3384,7 @@ function updateIntroChunks() {
     });
     introChunks.set(key, entry);
   });
+  if (freshCards.length) void grid.offsetHeight;   // 強制 reflow：讓 opacity:0 先被畫一幀，下面改真正值才有淡入動畫而不是硬切出現
   updateIntroDepthFade();
 }
 // 淡出：改成純粹依「卡片跟相機的真實 3D 距離」算連續透明度（Euclidean
@@ -3398,9 +3404,11 @@ function updateIntroChunks() {
 // 現在拉到 2200，連最遠角落都還留一點點若隱若現，景深的漸層感更完整。
 const INTRO_FADE_NEAR = 420, INTRO_FADE_FAR = 2200;
 function updateIntroDepthFade() {
+  // 不再等縮圖 ready 才淡入——卡框本身（--sunk 底色＋名稱）不需要等圖片，
+  // 縮圖是否顯示交給 img.on class（見 updateIntroChunks 的 onOk），兩者分開
+  // 淡入，卡框可以立刻出現。
   const camX = -introCanvasPan.x, camY = -introCanvasPan.y, camZ = -introCanvasPan.z;
   introChunks.forEach(entry => entry.forEach((rec) => {
-    if (!rec.ready) return;
     const dist = Math.hypot(rec.x - camX, rec.y - camY, rec.z - camZ);
     const fade = dist <= INTRO_FADE_NEAR ? 1
       : Math.max(0, 1 - (dist - INTRO_FADE_NEAR) / (INTRO_FADE_FAR - INTRO_FADE_NEAR));
