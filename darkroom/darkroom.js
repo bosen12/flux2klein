@@ -3231,15 +3231,19 @@ function genChunkCards(cx, cy, cz) {
 // 減——鏡頭會永遠照最後一次受力的方向與大小持續漂移，直到使用者施加新的力
 // 才會改變，不會自己慢慢停下來。INTRO_MAX_VEL 純粹是安全上限（terminal
 // velocity），不是摩擦力。
-const INTRO_VEL_LERP = 0.16, INTRO_MAX_VEL = 26;
+// 使用者回報「預設慣性太快、施力感知太靈敏」——這套物理現在不會衰減（永久
+// 慣性），代表任何一次拖曳/滾輪的貢獻都會永遠留著，舊的係數（拖曳 0.12／
+// 滾輪 0.16／上限 26）是照「還會衰減」的手感調的，衰減拿掉後同樣的輸入會
+// 變成「永遠都那麼快」，感覺自然靈敏到不合理。全部往下調一個量級。
+const INTRO_VEL_LERP = 0.16, INTRO_MAX_VEL = 12;
 const INTRO_DRIFT_AMOUNT = 22, INTRO_DRIFT_LERP = 0.12;
 // 開場鏡頭：先貼近一點（Z 正值＝離相機比較近），給一個隨機大小、方向固定
 // 往後（負值）的初始速度，外加 x/y 也給一點隨機初速（不是死板只退後）——這
 // 就是使用者說的「一開始那只是初始慣性而已，隨機給」，數值不用刻意調成某個
 // 精確的模擬結果，因為後面不會衰減、永遠不會定格，多一點隨機性反而更自然。
 const INTRO_ENTRANCE_Z = 780;
-const INTRO_ENTRANCE_VEL_Z = [6, 16];   // 往後的初速範圍（負值），[最小,最大]
-const INTRO_ENTRANCE_VEL_XY = 4;        // x/y 初速的隨機範圍是 ±這個值
+const INTRO_ENTRANCE_VEL_Z = [2, 5];    // 往後的初速範圍（負值），[最小,最大]
+const INTRO_ENTRANCE_VEL_XY = 1.2;      // x/y 初速的隨機範圍是 ±這個值
 const introVel = { x: 0, y: 0, z: 0 };
 const introTargetVel = { x: 0, y: 0, z: 0 };
 const introDrift = { x: 0, y: 0 };
@@ -3285,8 +3289,14 @@ function updateIntroChunks() {
     }
   }
   if (!introPool.length) return;
-  // 新增剛進範圍的區塊。
+  // 新增剛進範圍的區塊。使用者回報「有時候會卡」——相機一次跨過好幾個區塊
+  // 邊界時（例如快速斜向移動），可能一口氣要建立十幾張新卡片，每張都立刻
+  // fetch＋decode 縮圖，瀏覽器同時處理一批網路請求＋解碼工作，容易在那一
+  // 刻卡頓。改成用 loadIdx 錯開每張新卡片真正指定 img.src 的時間點（每張
+  // 隔 30ms，上限 240ms），把這批負載攤開成一小段時間內陸續發生而不是同一
+  // 幀全部擠爆，網路/CPU 慢的情況下觀感也比較像「陸續顯影」而不是卡住。
   const grid = $('intro-canvas-grid');
+  let loadIdx = 0;
   wanted.forEach(({ cx, cy, cz }, key) => {
     if (introChunks.has(key)) return;
     const cardPx = isMobile() ? 100 : 130;
@@ -3305,19 +3315,18 @@ function updateIntroChunks() {
       card.append(img, name);
       grid.appendChild(card);
       const rec = { el: card, x: c.x, y: c.y, z: c.z, ready: false };
-      // 使用者回報「平面移動有時候載入會比較慢，看起來很怪」——原本卡片一造
-      // 出來就立刻進景深淡出計算，圖片還沒載完時 opacity 已經淡入到定值，卡
-      // 片框先出現、圖片才慢半拍貼上去，兩段動作對不上看起來像卡頓。改成先
-      // 標記 ready:false，updateIntroDepthFade() 會跳過還沒 ready 的卡片
-      // （保持 opacity:0 不出現），等圖片真的解碼完成才標記 ready 並補一次
-      // 淡出計算，讓「卡片出現」跟「圖片已經能看見」是同一個時間點。cache
-      // 命中或極快網路時 decode() 幾乎立刻 resolve，感覺不到差異；慢網路時
-      // 至少不會看到空卡片突然被圖片撐開/貼上的怪異感。失敗（.catch）也視
-      // 為 ready，錯誤的圖示總比卡片永遠卡在隱形好。
-      img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
-      const markReady = () => { rec.ready = true; updateIntroDepthFade(); };
-      if (img.decode) img.decode().then(markReady).catch(markReady);
-      else { img.addEventListener('load', markReady, { once: true }); img.addEventListener('error', markReady, { once: true }); }
+      // 卡片還沒 ready 就跳過景深計算（維持 opacity:0），等縮圖真的解碼完
+      // 成才標記 ready 並補一次淡出計算，讓「卡片出現」跟「圖片能看見」是
+      // 同一個時間點，不會框先出現、圖片慢半拍才貼上去。
+      const delay = Math.min(loadIdx * 30, 240);
+      loadIdx++;
+      const startLoad = () => {
+        img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
+        const markReady = () => { rec.ready = true; updateIntroDepthFade(); };
+        if (img.decode) img.decode().then(markReady).catch(markReady);
+        else { img.addEventListener('load', markReady, { once: true }); img.addEventListener('error', markReady, { once: true }); }
+      };
+      if (delay > 0) setTimeout(startLoad, delay); else startLoad();
       return rec;
     });
     introChunks.set(key, entry);
@@ -3430,8 +3439,10 @@ function onIntroPointerMove(e) {
     applyIntroCanvasTransform();
     return;
   }
-  introTargetVel.x += dx * 0.12;
-  introTargetVel.y += dy * 0.12;
+  // 係數（0.035／0.05）比拿掉衰減之前小很多——現在每一點貢獻都是永久的，
+  // 舊係數配上不衰減會讓一次普通拖曳就沖到頂速，感覺「施力感知太靈敏」。
+  introTargetVel.x += dx * 0.035;
+  introTargetVel.y += dy * 0.035;
 }
 function onIntroPointerUp() { introDragging = false; }
 function onIntroWheel(e) {
@@ -3442,7 +3453,7 @@ function onIntroWheel(e) {
     applyIntroCanvasTransform();
     return;
   }
-  introScrollAccum += e.deltaY * 0.16;
+  introScrollAccum += e.deltaY * 0.05;
 }
 $('intro-canvas').addEventListener('pointerdown', onIntroPointerDown);
 window.addEventListener('pointermove', onIntroPointerMove);
