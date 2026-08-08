@@ -1288,7 +1288,7 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 .intro-canvas-card { position: absolute; top: 0; left: 0; width: 130px; margin: -65px 0 0 -65px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
   box-shadow: 0 8px 20px rgba(0,0,0,.4); pointer-events: none;
-  backface-visibility: hidden; transition: opacity .32s var(--ease-out); }
+  backface-visibility: hidden; transition: opacity .5s var(--ease-out); }
 .intro-canvas-card img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block;
   background: var(--sunk); -webkit-user-drag: none; user-select: none; }
 /* 拖曳橫移時滑鼠常常掃過中間的文案或卡片名稱，瀏覽器原生文字選取會整片反白、

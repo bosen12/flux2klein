@@ -3205,6 +3205,20 @@ const introCanvasPan = { x: 0, y: 0, z: 0 };   // 「相機」目前的平移量
 let introPool = [];               // 這次進場抽樣好的候選詞庫（區塊內選哪張卡從這裡挑，決定性）
 let introChunks = new Map();      // chunkKey -> DOM 元素陣列，目前實際存在的區塊
 let introLastCenterKey = null;    // 節流用：相機還在同一個中心區塊裡就不用重算
+// 縮圖載入排隊時鐘：全域共用一條時間軸，不管哪一次 updateIntroChunks() 呼叫
+// 排進來的載入工作，都照同一個節奏（每 30ms 一個、最多排到 500ms 後）依序
+// 觸發，避免連續好幾次區塊更新（例如快速拖曳連續跨過好幾個邊界）各自獨立
+// 錯開時反而疊加成同一瞬間的請求洪峰。沒有新工作排進來時，下一次呼叫會自
+// 動從「現在」重新起算（Math.max(now, introNextLoadAt)），不會累積出離譜的
+// 延遲。
+let introNextLoadAt = 0;
+function introScheduleLoad(fn) {
+  const now = performance.now();
+  const at = Math.max(now, introNextLoadAt);
+  introNextLoadAt = at + 30;
+  const delay = Math.min(at - now, 500);
+  if (delay > 0) setTimeout(fn, delay); else fn();
+}
 
 function introChunkKey(cx, cy, cz) { return cx + ',' + cy + ',' + cz; }
 // 一個區塊裡的卡片：位置在區塊立方體範圍內用種子決定（不是每次重新隨機），
@@ -3288,25 +3302,18 @@ function updateIntroChunks() {
   }
   // 移除超出範圍的區塊——不是直接 remove()，卡片會在畫面上憑空消失（使用者
   // 回報「左右移動圖片會突然消失」正是這裡）。先淡出（靠 CSS 的 opacity
-  // transition）再移除，et 值要比 CSS 的 .32s 長一點點當保險（分頁在背景時
-  // transitionend 不一定會結算，這個坑 CLAUDE.md 記過）。同時要立刻從
+  // transition）再移除，逾時值要比 CSS 的淡出時長長一點當保險（分頁在背景
+  // 時 transitionend 不一定會結算，這個坑 CLAUDE.md 記過）。同時要立刻從
   // introChunks 移掉，這樣 updateIntroDepthFade() 才不會在淡出過程中又把
   // opacity 蓋回去。
   for (const [key, entry] of introChunks) {
     if (!wanted.has(key)) {
-      entry.forEach(c => { c.el.style.opacity = '0'; setTimeout(() => c.el.remove(), 360); });
+      entry.forEach(c => { c.el.style.opacity = '0'; setTimeout(() => c.el.remove(), 560); });
       introChunks.delete(key);
     }
   }
   if (!introPool.length) return;
-  // 新增剛進範圍的區塊。使用者回報「有時候會卡」——相機一次跨過好幾個區塊
-  // 邊界時（例如快速斜向移動），可能一口氣要建立十幾張新卡片，每張都立刻
-  // fetch＋decode 縮圖，瀏覽器同時處理一批網路請求＋解碼工作，容易在那一
-  // 刻卡頓。改成用 loadIdx 錯開每張新卡片真正指定 img.src 的時間點（每張
-  // 隔 30ms，上限 240ms），把這批負載攤開成一小段時間內陸續發生而不是同一
-  // 幀全部擠爆，網路/CPU 慢的情況下觀感也比較像「陸續顯影」而不是卡住。
   const grid = $('intro-canvas-grid');
-  let loadIdx = 0;
   wanted.forEach(({ cx, cy, cz }, key) => {
     if (introChunks.has(key)) return;
     const cardPx = isMobile() ? 100 : 130;
@@ -3327,16 +3334,32 @@ function updateIntroChunks() {
       const rec = { el: card, x: c.x, y: c.y, z: c.z, ready: false };
       // 卡片還沒 ready 就跳過景深計算（維持 opacity:0），等縮圖真的解碼完
       // 成才標記 ready 並補一次淡出計算，讓「卡片出現」跟「圖片能看見」是
-      // 同一個時間點，不會框先出現、圖片慢半拍才貼上去。
-      const delay = Math.min(loadIdx * 30, 240);
-      loadIdx++;
+      // 同一個時間點，不會框先出現、圖片慢半拍才貼上去。introScheduleLoad
+      // 是全域的排隊時鐘（見上方定義），不是每次 updateIntroChunks() 各自
+      // 從 0 開始算——使用者回報「有時會卡」，原本 loadIdx 只在單次呼叫內
+      // 錯開，連續好幾次呼叫（例如快速拖曳連續跨過好幾個區塊邊界）各自的
+      // 錯開會疊在同一個時間點，還是會擠爆；改成共用佇列後，不管哪一批發
+      // 出的請求都照同一個全域節奏排隊，不會疊加。
+      const src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
       const startLoad = () => {
-        img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
-        const markReady = () => { rec.ready = true; updateIntroDepthFade(); };
-        if (img.decode) img.decode().then(markReady).catch(markReady);
-        else { img.addEventListener('load', markReady, { once: true }); img.addEventListener('error', markReady, { once: true }); }
+        let retried = false;
+        const tryLoad = () => {
+          img.src = src;
+          const onOk = () => { rec.ready = true; updateIntroDepthFade(); };
+          const onFail = () => {
+            // 使用者回報「有時會破圖」——網路/伺服器縮圖生成偶爾抖動失敗，
+            // 先重試一次；還是失敗就直接把卡片藏起來（display:none），總比
+            // 讓瀏覽器內建的破圖圖示留在畫面上好看。rec.ready 保持 false，
+            // updateIntroDepthFade() 不會再去動它的 opacity。
+            if (!retried) { retried = true; setTimeout(tryLoad, 400); return; }
+            card.style.display = 'none';
+          };
+          if (img.decode) img.decode().then(onOk).catch(onFail);
+          else { img.addEventListener('load', onOk, { once: true }); img.addEventListener('error', onFail, { once: true }); }
+        };
+        tryLoad();
       };
-      if (delay > 0) setTimeout(startLoad, delay); else startLoad();
+      introScheduleLoad(startLoad);
       return rec;
     });
     introChunks.set(key, entry);
@@ -3352,7 +3375,13 @@ function updateIntroChunks() {
 // 明，NEAR～FAR 之間線性淡出、平方讓靠邊緣淡得快一點模擬鏡頭景深，FAR 以
 // 外全透明，不管卡片在哪個軸的哪個方向偏移都是同一條曲線，沒有任何離散
 // 分界。
-const INTRO_FADE_NEAR = 480, INTRO_FADE_FAR = 1500;
+// 使用者要「前後範圍加深、透明度變化優化」——NEAR/FAR 的間距越寬，同一段
+// 位移對應的透明度變化就越平緩，卡片從剛出現到完全清楚（或反過來）的過程
+// 拉得更長，比較不會有「才剛看到就已經全清楚／才剛開始淡就整個消失」的
+// 突兀感。FAR 原本 1500，比 27 區塊組成的立方體最遠角落距離（約 1610，
+// CHUNK_SIZE=620、RENDER_DIST=1）還短，代表角落區塊其實已經完全淡到 0，
+// 現在拉到 2200，連最遠角落都還留一點點若隱若現，景深的漸層感更完整。
+const INTRO_FADE_NEAR = 420, INTRO_FADE_FAR = 2200;
 function updateIntroDepthFade() {
   const camX = -introCanvasPan.x, camY = -introCanvasPan.y, camZ = -introCanvasPan.z;
   introChunks.forEach(entry => entry.forEach((rec) => {
