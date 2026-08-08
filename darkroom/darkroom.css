@@ -1287,7 +1287,9 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
   transform-style: preserve-3d; will-change: transform; }
 .intro-canvas-card { position: absolute; top: 0; left: 0; width: 130px; margin: -65px 0 0 -65px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
-  box-shadow: 0 8px 20px rgba(0,0,0,.4); pointer-events: none;
+  /* 模糊半徑刻意壓低（20px→8px）——box-shadow 的模糊是每個元素各自的繪製
+     成本，這裡同時可能有上百個卡片存在，模糊半徑越大越吃繪製/合成效能。 */
+  box-shadow: 0 4px 8px rgba(0,0,0,.4); pointer-events: none;
   backface-visibility: hidden; transition: opacity .5s var(--ease-out); }
 .intro-canvas-card img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block;
   background: var(--sunk); -webkit-user-drag: none; user-select: none;
