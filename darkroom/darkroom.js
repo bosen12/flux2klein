@@ -3379,6 +3379,17 @@ function updateIntroChunks() {
   // 一整片瞬間消失或冒出來，不是「一層一層」。改成依跟相機的距離排序，錯
   // 開每個區塊真正開始淡出/淡入的時間點（不影響 introScheduleLoad 那條縮
   // 圖網路請求自己的節奏，那是另一件事）。
+  // 使用者回報「有時候會閃爍、破圖」——根因是這裡原本在排定分層淡出的當
+  // 下就立刻 introChunks.delete(key)，但真正的淡出（opacity=0）被
+  // fadeDelay 延後最多 400ms 才執行。這段延遲空窗期內，如果相機又移回來
+  // （現在速度上限只有 1，常常在邊界附近徘徊，很容易來回），
+  // updateIntroChunks() 會因為 introChunks 已經不認得這個 key，誤判成
+  // 「這裡需要新卡片」，在同一個位置重新建立一整組全新的 DOM 卡片——舊的
+  // 那組還在淡出、新的這組又冒出來，兩組疊在一起就是「閃爍／看起來像破
+  // 圖」的成因。修法是把 introChunks.delete(key) 一起延後到真正執行淡出
+  // 的那個 setTimeout 裡，而且執行前重新檢查一次「現在」（不是排定當下）
+  // 這個區塊是不是還在範圍外——如果相機已經移回來了，直接取消這次淡出，
+  // 讓卡片留著，不會被誤刪也不會被誤判成需要重建。
   const outgoing = [];
   for (const [key, entry] of introChunks) {
     if (!wanted.has(key)) outgoing.push([key, entry]);
@@ -3391,17 +3402,22 @@ function updateIntroChunks() {
     })
     .sort((a, b) => b.dist - a.dist)   // 離相機越遠的越先淡出，由外而內
     .forEach(({ key, entry }, i) => {
-      // cancelled=true：卡片可能還在 introScheduleLoad 的排隊佇列裡、還沒
-      // 真的發出縮圖請求（見下方 startLoad）。不標記的話，就算畫面上已經
-      // 看不到這張卡，佇列輪到它時還是會照樣 fetch＋decode，白白佔用全域
-      // 載入節奏跟伺服器縮圖產生的併發額度（server 端只有 2 個併發生成名
-      // 額），排擠真正看得到的卡片，這是「有時會卡」的另一個成因。
-      entry.forEach(c => { c.cancelled = true; });
       const fadeDelay = Math.min(i * INTRO_LAYER_STEP_MS, 400);
       setTimeout(() => {
-        entry.forEach(c => { c.el.style.opacity = '0'; setTimeout(() => c.el.remove(), 560); });
+        const [ccx, ccy, ccz] = key.split(',').map(Number);
+        const curCx0 = Math.floor(-introCanvasPan.x / INTRO_CHUNK_SIZE);
+        const curCy0 = Math.floor(-introCanvasPan.y / INTRO_CHUNK_SIZE);
+        const curCz0 = Math.floor(-introCanvasPan.z / INTRO_CHUNK_SIZE);
+        const stillOut = Math.max(Math.abs(ccx - curCx0), Math.abs(ccy - curCy0), Math.abs(ccz - curCz0)) > INTRO_TOTAL_DIST;
+        if (!stillOut) return;   // 相機移回來了，取消這次淡出，卡片留著繼續用
+        // cancelled=true：卡片可能還在 introScheduleLoad 的排隊佇列裡、還
+        // 沒真的發出縮圖請求。不標記的話，就算畫面上已經看不到這張卡，佇
+        // 列輪到它時還是會照樣 fetch＋decode，白白佔用全域載入節奏跟伺服
+        // 器縮圖產生的併發額度（server 端只有 2 個併發生成名額），排擠真
+        // 正看得到的卡片，這是「有時會卡」的另一個成因。
+        entry.forEach(c => { c.cancelled = true; c.el.style.opacity = '0'; setTimeout(() => c.el.remove(), 560); });
+        introChunks.delete(key);
       }, fadeDelay);
-      introChunks.delete(key);
     });
   if (!introPool.length) return;
   // 使用者回報「左右移動時圖片載入比較慢，導致空間空」——原本整張卡片（含
