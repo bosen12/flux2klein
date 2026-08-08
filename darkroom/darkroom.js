@@ -3201,6 +3201,7 @@ const INTRO_RENDER_DIST = 1;      // 區塊 Chebyshev 半徑，1 = 3×3×3 = 27 
 // 張/區塊（81 張），減少視覺上明顯的空白區塊，還沒到使用者先前抱怨「135
 // 張太擠」的量級。
 const INTRO_ITEMS_PER_CHUNK = 3;  // 每個區塊放幾張卡
+const INTRO_LAYER_STEP_MS = 45;   // 分層淡入/淡出：每往外一層區塊，延遲多久才開始動，見 updateIntroChunks()
 const introCanvasPan = { x: 0, y: 0, z: 0 };   // 「相機」目前的平移量
 let introPool = [];               // 這次進場抽樣好的候選詞庫（區塊內選哪張卡從這裡挑，決定性）
 let introChunks = new Map();      // chunkKey -> DOM 元素陣列，目前實際存在的區塊
@@ -3317,17 +3318,36 @@ function updateIntroChunks() {
   // 時 transitionend 不一定會結算，這個坑 CLAUDE.md 記過）。同時要立刻從
   // introChunks 移掉，這樣 updateIntroDepthFade() 才不會在淡出過程中又把
   // opacity 蓋回去。
+  // 使用者回報「圖片應該要分層載入和消失，不要一次消失或載入好幾層」——相
+  // 機跨過一個區塊邊界時，垂直於移動方向的那整面區塊牆（RENDER_DIST=1 時
+  // 最多 3×3＝9 個區塊）過去是同一個 tick 內全部一起淡出/淡入，看起來像
+  // 一整片瞬間消失或冒出來，不是「一層一層」。改成依跟相機的距離排序，錯
+  // 開每個區塊真正開始淡出/淡入的時間點（不影響 introScheduleLoad 那條縮
+  // 圖網路請求自己的節奏，那是另一件事）。
+  const outgoing = [];
   for (const [key, entry] of introChunks) {
-    if (!wanted.has(key)) {
-      // cancelled=true：卡片可能還在 introScheduleLoad 的排隊佇列裡、還沒真
-      // 的發出縮圖請求（見下方 startLoad）。不標記的話，就算畫面上已經看不
-      // 到這張卡，佇列輪到它時還是會照樣 fetch＋decode，白白佔用全域載入節
-      // 奏跟伺服器縮圖產生的併發額度（server 端只有 2 個併發生成名額），
-      // 排擠真正看得到的卡片，這是「有時會卡」的另一個成因。
-      entry.forEach(c => { c.cancelled = true; c.el.style.opacity = '0'; setTimeout(() => c.el.remove(), 560); });
-      introChunks.delete(key);
-    }
+    if (!wanted.has(key)) outgoing.push([key, entry]);
   }
+  outgoing
+    .map(([key, entry]) => {
+      const first = entry[0];
+      const dist = first ? Math.hypot(first.x - camX, first.y - camY, first.z - camZ) : 0;
+      return { key, entry, dist };
+    })
+    .sort((a, b) => b.dist - a.dist)   // 離相機越遠的越先淡出，由外而內
+    .forEach(({ key, entry }, i) => {
+      // cancelled=true：卡片可能還在 introScheduleLoad 的排隊佇列裡、還沒
+      // 真的發出縮圖請求（見下方 startLoad）。不標記的話，就算畫面上已經
+      // 看不到這張卡，佇列輪到它時還是會照樣 fetch＋decode，白白佔用全域
+      // 載入節奏跟伺服器縮圖產生的併發額度（server 端只有 2 個併發生成名
+      // 額），排擠真正看得到的卡片，這是「有時會卡」的另一個成因。
+      entry.forEach(c => { c.cancelled = true; });
+      const fadeDelay = Math.min(i * INTRO_LAYER_STEP_MS, 400);
+      setTimeout(() => {
+        entry.forEach(c => { c.el.style.opacity = '0'; setTimeout(() => c.el.remove(), 560); });
+      }, fadeDelay);
+      introChunks.delete(key);
+    });
   if (!introPool.length) return;
   // 使用者回報「左右移動時圖片載入比較慢，導致空間空」——原本整張卡片（含
   // 卡框、名稱標籤）都要等縮圖真的解碼完成才顯示，等於移動快一點時，前方
@@ -3335,10 +3355,22 @@ function updateIntroChunks() {
   // 現（下面 freshCards 收集，強制 reflow 後跟其他卡片一起套用真正的透明
   // 度），縮圖本身另外用 CSS class（.on）淡入，圖還沒到之前那個位置看到的
   // 是「正在顯影中的卡框＋名稱」而不是空洞，圖載完再疊上去。
+  // 新增的區塊一樣依跟相機的距離排序、錯開每個區塊的淡入起點（見上面移除
+  // 那段同樣的「分層」理由）：離相機越近的區塊先顯影，越遠的越晚，一整面
+  // 區塊牆不會同一瞬間全部冒出來。
   const grid = $('intro-canvas-grid');
   const freshCards = [];
-  wanted.forEach(({ cx, cy, cz }, key) => {
-    if (introChunks.has(key)) return;
+  const newChunkList = [];
+  wanted.forEach((info, key) => { if (!introChunks.has(key)) newChunkList.push(info); });
+  newChunkList
+    .map(info => {
+      const centerX = (info.cx + 0.5) * INTRO_CHUNK_SIZE, centerY = (info.cy + 0.5) * INTRO_CHUNK_SIZE, centerZ = (info.cz + 0.5) * INTRO_CHUNK_SIZE;
+      return { ...info, dist: Math.hypot(centerX - camX, centerY - camY, centerZ - camZ) };
+    })
+    .sort((a, b) => a.dist - b.dist)
+    .forEach(({ cx, cy, cz }, layerIdx) => {
+    const key = introChunkKey(cx, cy, cz);
+    const revealAt = performance.now() + Math.min(layerIdx * INTRO_LAYER_STEP_MS, 400);
     const cardPx = isMobile() ? 100 : 130;
     const entry = genChunkCards(cx, cy, cz).map(c => {
       const it = introPool[Math.floor(c.pickSeed * introPool.length) % introPool.length];
@@ -3357,7 +3389,7 @@ function updateIntroChunks() {
       name.textContent = it.display_name || it.name;
       card.append(img, name);
       grid.appendChild(card);
-      const rec = { el: card, x: c.x, y: c.y, z: c.z, cancelled: false };
+      const rec = { el: card, x: c.x, y: c.y, z: c.z, cancelled: false, revealAt };
       freshCards.push(rec);
       // introScheduleLoad 是全域的排隊時鐘（見上方定義），不是每次
       // updateIntroChunks() 各自從 0 開始算——使用者回報「有時會卡」，原本
@@ -3414,7 +3446,9 @@ function updateIntroDepthFade() {
   // 縮圖是否顯示交給 img.on class（見 updateIntroChunks 的 onOk），兩者分開
   // 淡入，卡框可以立刻出現。
   const camX = -introCanvasPan.x, camY = -introCanvasPan.y, camZ = -introCanvasPan.z;
+  const now = performance.now();
   introChunks.forEach(entry => entry.forEach((rec) => {
+    if (rec.revealAt && now < rec.revealAt) return;   // 分層淡入還沒輪到它，維持目前（初始 opacity:0）
     const dist = Math.hypot(rec.x - camX, rec.y - camY, rec.z - camZ);
     const fade = dist <= INTRO_FADE_NEAR ? 1
       : Math.max(0, 1 - (dist - INTRO_FADE_NEAR) / (INTRO_FADE_FAR - INTRO_FADE_NEAR));
