@@ -3151,55 +3151,162 @@ function renderIntroMarquee() {
   });
 }
 
-// ---- canvas（無限畫布）樣式 ----
-// 參考範例（tympanus 那個 demo）不是整齊網格：大小不一、鬆散隨機散佈、大量
-// 留白，偶爾夾雜幾張還沒顯影完全的淡色佔位塊。這裡用一個粗略的虛擬格子
-// （cellSize）當「放置基準」，但每格只有 fillRate 機率真的放一張圖、尺寸/
-// 位置都在格子範圍內隨機偏移，做出鬆散感，不是每格都塞滿的規則網格。
-// 上限 220 張防止超寬螢幕把 DOM 塞爆。
+// ---- canvas（無限畫布）樣式：區塊制、有真正景深、無限漫遊 ----
+// 讀過參考範例（github.com/edoardolunardi/infinite-canvas）的
+// src/infinite-canvas/constants.ts／utils.ts 之後照它的實際結構做：
+//   - 世界依 CHUNK_SIZE 切成立方格，每個區塊的座標(cx,cy,cz)雜湊成種子，
+//     用種子決定這格放哪幾張卡、放在格內哪個位置——同一個區塊不管什麼時候
+//     再訪都長一樣（決定性亂數），這才是「無限」的關鍵：不是預先鋪好一大片
+//     卡片，是相機（這裡是拖曳/滾輪控制的 pan）移到哪，即時算那附近幾個
+//     區塊要出現什麼。
+//   - 只有目前「相機」附近 RENDER_DIST 範圍內的區塊會真的建 DOM，離開範圍
+//     就整批移除——這是 updateIntroChunks() 在做的事，DOM 節點數量有上限
+//     （(2*RENDER_DIST+1)^3 個區塊 × ITEMS_PER_CHUNK 張卡），不會漫遊越久
+//     DOM 越腫。
+//   - 卡片本身固定尺寸（跟暗房既有的塔羅抽卡卡片同一種「縮圖＋名稱」組合），
+//     screen 上看起來大小不一是真正的 CSS 3D perspective 透視換算出來的
+//     （近大遠小），不是手動把每張卡拉伸——這也是照參考範例的邏輯：它的
+//     圖片本尊也是正方形、大小差異很小，視覺上的大小差距是相機透視投影
+//     算出來的，不是內容本身形狀不同。
 function randRange(a, b) { return a + Math.random() * (b - a); }
-function renderIntroCanvas() {
-  const mobile = isMobile();
-  const cellSize = mobile ? 130 : 210;
-  const fillRate = 0.6;   // 不是每格都放，留白才有 demo 那種鬆散感
-  const cols = Math.ceil((window.innerWidth * 1.3) / cellSize) + 1;
-  const rows = Math.ceil((window.innerHeight * 1.3) / cellSize) + 1;
-  const cells = [];
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) cells.push({ r, c });
-  const chosenCells = sampleN(cells, Math.min(Math.round(cells.length * fillRate), 220));
-  const picks = sampleN(ALL, Math.min(chosenCells.length, ALL.length));
-  if (!picks.length) return;
+function clampNum(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+// 簡單的字串雜湊＋seeded PRNG（mulberry32），只為了讓「同一個區塊座標永遠
+// 算出同一批卡片」，不需要真的密碼學等級的亂數品質。
+function hashStr(s) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function mulberry32(seed) {
+  let t = seed >>> 0;
+  return function () {
+    t += 0x6D2B79F5;
+    let x = Math.imul(t ^ (t >>> 15), 1 | t);
+    x ^= x + Math.imul(x ^ (x >>> 7), 61 | x);
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const INTRO_CHUNK_SIZE = 380;     // 一個區塊立方體的邊長（CSS px／世界單位）
+const INTRO_RENDER_DIST = 1;      // 區塊 Chebyshev 半徑，1 = 3×3×3 = 27 個區塊同時存在
+const INTRO_ITEMS_PER_CHUNK = 5;  // 每個區塊放幾張卡（跟參考範例一致）
+const introCanvasPan = { x: 0, y: 0, z: 0 };   // 「相機」目前的平移量
+let introPool = [];               // 這次進場抽樣好的候選詞庫（區塊內選哪張卡從這裡挑，決定性）
+let introChunks = new Map();      // chunkKey -> DOM 元素陣列，目前實際存在的區塊
+let introLastCenterKey = null;    // 節流用：相機還在同一個中心區塊裡就不用重算
+
+function introChunkKey(cx, cy, cz) { return cx + ',' + cy + ',' + cz; }
+// 一個區塊裡的卡片：位置在區塊立方體範圍內用種子決定（不是每次重新隨機），
+// pickSeed 用來決定「這個位置放哪一張詞庫縮圖」，同樣是決定性的。
+function genChunkCards(cx, cy, cz) {
+  const rng = mulberry32(hashStr(introChunkKey(cx, cy, cz)));
+  const cards = [];
+  for (let i = 0; i < INTRO_ITEMS_PER_CHUNK; i++) {
+    cards.push({
+      x: cx * INTRO_CHUNK_SIZE + rng() * INTRO_CHUNK_SIZE,
+      y: cy * INTRO_CHUNK_SIZE + rng() * INTRO_CHUNK_SIZE,
+      z: cz * INTRO_CHUNK_SIZE + rng() * INTRO_CHUNK_SIZE,
+      pickSeed: rng(),
+    });
+  }
+  return cards;
+}
+function applyIntroCanvasTransform() {
+  $('intro-canvas-grid').style.transform =
+    `translate3d(${introCanvasPan.x}px, ${introCanvasPan.y}px, ${introCanvasPan.z}px)`;
+  updateIntroChunks();
+}
+// 依目前相機位置算出「應該存在」的區塊集合，跟目前實際存在的區塊（introChunks）
+// 做差集：多的移除、少的新增。只有相機跨過區塊邊界（中心區塊變了）才會真的
+// 重算，單純在同一區塊裡小幅拖曳不會每個 pixel 都觸發，避免 DOM 抖動。
+function updateIntroChunks() {
+  const cx0 = Math.round(-introCanvasPan.x / INTRO_CHUNK_SIZE);
+  const cy0 = Math.round(-introCanvasPan.y / INTRO_CHUNK_SIZE);
+  const cz0 = Math.round(-introCanvasPan.z / INTRO_CHUNK_SIZE);
+  const centerKey = introChunkKey(cx0, cy0, cz0);
+  if (centerKey === introLastCenterKey) return;
+  introLastCenterKey = centerKey;
+  const wanted = new Map();   // key -> {cx,cy,cz,dist}
+  for (let dx = -INTRO_RENDER_DIST; dx <= INTRO_RENDER_DIST; dx++) {
+    for (let dy = -INTRO_RENDER_DIST; dy <= INTRO_RENDER_DIST; dy++) {
+      for (let dz = -INTRO_RENDER_DIST; dz <= INTRO_RENDER_DIST; dz++) {
+        const cx = cx0 + dx, cy = cy0 + dy, cz = cz0 + dz;
+        wanted.set(introChunkKey(cx, cy, cz), { cx, cy, cz, dist: Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz)) });
+      }
+    }
+  }
+  // 移除超出範圍的區塊
+  for (const [key, els] of introChunks) {
+    if (!wanted.has(key)) { els.forEach(el => el.remove()); introChunks.delete(key); }
+  }
+  if (!introPool.length) return;
+  // 新增剛進範圍的區塊
   const grid = $('intro-canvas-grid');
-  grid.innerHTML = '';
-  grid.style.width = (cols * cellSize) + 'px';
-  grid.style.height = (rows * cellSize) + 'px';
-  const eagerRowCutoff = 2;   // 最上面兩排虛擬格子是畫面一開始就看得到的，優先載
-  chosenCells.forEach((cell, i) => {
-    const it = picks[i % picks.length];
-    // 尺寸桶：中等最常見，大的偶爾點綴一下（呼應 demo 大部分中等縮圖夾雜幾張
-    // 明顯比較大的），寬高各自獨立隨機，不是統一正方形——才會有橫幅/直幅的
-    // 混雜感，不是「一樣大小只是位置亂」。
-    const roll = Math.random();
-    const [lo, hi] = roll < 0.14 ? [cellSize * 1.25, cellSize * 1.85]
-      : roll < 0.55 ? [cellSize * 0.7, cellSize * 1.0]
-      : [cellSize * 0.4, cellSize * 0.62];
-    const w = randRange(lo, hi), h = randRange(lo, hi);
-    const jitterX = randRange(-cellSize * 0.18, cellSize * 0.18);
-    const jitterY = randRange(-cellSize * 0.18, cellSize * 0.18);
-    const img = document.createElement('img');
-    img.loading = cell.r < eagerRowCutoff ? 'eager' : 'lazy';
-    img.decoding = 'async'; img.fetchPriority = 'low'; img.alt = '';
-    img.width = Math.round(w); img.height = Math.round(h);
-    img.style.width = w.toFixed(0) + 'px'; img.style.height = h.toFixed(0) + 'px';
-    img.style.left = (cell.c * cellSize + jitterX).toFixed(0) + 'px';
-    img.style.top = (cell.r * cellSize + jitterY).toFixed(0) + 'px';
-    // 少數幾張刻意淡出，呼應 demo 裡「還沒顯影完全」的淡色佔位塊，不是每張都
-    // 滿不透明地齊刷刷排好。
-    if (Math.random() < 0.14) img.style.opacity = randRange(0.12, 0.32).toFixed(2);
-    img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
-    grid.appendChild(img);
+  wanted.forEach(({ cx, cy, cz, dist }, key) => {
+    if (introChunks.has(key)) return;
+    const cardPx = isMobile() ? 100 : 130;
+    // 邊緣區塊（快要進/出範圍那圈）淡一點，呼應參考範例的區塊淡入/淡出邊界，
+    // 不是每個區塊一出現就滿不透明地硬切。
+    const opacity = dist >= INTRO_RENDER_DIST ? 0.5 : 1;
+    const els = genChunkCards(cx, cy, cz).map(c => {
+      const it = introPool[Math.floor(c.pickSeed * introPool.length) % introPool.length];
+      const card = document.createElement('div'); card.className = 'intro-canvas-card';
+      card.style.width = cardPx + 'px'; card.style.margin = `-${cardPx / 2}px 0 0 -${cardPx / 2}px`;
+      card.style.transform = `translate3d(${c.x.toFixed(0)}px, ${c.y.toFixed(0)}px, ${c.z.toFixed(0)}px)`;
+      card.style.opacity = opacity;
+      const img = document.createElement('img');
+      img.loading = 'lazy'; img.decoding = 'async'; img.fetchPriority = 'low'; img.alt = '';
+      img.width = cardPx; img.height = cardPx;
+      img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
+      const name = document.createElement('div'); name.className = 'intro-canvas-name';
+      name.textContent = it.display_name || it.name;
+      card.append(img, name);
+      grid.appendChild(card);
+      return card;
+    });
+    introChunks.set(key, els);
   });
 }
+function renderIntroCanvas() {
+  introChunks.forEach(els => els.forEach(el => el.remove()));
+  introChunks = new Map();
+  introLastCenterKey = null;
+  introCanvasPan.x = 0; introCanvasPan.y = 0; introCanvasPan.z = 0;
+  // 候選池抽樣一次就好（不是每個區塊各自抽），區塊內用種子決定的 pickSeed 從
+  // 這個池子裡挑——同一個區塊永遠挑到同一張，跟池子本身用哪批詞庫無關，這樣
+  // 才符合「同一個位置再訪要長一樣」的決定性規則。
+  introPool = sampleN(ALL, Math.min(90, ALL.length));
+  applyIntroCanvasTransform();
+}
+// 拖曳平移／滾輪縮放：拖曳改 x/y（左右上下漫遊），滾輪改 z（前後穿梭景深，
+// 呼應參考範例滾輪/WASD 在 3D 空間裡移動相機的操作）。跟這系列改動裡「3D 卡片
+// 展示」拖曳邏輯同一套手刻風格。只在 canvas 樣式開著時才生效（getIntroStyle()
+// 判斷），marquee 樣式不受影響。
+let introDragging = false, introLastX = 0, introLastY = 0;
+function onIntroPointerDown(e) {
+  if (getIntroStyle() !== 'canvas') return;
+  introDragging = true; introLastX = e.clientX; introLastY = e.clientY;
+}
+function onIntroPointerMove(e) {
+  if (!introDragging) return;
+  introCanvasPan.x += e.clientX - introLastX;
+  introCanvasPan.y += e.clientY - introLastY;
+  introLastX = e.clientX; introLastY = e.clientY;
+  applyIntroCanvasTransform();
+}
+function onIntroPointerUp() { introDragging = false; }
+function onIntroWheel(e) {
+  if (getIntroStyle() !== 'canvas') return;
+  e.preventDefault();
+  // 用 perspective(900px) 當有效範圍，超過會穿過鏡頭產生詭異的翻轉，夾在
+  // 安全區間內。
+  introCanvasPan.z = clampNum(introCanvasPan.z - e.deltaY * 0.6, -1800, 700);
+  applyIntroCanvasTransform();
+}
+$('intro-canvas').addEventListener('pointerdown', onIntroPointerDown);
+window.addEventListener('pointermove', onIntroPointerMove);
+window.addEventListener('pointerup', onIntroPointerUp);
+$('intro-canvas').addEventListener('wheel', onIntroWheel, { passive: false });
 
 function renderIntro(style) {
   if (style === 'canvas') { renderIntroCanvas(); $('intro-rows').hidden = true; $('intro-canvas').hidden = false; }
