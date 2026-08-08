@@ -100,7 +100,7 @@ LT_PATHS = ("/offer", "/human", "/humanaudio", "/interrupt_talk", "/is_speaking"
 # 換機器或改路徑時設環境變數 LORA_ROOT 覆寫根目錄即可。新增分類就加進 LORA_FOLDERS。
 LORA_ROOT = os.environ.get(
     "LORA_ROOT",
-    r"C:\ComfyUI\ComfyUI_windows_portable_nvidia\ComfyUI_windows_portable\ComfyUI\models\loras",
+    r"E:\Comfyui\loras",
 )
 LORA_FOLDERS = ["style", "Character", "HENTAI", "illus"]
 # LoRA Manager（獨立埠 7861，見 lora-manager/）點「送到 workflow」時 POST 這裡；

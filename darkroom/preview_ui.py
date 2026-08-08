@@ -295,7 +295,7 @@ def rarity_map() -> dict:
 # ---------------------------------------------------------------------------
 LORA_ROOT = Path(os.environ.get(
     "LORA_ROOT",
-    r"C:\ComfyUI\ComfyUI_windows_portable_nvidia\ComfyUI_windows_portable\ComfyUI\models\loras",
+    r"E:\Comfyui\loras",
 ))
 LORA_FOLDERS = ["style", "Character", "HENTAI", "illus"]
 LORA_PREVIEW_EXTS = (".preview.png", ".preview.jpeg", ".preview.jpg", ".preview.webp",

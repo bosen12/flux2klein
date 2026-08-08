@@ -17,7 +17,7 @@ SETTINGS_PATH = BASE / "settings.json"
 
 LORA_ROOT = os.environ.get(
     "LORA_ROOT",
-    r"C:\ComfyUI\ComfyUI_windows_portable_nvidia\ComfyUI_windows_portable\ComfyUI\models\loras",
+    r"E:\Comfyui\loras",
 )
 
 
