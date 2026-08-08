@@ -3224,32 +3224,22 @@ function genChunkCards(cx, cy, cz) {
 // 完全沒拖曳，滑鼠位置本身也會讓畫面有一圈很輕的環境漂移（drift）。這些全部
 // 照搬過來，係數依我們的世界尺度（CHUNK_SIZE=380 對照三.js 的 110）重新換算，
 // 不是照抄三.js 那組給小單位世界用的數字。
-const INTRO_VEL_LERP = 0.16, INTRO_VEL_DECAY = 0.9, INTRO_MAX_VEL = 26;
+// 使用者把「永久慣性」講清楚了：一開始給的只是隨機的初始慣性，之後的動態
+// 要真的反映使用者施的力（拖曳左右、滾輪縮放），不是套一個跟輸入無關的獨立
+// 漂移公式。所以這裡不做「目標速度逐幀衰減回 0」那種有摩擦力的模型，改成
+// 真正的牛頓慣性：targetVel 只會被拖曳/滾輪的力改變（累加），本身完全不衰
+// 減——鏡頭會永遠照最後一次受力的方向與大小持續漂移，直到使用者施加新的力
+// 才會改變，不會自己慢慢停下來。INTRO_MAX_VEL 純粹是安全上限（terminal
+// velocity），不是摩擦力。
+const INTRO_VEL_LERP = 0.16, INTRO_MAX_VEL = 26;
 const INTRO_DRIFT_AMOUNT = 22, INTRO_DRIFT_LERP = 0.12;
-// 使用者說清楚了：「慣性」要是永久的，不是滑一段就完全停下——拖曳/滾輪放開
-// 後 introTargetVel 還是會照原本邏輯衰減到 0（急停的手感由使用者操作決
-// 定），但每一幀都疊加一份「不會衰減」的環境漂移速度，讓鏡頭永遠有一點點在
-// 動，不會真的靜止。不是隨機亂數（每幀重新算亂數方向會抖動），是拿時間戳
-// 餵進去疊幾個頻率不成整數倍的正弦波，連續且不明顯週期重複，效果類似水流
-// 的緩慢漂移，跟使用者原本要的「自己隨機動」是同一件事，只是換成確定性函式
-// 實作（好處是不用另外管狀態、reduced-motion 使用者也不會跑，見 introFrameStep）。
-const INTRO_AMBIENT_SPEED = { x: 0.5, y: 0.4, z: 0.35 };
-function introAmbientVel(t) {
-  return {
-    x: Math.sin(t * 0.00023) * 0.6 + Math.sin(t * 0.00071 + 1.7) * 0.4,
-    y: Math.sin(t * 0.00031 + 0.9) * 0.6 + Math.sin(t * 0.00059 + 3.1) * 0.4,
-    z: Math.sin(t * 0.00019 + 2.4) * 0.6 + Math.sin(t * 0.00043 + 4.8) * 0.4,
-  };
-}
-// 開場鏡頭：先貼近一點（Z 正值＝離相機比較近），給一個往後（負值）的初始
-// 「目標速度」丟進既有的慣性系統，不是另外寫一段開場動畫——這樣開場的減速
-// 手感跟使用者拖曳放開後的滑行手感是同一套物理，不會兩種質感對不上。用
-// node 模擬過：Z=780、初速=-26（即 INTRO_MAX_VEL，會被逐幀 clamp）大約 68
-// 幀（約 1.1 秒）這份初速滑行到 velocity<0.05，最終這段位移停在約 520
-// （退了 260px，「先貼近、鏡頭後退拉開視野」的開場）；之後接手的是下面那份
-// 不會衰減的環境漂移（INTRO_AMBIENT_SPEED），鏡頭不會真的靜止。
+// 開場鏡頭：先貼近一點（Z 正值＝離相機比較近），給一個隨機大小、方向固定
+// 往後（負值）的初始速度，外加 x/y 也給一點隨機初速（不是死板只退後）——這
+// 就是使用者說的「一開始那只是初始慣性而已，隨機給」，數值不用刻意調成某個
+// 精確的模擬結果，因為後面不會衰減、永遠不會定格，多一點隨機性反而更自然。
 const INTRO_ENTRANCE_Z = 780;
-const INTRO_DEPTH_FADE_START = 420, INTRO_DEPTH_FADE_END = 1000;   // 對照 CHUNK_SIZE 換算，超過這個距離的卡片淡出
+const INTRO_ENTRANCE_VEL_Z = [6, 16];   // 往後的初速範圍（負值），[最小,最大]
+const INTRO_ENTRANCE_VEL_XY = 4;        // x/y 初速的隨機範圍是 ±這個值
 const introVel = { x: 0, y: 0, z: 0 };
 const introTargetVel = { x: 0, y: 0, z: 0 };
 const introDrift = { x: 0, y: 0 };
@@ -3295,50 +3285,63 @@ function updateIntroChunks() {
     }
   }
   if (!introPool.length) return;
-  // 新增剛進範圍的區塊——邊緣區塊（Chebyshev 距離等於 RENDER_DIST 那圈）淡一點，
-  // 呼應原程式的區塊淡入/淡出邊界，不是每個區塊一出現就滿不透明硬切。
+  // 新增剛進範圍的區塊。
   const grid = $('intro-canvas-grid');
-  const freshCards = [];   // 剛建立、opacity 還沒套用最終值的卡片，等下面強制 reflow 後才進場淡入
-  wanted.forEach(({ cx, cy, cz, dist }, key) => {
+  wanted.forEach(({ cx, cy, cz }, key) => {
     if (introChunks.has(key)) return;
     const cardPx = isMobile() ? 100 : 130;
-    const gridOpacity = dist >= INTRO_RENDER_DIST ? 0.5 : 1;
     const entry = genChunkCards(cx, cy, cz).map(c => {
       const it = introPool[Math.floor(c.pickSeed * introPool.length) % introPool.length];
       const card = document.createElement('div'); card.className = 'intro-canvas-card';
       card.style.width = cardPx + 'px'; card.style.margin = `-${cardPx / 2}px 0 0 -${cardPx / 2}px`;
       card.style.transform = `translate3d(${c.x.toFixed(0)}px, ${c.y.toFixed(0)}px, ${c.z.toFixed(0)}px)`;
-      card.style.opacity = '0';   // 起始值先是 0，強制 reflow 後才寫入真正的景深透明度，才觸發得了 transition
+      card.style.opacity = '0';
       const img = document.createElement('img');
       img.loading = 'lazy'; img.decoding = 'async'; img.fetchPriority = 'low'; img.alt = '';
       img.draggable = false;
       img.width = cardPx; img.height = cardPx;
-      img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
       const name = document.createElement('div'); name.className = 'intro-canvas-name';
       name.textContent = it.display_name || it.name;
       card.append(img, name);
       grid.appendChild(card);
-      const rec = { el: card, z: c.z, gridOpacity };
-      freshCards.push(rec);
+      const rec = { el: card, x: c.x, y: c.y, z: c.z, ready: false };
+      // 使用者回報「平面移動有時候載入會比較慢，看起來很怪」——原本卡片一造
+      // 出來就立刻進景深淡出計算，圖片還沒載完時 opacity 已經淡入到定值，卡
+      // 片框先出現、圖片才慢半拍貼上去，兩段動作對不上看起來像卡頓。改成先
+      // 標記 ready:false，updateIntroDepthFade() 會跳過還沒 ready 的卡片
+      // （保持 opacity:0 不出現），等圖片真的解碼完成才標記 ready 並補一次
+      // 淡出計算，讓「卡片出現」跟「圖片已經能看見」是同一個時間點。cache
+      // 命中或極快網路時 decode() 幾乎立刻 resolve，感覺不到差異；慢網路時
+      // 至少不會看到空卡片突然被圖片撐開/貼上的怪異感。失敗（.catch）也視
+      // 為 ready，錯誤的圖示總比卡片永遠卡在隱形好。
+      img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
+      const markReady = () => { rec.ready = true; updateIntroDepthFade(); };
+      if (img.decode) img.decode().then(markReady).catch(markReady);
+      else { img.addEventListener('load', markReady, { once: true }); img.addEventListener('error', markReady, { once: true }); }
       return rec;
     });
     introChunks.set(key, entry);
   });
-  if (freshCards.length) void grid.offsetHeight;   // 強制 reflow：讓 opacity:0 先被瀏覽器畫一幀，下面改真正值才會有淡入動畫而不是硬切出現
-  updateIntroDepthFade();   // 剛新增的區塊也要立刻套用一次目前的景深透明度，不用等下一幀
+  updateIntroDepthFade();
 }
-// 景深淡出：跟區塊網格的淡出（上面 gridOpacity）是兩套獨立機制疊乘，呼應原
-// 程式 Math.min(gridFade, depthFade²)——不管卡片在哪個區塊，只要跟相機的 Z
-// 距離超過門檻就會淡出，即使它還在可視區塊網格範圍內。這裡直接算最終值寫
-// style.opacity（沒有另外做逐幀 lerp 平滑，135 張卡片的量級沒有必要，肉眼
-// 看每幀都已經在動態更新，不會有硬切感）。
+// 淡出：改成純粹依「卡片跟相機的真實 3D 距離」算連續透明度（Euclidean
+// 距離，不是只看 Z 軸），使用者回報「透明度做得不太好，應該要漸變」——原本
+// 是兩套機制疊乘（Z 軸景深 depthFade × 區塊網格的離散 gridOpacity 0.5/1），
+// gridOpacity 那個二分法在相機跨過區塊邊界的瞬間會造成一階不連續（雖然有
+// CSS transition 墊底，但起訖值本身就是跳的，看起來仍然像「一格一格」淡
+// 出而不是真正漸層）。改成單一個以距離為輸入的連續函式：NEAR 以內全不透
+// 明，NEAR～FAR 之間線性淡出、平方讓靠邊緣淡得快一點模擬鏡頭景深，FAR 以
+// 外全透明，不管卡片在哪個軸的哪個方向偏移都是同一條曲線，沒有任何離散
+// 分界。
+const INTRO_FADE_NEAR = 480, INTRO_FADE_FAR = 1500;
 function updateIntroDepthFade() {
-  const camZ = -introCanvasPan.z;
-  introChunks.forEach(entry => entry.forEach(({ el, z, gridOpacity }) => {
-    const depth = Math.abs(z - camZ);
-    const depthFade = depth <= INTRO_DEPTH_FADE_START ? 1
-      : Math.max(0, 1 - (depth - INTRO_DEPTH_FADE_START) / (INTRO_DEPTH_FADE_END - INTRO_DEPTH_FADE_START));
-    el.style.opacity = Math.min(gridOpacity, depthFade * depthFade).toFixed(2);
+  const camX = -introCanvasPan.x, camY = -introCanvasPan.y, camZ = -introCanvasPan.z;
+  introChunks.forEach(entry => entry.forEach((rec) => {
+    if (!rec.ready) return;
+    const dist = Math.hypot(rec.x - camX, rec.y - camY, rec.z - camZ);
+    const fade = dist <= INTRO_FADE_NEAR ? 1
+      : Math.max(0, 1 - (dist - INTRO_FADE_NEAR) / (INTRO_FADE_FAR - INTRO_FADE_NEAR));
+    rec.el.style.opacity = (fade * fade).toFixed(2);
   }));
 }
 function renderIntroCanvas() {
@@ -3347,17 +3350,20 @@ function renderIntroCanvas() {
   introLastCenterKey = null;
   introCanvasPan.x = 0; introCanvasPan.y = 0;
   introVel.x = introVel.y = introVel.z = 0;
-  introTargetVel.x = introTargetVel.y = 0;
   introDrift.x = introDrift.y = 0;
   introScrollAccum = 0;
   // reduced-motion 使用者沒有持續的 rAF 迴圈（見 startIntroFrameLoop），開場
-  // 後退這段本身就是裝飾性動態，不是功能，直接跳過、鏡頭定在預設位置。
+  // 後退這段本身就是裝飾性動態，不是功能，直接跳過、鏡頭定在預設位置、初速
+  // 歸零（不會有殘留速度讓畫面在他們沒操作時也動）。
   if (REDUCE_MOTION) {
     introCanvasPan.z = 0;
-    introTargetVel.z = 0;
+    introTargetVel.x = introTargetVel.y = introTargetVel.z = 0;
   } else {
     introCanvasPan.z = INTRO_ENTRANCE_Z;
-    introTargetVel.z = -INTRO_MAX_VEL;
+    const [vzMin, vzMax] = INTRO_ENTRANCE_VEL_Z;
+    introTargetVel.z = -(vzMin + Math.random() * (vzMax - vzMin));
+    introTargetVel.x = (Math.random() * 2 - 1) * INTRO_ENTRANCE_VEL_XY;
+    introTargetVel.y = (Math.random() * 2 - 1) * INTRO_ENTRANCE_VEL_XY;
   }
   // 候選池抽樣一次就好（不是每個區塊各自抽），區塊內用種子決定的 pickSeed 從
   // 這個池子裡挑——同一個區塊永遠挑到同一張，跟池子本身用哪批詞庫無關，這樣
@@ -3366,12 +3372,15 @@ function renderIntroCanvas() {
   applyIntroCanvasTransform();
   startIntroFrameLoop();
 }
-// 帶慣性的物理迴圈：每幀把 velocity 逐步追向 targetVel（拖曳/滾輪只改
-// targetVel，不是直接改位置），再用 velocity 更新 pan；放開後 targetVel 每幀
-// 乘衰減係數，速度會自然滑行變慢而不是瞬間停下。滑鼠沒有按下拖曳時，游標
-// 位置本身也會讓畫面有一圈很輕的環境漂移，呼應原程式「連沒在操作都感覺畫面
-// 活著」的手感。reduced-motion 使用者不跑這個持續迴圈（見 startIntroFrameLoop）。
-function introFrameStep(ts) {
+// 帶「永久慣性」的物理迴圈：targetVel 只由拖曳/滾輪的力累加改變，本身完全
+// 不衰減——這一幀跟上一幀之間如果沒有新的輸入，targetVel 維持原樣，畫面就
+// 會照原速度一直漂移下去，不會自己慢慢停下來（使用者要求的重點）。velocity
+// 用 lerp 逐幀追上 targetVel，只是讓「輸入」跟「反映在畫面上」之間有一點點
+// 平滑，不是拿來製造摩擦力。滑鼠沒有按下拖曳時，游標位置本身也會讓畫面有一
+// 圈很輕的環境漂移（跟永久慣性是兩回事，這個會在鏡頭有實際 targetVel 時被
+// 蓋過去，只在幾乎靜止時比較看得出來）。reduced-motion 使用者不跑這個持續
+// 迴圈（見 startIntroFrameLoop）。
+function introFrameStep() {
   if (getIntroStyle() !== 'canvas' || !$('intro-modal').classList.contains('open')) { introRAF = null; return; }
   if (!introDragging && !isMobile()) {
     introDrift.x += (introMouseN.x * INTRO_DRIFT_AMOUNT - introDrift.x) * INTRO_DRIFT_LERP;
@@ -3385,16 +3394,9 @@ function introFrameStep(ts) {
   introVel.x += (introTargetVel.x - introVel.x) * INTRO_VEL_LERP;
   introVel.y += (introTargetVel.y - introVel.y) * INTRO_VEL_LERP;
   introVel.z += (introTargetVel.z - introVel.z) * INTRO_VEL_LERP;
-  // 拖曳/滾輪帶來的 introVel 一樣會衰減到 0（急停感由操作決定），但下面這份
-  // 環境漂移速度不衰減，永遠疊加在最終位移上——這才是「永久慣性」，鏡頭不會
-  // 真的靜止下來。
-  const amb = introAmbientVel(ts || performance.now());
-  introCanvasPan.x += introVel.x + amb.x * INTRO_AMBIENT_SPEED.x;
-  introCanvasPan.y += introVel.y + amb.y * INTRO_AMBIENT_SPEED.y;
-  introCanvasPan.z += introVel.z + amb.z * INTRO_AMBIENT_SPEED.z;
-  introTargetVel.x *= INTRO_VEL_DECAY;
-  introTargetVel.y *= INTRO_VEL_DECAY;
-  introTargetVel.z *= INTRO_VEL_DECAY;
+  introCanvasPan.x += introVel.x;
+  introCanvasPan.y += introVel.y;
+  introCanvasPan.z += introVel.z;
   applyIntroCanvasTransform();
   introRAF = requestAnimationFrame(introFrameStep);
 }
