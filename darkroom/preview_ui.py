@@ -533,11 +533,23 @@ def make_thumb(src: Path) -> tuple[bytes, str]:
                 im.save(buf, format="WEBP", quality=THUMB_QUALITY, method=1)
             data = buf.getvalue()
             plog(f"[thumb] 完成 {src.parent.name}/{src.name}  {time.time()-t0:.2f}s  {len(data)//1024}KB")
-        # data 已在上面取得
+        # data 已在上面取得。不能直接 write_bytes(cache_file)——open(mode='wb')
+        # 會先把檔案截斷成 0 位元組再開始寫，另一個請求若在這個空窗期打中上面
+        # 那個沒鎖保護的快速路徑（第 518 行 is_file() 快取命中判斷），就會讀到
+        # 一個還沒寫完（甚至是 0 位元組）的檔案，瀏覽器收到的縮圖就是破圖。
+        # 改成先寫到同目錄下的臨時檔，寫完再用 os.replace() 原子性地覆蓋成正式
+        # 檔名——os.replace 在 POSIX／Windows 都是單一系統呼叫，其他執行緒的
+        # is_file() 檢查只會看到「舊檔不存在」或「新檔已完整」兩種狀態之一，
+        # 不會看到寫到一半的中間狀態。
+        tmp_file = cache_file.with_name(f"{cache_file.name}.tmp-{os.getpid()}-{threading.get_ident()}")
         try:
-            cache_file.write_bytes(data)
+            tmp_file.write_bytes(data)
+            os.replace(tmp_file, cache_file)
         except OSError:
-            pass
+            try:
+                tmp_file.unlink(missing_ok=True)
+            except OSError:
+                pass
         return data, '"' + etag + '"'
 
 

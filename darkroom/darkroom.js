@@ -3276,16 +3276,17 @@ function genChunkCards(cx, cy, cz) {
 // 快」——拖曳/滾輪的靈敏度（INTRO_VEL_LERP 以及下面拖曳/滾輪的係數）不用
 // 再動，是最終「永遠會漂移的速度上限」要再壓低，這樣不管使用者怎麼用力
 // 甩，最後穩定漂移的速度都不會超過這個更慢的上限。使用者又回饋「速度再
-// 低」，6 還是太快，再往下壓到 3；接著直接指定「速度改成1」。
-const INTRO_VEL_LERP = 0.16, INTRO_MAX_VEL = 1;
+// 低」，6 還是太快，再往下壓到 3；接著直接指定「速度改成1」，又再指定
+// 「速度調2」。
+const INTRO_VEL_LERP = 0.16, INTRO_MAX_VEL = 2;
 const INTRO_DRIFT_AMOUNT = 22, INTRO_DRIFT_LERP = 0.12;
 // 開場鏡頭：先貼近一點（Z 正值＝離相機比較近），給一個隨機大小、方向固定
 // 往後（負值）的初始速度，外加 x/y 也給一點隨機初速（不是死板只退後）——這
 // 就是使用者說的「一開始那只是初始慣性而已，隨機給」，數值不用刻意調成某個
 // 精確的模擬結果，因為後面不會衰減、永遠不會定格，多一點隨機性反而更自然。
 const INTRO_ENTRANCE_Z = 780;
-const INTRO_ENTRANCE_VEL_Z = [0.3, 1];  // 往後的初速範圍（負值），[最小,最大]，跟 INTRO_MAX_VEL 同量級
-const INTRO_ENTRANCE_VEL_XY = 0.25;     // x/y 初速的隨機範圍是 ±這個值
+const INTRO_ENTRANCE_VEL_Z = [0.6, 2];  // 往後的初速範圍（負值），[最小,最大]，跟 INTRO_MAX_VEL 同量級
+const INTRO_ENTRANCE_VEL_XY = 0.5;      // x/y 初速的隨機範圍是 ±這個值
 const introVel = { x: 0, y: 0, z: 0 };
 const introTargetVel = { x: 0, y: 0, z: 0 };
 const introDrift = { x: 0, y: 0 };
@@ -3519,6 +3520,15 @@ function updateIntroChunks() {
 // CHUNK_SIZE=620、RENDER_DIST=1）還短，代表角落區塊其實已經完全淡到 0，
 // 現在拉到 2200，連最遠角落都還留一點點若隱若現，景深的漸層感更完整。
 const INTRO_FADE_NEAR = 420, INTRO_FADE_FAR = 2200;
+// 使用者回報「圖片不要太大才消失」——卡片離鏡頭太近時該提早淡出。原本只
+// 有「太遠」會淡出（NEAR～FAR），太近完全沒有機制處理：卡片就在世界裡跟
+// 相機一起存在，距離可以趨近 0（相機幾乎穿過它），CSS perspective 的近大
+// 遠小效果會讓它在螢幕上變得非常巨大、幾乎塞滿畫面，才在快穿過的瞬間消
+// 失，觀感上就是「越來越大、大到誇張才不見」。加一段對稱的「太近淡出」：
+// CLOSE_START 以外正常（跟 FAR 那段共用 1 的區間），CLOSE_START～CLOSE_END
+// 之間淡出，CLOSE_END 以內（幾乎貼到鏡頭）完全透明——卡片會在明顯變大之
+// 前就先淡出，不會撐到誇張的大小。
+const INTRO_FADE_CLOSE_END = 60, INTRO_FADE_CLOSE_START = 220;
 function updateIntroDepthFade() {
   // 不再等縮圖 ready 才淡入——卡框本身（--sunk 底色＋名稱）不需要等圖片，
   // 縮圖是否顯示交給 img.on class（見 updateIntroChunks 的 onOk），兩者分開
@@ -3528,8 +3538,11 @@ function updateIntroDepthFade() {
   introChunks.forEach(entry => entry.forEach((rec) => {
     if (rec.revealAt && now < rec.revealAt) return;   // 分層淡入還沒輪到它，維持目前（初始 opacity:0）
     const dist = Math.hypot(rec.x - camX, rec.y - camY, rec.z - camZ);
-    const fade = dist <= INTRO_FADE_NEAR ? 1
+    const farFade = dist <= INTRO_FADE_NEAR ? 1
       : Math.max(0, 1 - (dist - INTRO_FADE_NEAR) / (INTRO_FADE_FAR - INTRO_FADE_NEAR));
+    const closeFade = dist >= INTRO_FADE_CLOSE_START ? 1
+      : Math.max(0, (dist - INTRO_FADE_CLOSE_END) / (INTRO_FADE_CLOSE_START - INTRO_FADE_CLOSE_END));
+    const fade = Math.min(farFade, closeFade);
     rec.el.style.opacity = (fade * fade).toFixed(2);
   }));
 }
