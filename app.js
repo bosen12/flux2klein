@@ -686,7 +686,7 @@
     if (!list.length) { menu.innerHTML = '<div class="lora-empty">找不到 LoRA（資料夾為空或讀不到）</div>'; return; }
     const q = (filter || '').toLowerCase().trim();
     const cat = state.lora.cat;
-    let rows = list.filter(l => cat === 'all' || l.folder === cat);
+    let rows = list.filter(l => cat === 'all' || l.category === cat);
     if (q) rows = rows.filter(l =>
       l.title.toLowerCase().includes(q) || l.name.toLowerCase().includes(q)
       || l.trainedWords.join(' ').toLowerCase().includes(q));
@@ -1182,7 +1182,7 @@
       const L = E.lora, nid = L.node, sel = state.lora.selected;
       tpl[nid] = {
         inputs: {
-          lora_name: sel.folder ? `${sel.folder}\\${sel.file}` : sel.file,
+          lora_name: sel.folder ? `${sel.folder.replace(/\//g, '\\')}\\${sel.file}` : sel.file,
           strength_model: state.lora.strength,
           strength_clip: state.lora.strength,
           model: [L.ckpt, 0],

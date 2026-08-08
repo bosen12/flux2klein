@@ -316,23 +316,34 @@ def send_file(client, filename):
 
 
 def serve_lora_list(client):
-    """列出各分類子夾內每個 LoRA 的觸發詞與預覽圖，給 Illustrious 面板選單用。"""
+    """列出各分類子夾（含任意深度的子資料夾）內每個 LoRA 的觸發詞與預覽圖，給 Illustrious
+    面板選單用。LoRA Manager 允許在 style/Character/HENTAI/illus 底下建子資料夾整理
+    （例如 Character/Hanime、HENTAI/concepts），舊版只掃頂層會讓子資料夾裡的 LoRA
+    完全消失不見——暗房那邊（darkroom/preview_ui.py 的 list_loras()）已經用 rglob
+    修過同一個問題，這裡比照辦理。item 的 "folder" 是完整相對路徑（如 "Character/Hanime"，
+    用 "/" 分隔，送 ComfyUI 前要轉成 "\\"），"category" 才是頂層四分類（給左欄篩選
+    晶片分組計數用，前端比對用這個欄位、不是 folder）。"""
     import json as _json
     items = []
     counts = {}
     errs = []
-    for folder in LORA_FOLDERS:
-        d = os.path.join(LORA_ROOT, folder)
-        try:
-            names = sorted(os.listdir(d))
-        except OSError as e:
-            errs.append(f"{folder}: {e}")
-            counts[folder] = 0
+    for category in LORA_FOLDERS:
+        base = os.path.join(LORA_ROOT, category)
+        if not os.path.isdir(base):
+            errs.append(f"{category}: 資料夾不存在")
+            counts[category] = 0
             continue
+        found = []
+        for dirpath, _dirnames, filenames in os.walk(base):
+            for fn in filenames:
+                if fn.lower().endswith(".safetensors"):
+                    found.append(os.path.join(dirpath, fn))
+        found.sort()
         n = 0
-        for fn in names:
-            if not fn.lower().endswith(".safetensors"):
-                continue
+        for full in found:
+            d = os.path.dirname(full)
+            fn = os.path.basename(full)
+            folder = os.path.relpath(d, LORA_ROOT).replace(os.sep, "/")
             stem = fn[: -len(".safetensors")]
             words, title = [], stem
             meta_path = os.path.join(d, stem + ".metadata.json")
@@ -353,7 +364,8 @@ def serve_lora_list(client):
                     preview = stem + ext
                     break
             items.append({
-                "folder": folder,           # 送 ComfyUI 時前面補 <folder>\ 前綴
+                "folder": folder,           # 完整相對路徑，送 ComfyUI 時轉 "\\" 當前綴
+                "category": category,       # 頂層分類，給篩選晶片比對用
                 "file": fn,
                 "name": stem,
                 "title": title,
@@ -361,7 +373,7 @@ def serve_lora_list(client):
                 "preview": preview,
             })
             n += 1
-        counts[folder] = n
+        counts[category] = n
     payload = {"items": items, "counts": counts, "folders": LORA_FOLDERS}
     if errs:
         payload["error"] = "；".join(errs)
@@ -370,16 +382,27 @@ def serve_lora_list(client):
 
 
 def serve_lora_preview(client, raw_path):
-    """送出單一 LoRA 的預覽圖。folder 須在白名單、file 須為純檔名，擋目錄穿越。"""
+    """送出單一 LoRA 的預覽圖。folder 現在可能帶子資料夾（如 "Character/Hanime"，見
+    serve_lora_list()），驗證比照 darkroom/preview_ui.py 的 lora_preview_path()：第一段
+    須在白名單、每一段不得是空字串或 ".."，file 仍須為純檔名（擋目錄穿越），最後再確認
+    解析後的路徑真的落在 LORA_ROOT 底下，雙重保險。"""
     from urllib.parse import urlparse, parse_qs, unquote
     q = parse_qs(urlparse(raw_path).query)
     folder = unquote((q.get("folder") or [""])[0])
     fn = unquote((q.get("file") or [""])[0])
-    bad = (not fn or "/" in fn or "\\" in fn or ".." in fn or folder not in LORA_FOLDERS)
+    parts = folder.split("/") if folder else []
+    bad = (not fn or "/" in fn or "\\" in fn or fn in (".", "..")
+           or "\\" in folder or not parts or parts[0] not in LORA_FOLDERS
+           or any(p in ("", "..") for p in parts))
     if bad:
         client.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
         return
-    path = os.path.join(LORA_ROOT, folder, fn)
+    path = os.path.join(LORA_ROOT, *parts, fn)
+    root_abs = os.path.abspath(LORA_ROOT)
+    path_abs = os.path.abspath(path)
+    if path_abs != root_abs and not path_abs.startswith(root_abs + os.sep):
+        client.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        return
     if not os.path.isfile(path):
         client.sendall(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
         return
