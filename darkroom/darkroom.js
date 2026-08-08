@@ -3205,18 +3205,21 @@ const introCanvasPan = { x: 0, y: 0, z: 0 };   // 「相機」目前的平移量
 let introPool = [];               // 這次進場抽樣好的候選詞庫（區塊內選哪張卡從這裡挑，決定性）
 let introChunks = new Map();      // chunkKey -> DOM 元素陣列，目前實際存在的區塊
 let introLastCenterKey = null;    // 節流用：相機還在同一個中心區塊裡就不用重算
+let introPrefetchGen = 0;         // 候選池暖機請求的世代編號，見 renderIntroCanvas()
 // 縮圖載入排隊時鐘：全域共用一條時間軸，不管哪一次 updateIntroChunks() 呼叫
-// 排進來的載入工作，都照同一個節奏（每 30ms 一個、最多排到 500ms 後）依序
-// 觸發，避免連續好幾次區塊更新（例如快速拖曳連續跨過好幾個邊界）各自獨立
-// 錯開時反而疊加成同一瞬間的請求洪峰。沒有新工作排進來時，下一次呼叫會自
-// 動從「現在」重新起算（Math.max(now, introNextLoadAt)），不會累積出離譜的
-// 延遲。
+// 排進來的載入工作，都照同一個節奏依序觸發，避免連續好幾次區塊更新（例如
+// 快速拖曳連續跨過好幾個邊界）各自獨立錯開時反而疊加成同一瞬間的請求洪
+// 峰。沒有新工作排進來時，下一次呼叫會自動從「現在」重新起算
+// （Math.max(now, introNextLoadAt)），不會累積出離譜的延遲。
+// 使用者問「照片能不能貼上去更快」——真正的卡頓成因（區塊座標偏移、孤兒請
+// 求）修掉之後，原本 30ms/500ms 這組保守值可以收緊，讓看得到的卡片更快輪
+// 到自己：改成 12ms 一個、最多排到 260ms 後。
 let introNextLoadAt = 0;
 function introScheduleLoad(fn) {
   const now = performance.now();
   const at = Math.max(now, introNextLoadAt);
-  introNextLoadAt = at + 30;
-  const delay = Math.min(at - now, 500);
+  introNextLoadAt = at + 12;
+  const delay = Math.min(at - now, 260);
   if (delay > 0) setTimeout(fn, delay); else fn();
 }
 
@@ -3344,7 +3347,10 @@ function updateIntroChunks() {
       card.style.transform = `translate3d(${c.x.toFixed(0)}px, ${c.y.toFixed(0)}px, ${c.z.toFixed(0)}px)`;
       card.style.opacity = '0';
       const img = document.createElement('img');
-      img.loading = 'lazy'; img.decoding = 'async'; img.fetchPriority = 'low'; img.alt = '';
+      // fetchPriority 這裡故意用 high，跟馬燈樣式的縮圖（那邊是背景裝飾，
+      // 用 low 對）不一樣——無限畫布開著的時候這些卡片就是使用者正在看的
+      // 唯一內容，值得優先搶頻寬，讓照片更快貼上去。
+      img.loading = 'lazy'; img.decoding = 'async'; img.fetchPriority = 'high'; img.alt = '';
       img.draggable = false;
       img.width = cardPx; img.height = cardPx;
       const name = document.createElement('div'); name.className = 'intro-canvas-name';
@@ -3442,6 +3448,21 @@ function renderIntroCanvas() {
   // 這個池子裡挑——同一個區塊永遠挑到同一張，跟池子本身用哪批詞庫無關，這樣
   // 才符合「同一個位置再訪要長一樣」的決定性規則。
   introPool = sampleN(ALL, Math.min(90, ALL.length));
+  // 使用者問「照片能不能貼上去更快」——與其等卡片真的建出來才發縮圖請求，
+  // 不如趁一開始就把整個候選池低優先度、慢慢地暖機一輪：瀏覽器快取＋伺服
+  // 器的縮圖磁碟快取都會先鋪好，之後卡片真的出現在畫面上、用同一個 URL
+  // 要縮圖時大機率直接命中快取（近乎瞬間），不用等 PIL 現場產生。用
+  // introPrefetchGen 這個世代編號擋掉重新渲染（切樣式又切回來）之後舊一輪
+  // 還沒發完的暖機請求，跟 cancelled 是同一個道理但不用逐張卡片管理。
+  const gen = ++introPrefetchGen;
+  introPool.forEach((it, i) => {
+    setTimeout(() => {
+      if (gen !== introPrefetchGen) return;
+      const pre = new Image();
+      pre.decoding = 'async'; pre.fetchPriority = 'low';
+      pre.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
+    }, i * 70);
+  });
   applyIntroCanvasTransform();
   startIntroFrameLoop();
 }
