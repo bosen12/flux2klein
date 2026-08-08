@@ -34,6 +34,13 @@ License：GNU GPL v3（見 `LICENSE`）——只在本機自己用、不重新�
   合併成一則涵蓋四種成功/失敗組合的 toast。詳見 flux2klein 專案的
   `docs/superpowers/specs/2026-08-06-lora-manager-to-klein-design.md`。）
 
+  （2026-08：使用者回報「使用遠端連線的 lora manager 無法傳送 lora」——
+  `DARKROOM_ORIGIN`／`KLEIN_ORIGIN` 原本寫死 `http://127.0.0.1:7860`／`:7801`，
+  遠端連線（Tailscale／區網 IP）時瀏覽器發出的 fetch 打 `127.0.0.1` 只會連到
+  使用者自己那台裝置的 loopback，不是真正跑 darkroom／KLEIN 的那台主機，必定
+  失敗。改成 `` `http://${location.hostname}:7860` ``／`` `http://${location.hostname}:7801` ``，
+  跟 `darkroom/darkroom.js` 的 `LORA_MGR_ORIGIN` 是同一個坑、同一種修法。）
+
 **沒有動到的已知範圍**：`BulkContextMenu.js` 的「全部送到 workflow」（多選批次）、
 checkpoint／embedding／recipe 各自的送出路徑，都維持上游原樣——在 standalone 模式
 一樣是原本就壞的（跳警告 toast），沒有變得更差，只是還沒接去暗房。之後真的需要

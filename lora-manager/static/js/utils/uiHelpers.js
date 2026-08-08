@@ -660,8 +660,12 @@ async function ensureRelativeModelPath(modelPath, collectionType) {
 // 選中。函式名稱維持 sendLoraToDarkroom（雖然現在語意是「送到兩邊」），改名要跟著
 // 改 ModelCard.js/LoraContextMenu.js 兩個呼叫點，範圍不必要地擴大，用註解說明現況
 // 即可（見 VENDORED.md）。共用給那兩處用，避免各自重複一份 fetch 邏輯。
-const DARKROOM_ORIGIN = 'http://127.0.0.1:7860';
-const KLEIN_ORIGIN = 'http://127.0.0.1:7801';
+// 用 location.hostname 不能寫死 127.0.0.1——遠端連線（Tailscale／區網 IP）
+// 時瀏覽器發出的 fetch 打 127.0.0.1 會連到使用者自己那台裝置的 loopback，
+// 不是真正跑 darkroom／KLEIN 的那台主機，送出去必定失敗（連線被拒絕或逾
+// 時）。跟 darkroom.js 的 LORA_MGR_ORIGIN 是同一個坑、同一種修法。
+const DARKROOM_ORIGIN = `http://${location.hostname}:7860`;
+const KLEIN_ORIGIN = `http://${location.hostname}:7801`;
 
 async function pushLora(origin, path, folder, fileNameNoExt) {
   const res = await fetch(`${origin}${path}`, {
