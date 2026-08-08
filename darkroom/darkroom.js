@@ -3207,6 +3207,7 @@ let introPool = [];               // 這次進場抽樣好的候選詞庫（區�
 let introChunks = new Map();      // chunkKey -> DOM 元素陣列，目前實際存在的區塊
 let introLastCenterKey = null;    // 節流用：相機還在同一個中心區塊裡就不用重算
 let introPrefetchGen = 0;         // 候選池暖機請求的世代編號，見 renderIntroCanvas()
+let introPrefetchedChunks = new Set();   // 已經暖機過縮圖的區塊 key，見 prefetchAheadChunks()，避免重複暖機同一區塊
 // 縮圖載入排隊時鐘：全域共用一條時間軸，不管哪一次 updateIntroChunks() 呼叫
 // 排進來的載入工作，都照同一個節奏依序觸發，避免連續好幾次區塊更新（例如
 // 快速拖曳連續跨過好幾個邊界）各自獨立錯開時反而疊加成同一瞬間的請求洪
@@ -3285,6 +3286,34 @@ function applyIntroCanvasTransform() {
   updateIntroChunks();
   updateIntroDepthFade();
 }
+// 往目前移動方向預測「下一個中心區塊」，把那一整塊（跟真正渲染範圍一樣大
+// 的 3×3×3）裡還沒暖機過的區塊，用低優先度先跟伺服器要一輪縮圖（只暖機
+// 圖片，不建 DOM 卡片，見上面 updateIntroChunks() 呼叫這裡的說明）。靜止
+// 或速度趨近 0 時不用猜方向。
+function prefetchAheadChunks(cx0, cy0, cz0) {
+  const VEL_EPS = 0.05;   // 太小的速度不用猜方向，避免抖動時亂預測
+  const dx = Math.abs(introVel.x) > VEL_EPS ? Math.sign(introVel.x) : 0;
+  const dy = Math.abs(introVel.y) > VEL_EPS ? Math.sign(introVel.y) : 0;
+  const dz = Math.abs(introVel.z) > VEL_EPS ? Math.sign(introVel.z) : 0;
+  if (!dx && !dy && !dz) return;
+  const pcx0 = cx0 + dx, pcy0 = cy0 + dy, pcz0 = cz0 + dz;
+  for (let ddx = -INTRO_RENDER_DIST; ddx <= INTRO_RENDER_DIST; ddx++) {
+    for (let ddy = -INTRO_RENDER_DIST; ddy <= INTRO_RENDER_DIST; ddy++) {
+      for (let ddz = -INTRO_RENDER_DIST; ddz <= INTRO_RENDER_DIST; ddz++) {
+        const cx = pcx0 + ddx, cy = pcy0 + ddy, cz = pcz0 + ddz;
+        const key = introChunkKey(cx, cy, cz);
+        if (introChunks.has(key) || introPrefetchedChunks.has(key)) continue;
+        introPrefetchedChunks.add(key);
+        genChunkCards(cx, cy, cz).forEach(c => {
+          const it = introPool[Math.floor(c.pickSeed * introPool.length) % introPool.length];
+          const pre = new Image();
+          pre.decoding = 'async'; pre.fetchPriority = 'low';
+          pre.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
+        });
+      }
+    }
+  }
+}
 // 依目前相機位置算出「應該存在」的區塊集合，跟目前實際存在的區塊（introChunks）
 // 做差集：多的移除、少的新增。只有相機跨過區塊邊界（中心區塊變了）才會真的
 // 重算，單純在同一區塊裡小幅移動不會每幀都觸發，避免 DOM 抖動。
@@ -3312,6 +3341,16 @@ function updateIntroChunks() {
       }
     }
   }
+  // 使用者問「可以提前載入嗎，例如讓虛擬畫布更大」——直接加大 RENDER_DIST
+  // 會讓實際渲染的區塊數立方成長（1→2 就是 27→125 個區塊），DOM／記憶體／
+  // 縮圖請求量跟著爆增，跟這幾輪一直在收斂的效能方向相反。改成「渲染範圍
+  // 不變，但縮圖預先在往前一步的方向暖機」：往目前移動方向（用 introVel
+  // 的正負號）預測下一步相機大概會落在哪個區塊，把那個預測位置為中心的
+  // 3×3×3（跟現在渲染的一樣大）裡、還沒真的渲染也還沒暖機過的區塊，低優
+  // 先度先把縮圖跟伺服器要一輪（只暖機圖片，不建 DOM 卡片）。這樣相機真的
+  // 移動到那裡、要建立真正的卡片時，縮圖大機率已經在瀏覽器/伺服器快取
+  // 裡，達到「提前載入」的效果，但不會讓可視範圍或 DOM 數量變大。
+  prefetchAheadChunks(cx0, cy0, cz0);
   // 移除超出範圍的區塊——不是直接 remove()，卡片會在畫面上憑空消失（使用者
   // 回報「左右移動圖片會突然消失」正是這裡）。先淡出（靠 CSS 的 opacity
   // transition）再移除，逾時值要比 CSS 的淡出時長長一點當保險（分頁在背景
@@ -3468,6 +3507,7 @@ function renderIntroCanvas() {
   introChunks.forEach(entry => entry.forEach(c => { c.cancelled = true; c.el.remove(); }));
   introChunks = new Map();
   introLastCenterKey = null;
+  introPrefetchedChunks = new Set();
   introCanvasPan.x = 0; introCanvasPan.y = 0;
   introVel.x = introVel.y = introVel.z = 0;
   introDrift.x = introDrift.y = 0;
