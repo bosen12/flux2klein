@@ -83,6 +83,24 @@ input[type=text] { background: var(--sunk); color: var(--ink); border: 1px solid
                    padding: 8px 12px 8px 30px; border-radius: 8px; font-size: 13px; }
 input[type=text]::placeholder { color: var(--faint); }
 
+/* ── 18+ 年齡確認 ─────────────────────────────────────────────── */
+/* 擋在 #boot 之前的第一個畫面，z-index 比 #boot（300）高，故意跟其他疊層
+   的毛玻璃質感區隔開——近黑底＋紅色警示色，不是「一般彈窗」而是「進入前的
+   關卡」。拒絕後文字直接原地替換（見 darkroom.js），不用另外做一個畫面。 */
+#age-gate { position: fixed; inset: 0; z-index: 310; display: grid; place-items: center;
+  background: #0a0a0a; }
+.age-gate-card { width: min(380px, 92vw); text-align: center; padding: 28px 24px;
+  border: 1px solid #3a1414; border-radius: 10px; }
+.age-gate-eyebrow { font-size: 11px; letter-spacing: .12em; color: #e24b4a; margin: 0 0 6px; }
+.age-gate-card h1 { font-size: 18px; font-weight: 500; color: #fafafa; margin: 0 0 10px; }
+.age-gate-body { font-size: 13px; line-height: 1.6; color: #a3a3a0; margin: 0 0 22px; }
+.age-gate-actions { display: flex; gap: 10px; }
+.age-gate-actions button { flex: 1; height: 40px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+.age-gate-no { border: .5px solid #4a2a2a; background: transparent; color: #a3a3a0; }
+.age-gate-no:hover { border-color: #6a3a3a; color: #c3c3c0; }
+.age-gate-yes { border: none; background: #e24b4a; color: #4a1010; font-weight: 500; }
+.age-gate-yes:hover { background: #e86867; }
+
 /* ── 頂欄 ─────────────────────────────────────────────────────── */
 /* 開場載入（大詞庫要幾秒掃描/渲染）：科技感——光圈 logo 自轉＋外圈掃描光弧（重用
    beam-spin/@property --beam）＋掃描進度條。載入完淡出。迴圈動畫維持字面值，

@@ -3729,12 +3729,36 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); closeIntro(); }
 });
 
-// boot 只等「資料到＋首屏渲染完」就關。pollBatch 是常駐背景輪詢——批次執行中它
-// 的 while(true) 永不 resolve，所以**不能**把 hideBoot 鏈在它後面（`() => pollBatch()`
-// 會回傳那個永不結算的 promise），否則只要背景有批次在跑，boot 就會一直等到下面
-// 的 20s 保險逾時才關＝每次刷新都卡整整 20 秒。改成 loadAll 完成後「不 return」地
-// 啟動 pollBatch，讓 finally(hideBoot) 立刻收尾、pollBatch 自行在背景跑。
-// maybeStartIntro() 排在 pollBatch() 之前：進場疊層（z-index 230）比 #boot（300）
-// 低，boot 淡出的 600ms 期間進場畫面已經在底下跑，boot 一收起就無縫接上。
-loadAll().then(() => { maybeStartIntro(); pollBatch(); }).finally(hideBoot);
-setTimeout(hideBoot, 20000);   // 保險：萬一 loadAll 本身卡住也別讓載入畫面永遠蓋著
+// 18+ 年齡確認擋在 boot 沖洗動畫之前：sessionStorage 記錄「這次瀏覽階段已確認」，
+// 分頁/瀏覽器關掉才重問，一般重整與硬重整都不會清掉這個記錄。boot 本身初始
+// display:none（見 index.html），確認通過才由 startApp() 顯示、開始跑 loadAll()。
+const AGE_GATE_KEY = 'yz-age-verified';
+function startApp() {
+  // boot 只等「資料到＋首屏渲染完」就關。pollBatch 是常駐背景輪詢——批次執行中它
+  // 的 while(true) 永不 resolve，所以**不能**把 hideBoot 鏈在它後面（`() => pollBatch()`
+  // 會回傳那個永不結算的 promise），否則只要背景有批次在跑，boot 就會一直等到下面
+  // 的 20s 保險逾時才關＝每次刷新都卡整整 20 秒。改成 loadAll 完成後「不 return」地
+  // 啟動 pollBatch，讓 finally(hideBoot) 立刻收尾、pollBatch 自行在背景跑。
+  // maybeStartIntro() 排在 pollBatch() 之前：進場疊層（z-index 230）比 #boot（300）
+  // 低，boot 淡出的 600ms 期間進場畫面已經在底下跑，boot 一收起就無縫接上。
+  $('boot').style.display = '';
+  loadAll().then(() => { maybeStartIntro(); pollBatch(); }).finally(hideBoot);
+  setTimeout(hideBoot, 20000);   // 保險：萬一 loadAll 本身卡住也別讓載入畫面永遠蓋著
+}
+function initAgeGate() {
+  if (sessionStorage.getItem(AGE_GATE_KEY) === '1') {
+    $('age-gate').remove();
+    startApp();
+    return;
+  }
+  $('age-gate-enter').addEventListener('click', () => {
+    sessionStorage.setItem(AGE_GATE_KEY, '1');
+    $('age-gate').remove();
+    startApp();
+  });
+  $('age-gate-leave').addEventListener('click', () => {
+    document.querySelector('.age-gate-card').innerHTML =
+      '<p class="age-gate-eyebrow">年齡限制內容</p><h1>無法使用</h1><p class="age-gate-body">很抱歉，本站僅限已滿 18 歲人士使用。</p>';
+  });
+}
+initAgeGate();

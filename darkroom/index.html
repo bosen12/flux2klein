@@ -8,7 +8,20 @@
 <link rel="stylesheet" href="/darkroom.css">
 </head>
 <body>
-<div id="boot">
+<!-- 18+ 年齡確認：擋在 boot 沖洗動畫之前，見 darkroom.js initAgeGate()。sessionStorage
+     記錄「這次瀏覽階段已確認」，分頁/瀏覽器關掉才重問，一般重整與硬重整都不用再問。 -->
+<div id="age-gate">
+  <div class="age-gate-card">
+    <p class="age-gate-eyebrow">年齡限制內容</p>
+    <h1>你已年滿 18 歲了嗎？</h1>
+    <p class="age-gate-body">本站包含成人向詞庫與生成內容，僅限已年滿 18 歲人士使用。</p>
+    <div class="age-gate-actions">
+      <button id="age-gate-leave" class="age-gate-no">離開</button>
+      <button id="age-gate-enter" class="age-gate-yes">已滿 18 歲</button>
+    </div>
+  </div>
+</div>
+<div id="boot" style="display:none;">
   <div class="boot-logo">
     <span class="boot-ring"></span><span class="boot-ring slow"></span>
     <svg class="boot-ap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="14.31" y1="8" x2="20.05" y2="17.94"/><line x1="9.69" y1="8" x2="21.17" y2="8"/><line x1="7.38" y1="12" x2="13.12" y2="2.06"/><line x1="9.69" y1="16" x2="3.95" y2="6.06"/><line x1="14.31" y1="16" x2="2.83" y2="16"/><line x1="16.62" y1="12" x2="10.88" y2="21.94"/></svg>

@@ -23,12 +23,12 @@
 ```html
 <div id="age-gate">
   <div class="age-gate-card">
-    <div class="age-gate-mark">18+</div>
-    <h1>年齡確認</h1>
-    <p>本站包含成人向詞庫與生成內容，僅限已年滿 18 歲人士使用。</p>
+    <p class="age-gate-eyebrow">年齡限制內容</p>
+    <h1>你已年滿 18 歲了嗎？</h1>
+    <p class="age-gate-body">本站包含成人向詞庫與生成內容，僅限已年滿 18 歲人士使用。</p>
     <div class="age-gate-actions">
-      <button id="age-gate-enter" class="age-gate-yes">我已年滿 18 歲，進入</button>
       <button id="age-gate-leave" class="age-gate-no">離開</button>
+      <button id="age-gate-enter" class="age-gate-yes">已滿 18 歲</button>
     </div>
   </div>
 </div>
@@ -39,12 +39,18 @@
 
 `#boot` 加上初始 `display:none`（原本沒有這個屬性、預設就顯示）——沖洗動畫不再是「一進頁面就播」，改成年齡閘通過後才由 JS 顯示。
 
-### CSS（`darkroom.css`）：獨立的警示風格，不沿用 boot/intro 的毛玻璃質感
+### CSS（`darkroom.css`）：紅黑警示配色 + 邊框證明卡構圖，不沿用 boot/intro 的毛玻璃質感
 
-- 滿版深底（比 `#boot` 更暗更沉，帶一點紅褐警示色調），置中卡片，大字警語。
-- 兩顆按鈕對比明顯：「我已年滿 18 歲」用實心強調色（`--accent`），「離開」用低調的 ghost 樣式——避免視覺上引導使用者誤按離開。
+最終視覺方向（配色定案）：近黑底、紅色系警示配色、`1px` 深紅邊框卡片、眉標＋疑問句標題、左右並排按鈕。
+
+- 背景 `#0a0a0a`（比 `#boot` 更暗更沉的純黑，不用漸層），內容置中。
+- 卡片 `.age-gate-card`：`width:min(380px,92vw)`，`1px solid #3a1414` 邊框，`10px` 圓角，`padding:28px 24px`，文字置中。
+- 眉標 `.age-gate-eyebrow`：11px、`letter-spacing:.12em`、紅色 `#E24B4A`（色票 `c-red` 400 stop）。
+- 標題 `<h1>`：「你已年滿 18 歲了嗎？」18px/500、`color:#fafafa`。
+- 內文 `.age-gate-body`：13px、`color:#a3a3a0`、行距寬鬆。
+- 按鈕左右並排（`display:flex; gap:10px`，各佔 `flex:1`）：左「離開」ghost（透明底、`0.5px solid #4a2a2a`、灰字 `#a3a3a0`），右「已滿 18 歲」實心紅底（`#E24B4A`）、深紅文字（同 ramp 900 stop 附近，確保對比）——實心色塊在右側、視覺份量明顯大於左側 ghost 按鈕，同樣是刻意讓使用者不會誤按離開。
 - `z-index` 要高於 `#boot`（以及所有既有疊層），確保是頁面最先看到、也是唯一能互動的內容。
-- 拒絕後的文字替換沿用同一張卡片、同一組排版，只是把標題/內文/按鈕换成拒絕訊息，不用另外做一個畫面。
+- 拒絕後的文字替換沿用同一張卡片，只是把眉標/標題/內文/按鈕换成拒絕訊息（按鈕整組移除），不用另外做一個畫面。
 
 ### JS（`darkroom.js`）：擋在既有初始化最前面
 
