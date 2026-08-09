@@ -230,6 +230,7 @@ function render() {
   grid.innerHTML = '';
   if (_io) { _io.disconnect(); _io = null; }
   if (_revealIO) { _revealIO.disconnect(); _revealIO = null; }
+  if (_pruneIO) { _pruneIO.disconnect(); _pruneIO = null; }
   if (!total) {
     grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="big">這裡沒有符合的詞庫</div>換個資料夾或篩選條件</div>`;
     return;
@@ -271,7 +272,43 @@ function render() {
 
 const PAGE = 120;
 const AUTO_LOAD_CAP = 600;
-let _rendered = 0, _io = null, _revealIO = null;
+let _rendered = 0, _io = null, _revealIO = null, _pruneIO = null;
+
+// 全庫瀏覽／跨資料夾搜尋時 VISIBLE 可能有上萬筆，appendPage() 只增不減會讓 DOM 裡
+// 累積的縮圖（解碼後的點陣圖）越捲越多、越捲越頓。只在筆數超過 AUTO_LOAD_CAP（跟
+// 「自動載入上限」同一個門檻——一般資料夾最大 ~400 筆，完全不會觸發）時才啟用：
+// 卡片捲出很遠（rootMargin 遠大於進場觀察器）就清空 .thumb 內部（圖片/按鈕/監聽器），
+// 只留外層 .card 這個 wrapper（data-rel、selected/flagged/favorited/rar-* 這些 class
+// 都掛在它身上，見 cardOf()），捲回來再用 thumbInnerHTML()/wireThumb() 重建。
+// .thumb 本身用 aspect-ratio:1/1 固定佔位（見 darkroom.css），清空內容不會讓格線
+// 跳動，不需要另外做 spacer 或處理捲動位置。
+// 外層 class 一直是即時同步的（toggleFlag/toggleFav 等都直接操作 wrapper 的
+// classList，不管卡片有沒有被修剪都照常運作），修剪/還原完全不用碰它們。
+function ensurePruneIO() {
+  if (_pruneIO || VISIBLE.length <= AUTO_LOAD_CAP) return;
+  _pruneIO = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (e.isIntersecting) restoreCard(e.target);
+      else pruneCard(e.target);
+    }
+  }, { root: $('main'), rootMargin: '2400px 0px' });
+}
+function pruneCard(card) {
+  if (card.classList.contains('pruned')) return;
+  const thumb = card.querySelector('.thumb');
+  if (!thumb) return;
+  thumb.onclick = null;
+  thumb.innerHTML = '';
+  card.classList.add('pruned');
+}
+function restoreCard(card) {
+  if (!card.classList.contains('pruned')) return;
+  const it = ALL.find(x => x.rel === card.dataset.rel);
+  if (!it) return;   // 極少數情況：修剪期間這筆資料被移除（例如重掃後消失），留空等下次 render() 清掉
+  const thumb = card.querySelector('.thumb');
+  if (thumb) { thumb.innerHTML = thumbInnerHTML(it); wireThumb(thumb, it); }
+  card.classList.remove('pruned');
+}
 
 function convertSentinelToLoadMoreButton() {
   if (_io) { _io.disconnect(); _io = null; }
@@ -300,8 +337,10 @@ function appendPage() {
   if (!slice.length) return;
   const frag = document.createDocumentFragment();
   const fresh = [];
+  const cards = [];
   slice.forEach((it) => {
     const card = cardOf(it);
+    cards.push(card);
     // 入場動畫改走 reveal-on-scroll：每張捲進視野時才淡入上升（見 _revealIO），
     // 這樣所有卡片都會依序animate，不再只有前 14 張。
     if (!REDUCE_MOTION && !_switching) { card.classList.add('reveal'); fresh.push(card); }
@@ -315,6 +354,8 @@ function appendPage() {
     // 顯示出來，避免卡片永遠停在 opacity:0（CLAUDE.md 隱藏分頁的教訓）。
     setTimeout(() => fresh.forEach(c => c.classList.add('in')), 2500);
   }
+  ensurePruneIO();
+  if (_pruneIO) cards.forEach(c => _pruneIO.observe(c));
   _rendered += slice.length;
   if (_rendered >= VISIBLE.length && _io) {
     _io.disconnect(); _io = null;
@@ -503,7 +544,7 @@ function reloadThumb(rel) {
   if (!card) return;
   const it = ALL.find(x => x.rel === rel);
   if (!it) return;
-  card.classList.remove('missing');
+  card.classList.remove('missing', 'pruned');   // pruned：見 pruneCard()，這裡重建了內容就不算修剪狀態了
   const thumb = card.querySelector('.thumb');
   thumb.innerHTML = thumbInnerHTML(it);   // 連星號/選取框/生成鈕一起重建，不會被清掉
   wireThumb(thumb, it);
