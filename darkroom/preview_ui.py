@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import gzip
 import hashlib
 import io
@@ -417,6 +418,61 @@ STATIC_FILES = {
     "/tag": ("index.html", "text/html; charset=utf-8"),
 }
 
+class PrioritySemaphore:
+    """介面相容 threading.Semaphore，但釋放名額時優先喚醒優先權數字較小的等待者，
+    而不是像原生 Semaphore 一樣「醒來順序不保證」（見 CLAUDE.md「踩過的坑」）。
+
+    用途：單張生成／重新生成／抽卡都算高優先權（0），批次（補缺少／全部重生）算低
+    優先權（1）。批次一次會佔滿 concurrency 個名額連續跑很久，若用原生 Semaphore，
+    批次 worker thread 從 release 到下一次 acquire 幾乎是同一瞬間就搶線，而單張生成
+    是請求進來才臨時起 thread，多了 HTTP handler／建立 thread 的延遲，實務上幾乎每次
+    都搶輸、被迫排在批次剩下的所有項目後面。加優先權讓單張生成/抽卡可以插隊到批次
+    前面，不用等整批跑完。同優先權內仍照抵達順序（seq）排隊，不會互搶。"""
+
+    def __init__(self, value):
+        self._value = value
+        self._lock = threading.Lock()
+        self._waiters = []  # [(priority, seq, threading.Event), ...]，已排序
+        self._seq = 0
+
+    def acquire(self, priority: int = 0):
+        with self._lock:
+            if self._value > 0:
+                self._value -= 1
+                return
+            seq = self._seq
+            self._seq += 1
+            ev = threading.Event()
+            self._waiters.append((priority, seq, ev))
+            self._waiters.sort(key=lambda w: (w[0], w[1]))
+        ev.wait()
+
+    def release(self):
+        with self._lock:
+            if self._waiters:
+                _, _, ev = self._waiters.pop(0)
+                ev.set()
+                return
+            self._value += 1
+
+    def __enter__(self):
+        self.acquire(0)
+        return self
+
+    def __exit__(self, *exc):
+        self.release()
+
+
+@contextlib.contextmanager
+def gen_slot(priority: int = 0):
+    """跟 `with STATE["gen_sem"]:` 等價，但可以指定優先權（見 PrioritySemaphore）。"""
+    STATE["gen_sem"].acquire(priority)
+    try:
+        yield
+    finally:
+        STATE["gen_sem"].release()
+
+
 # ---------------------------------------------------------------------------
 # 全域狀態
 # ---------------------------------------------------------------------------
@@ -429,7 +485,7 @@ STATE = {
     "jobs": {},                     # rel(str) -> {status, message, updated}
     "jobs_lock": threading.Lock(),
     "concurrency": 2,               # 一次最多同時跑幾張
-    "gen_sem": threading.Semaphore(2),  # 全域併發上限(單張+批次共用)
+    "gen_sem": PrioritySemaphore(2),  # 全域併發上限(單張+批次共用，見 PrioritySemaphore)
     "batch": {                      # 批次狀態
         "running": False,
         "stop": False,
@@ -796,7 +852,7 @@ def do_generate(rel: str, seed: int | None = None, in_batch: bool = False):
         if not in_batch:
             plog(f"[gen] ERR {rel} — ComfyUI 未連線")
         return
-    with STATE["gen_sem"]:
+    with gen_slot(1 if in_batch else 0):
         try:
             plog(f"[gen] ▶ 生成中 {rel}")   # 即時顯示現在在處理哪個詞庫
             set_job(rel, "running", "載入詞庫...")
@@ -1059,7 +1115,7 @@ def _gen_one_worker(gid, rel, loras, trigger, wait_for=None, mark_started=None):
     # start_gen() 呼叫端怎麼串起這條鏈。
     if wait_for is not None:
         wait_for.wait()
-    with STATE["gen_sem"]:
+    with gen_slot(0):
         if mark_started is not None:
             mark_started.set()      # 讓下一張現在才開始搶 gen_sem，保證搶到的順序＝排隊順序
         # 排在信號量後面等的那幾張，若在等待期間被取消（該分頁刷新/關閉）就別再送出去
@@ -1687,7 +1743,7 @@ def main():
     STATE["steps"] = args.steps
     STATE["timeout"] = args.timeout
     STATE["concurrency"] = max(1, args.concurrency)
-    STATE["gen_sem"] = threading.Semaphore(STATE["concurrency"])
+    STATE["gen_sem"] = PrioritySemaphore(STATE["concurrency"])
 
     print(f"[workflow] {wf_path}")
     print(f"[special ] {SPECIAL_DIR}")
