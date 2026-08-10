@@ -779,6 +779,14 @@ def do_batch(rels: list[str]):
     b = get_batch()
     set_batch(running=False, running_rels=[])
     stopped = b.get("stop")
+    if stopped:
+        # 中止時 idx 之後的項目從沒被 worker 撈到，job 停在 batch_generate
+        # 一開始就設的 "queued/批次排隊中..."，do_generate 從未跑過所以永遠不會
+        # 被改掉。不清掉的話 /api/generate 會看到 status=queued 就直接短路
+        # 回舊狀態、不重新送生成——使用者點「重新生成」沒反應就是這樣來的。
+        for rel in rels[idx["i"]:]:
+            if get_job(rel).get("status") == "queued":
+                set_job(rel, "", "")
     plog(f"[batch] {'已停止' if stopped else '完成'} · {b.get('done')}/{total} · ok {b.get('ok')} · fail {b.get('fail')}")
 
 
