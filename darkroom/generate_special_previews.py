@@ -169,18 +169,24 @@ def build_prompt(req: list[str], pos: list[str]) -> str:
 
 
 def build_negative(neg: list[str]) -> str:
+    """跟 Illustrious 面板（app.js 的詞庫負向 negSource）同一套解讀：詞庫自己有
+    NEGATIVE 就整段取代掉負向，不跟 DEFAULT_NEG 合併；沒有 NEGATIVE 才退回
+    DEFAULT_NEG 當底（等同面板選「預設負向」）。以前這裡不管詞庫有沒有自己的
+    NEGATIVE，一律跟 DEFAULT_NEG 合併，跟面板「詞庫負向／預設負向 二選一、
+    不合併」的解讀不一致。"""
+    if not neg:
+        return DEFAULT_NEG
     parts: list[str] = []
     seen: set[str] = set()
-    for chunk in [DEFAULT_NEG] + [",".join(neg)]:
-        for piece in chunk.split(","):
-            t = piece.strip()
-            if not t:
-                continue
-            key = t.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            parts.append(t)
+    for piece in ",".join(neg).split(","):
+        t = piece.strip()
+        if not t:
+            continue
+        key = t.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        parts.append(t)
     return ", ".join(parts)
 
 
