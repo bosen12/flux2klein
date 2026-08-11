@@ -27,7 +27,7 @@
     // Illustrious 的「詞庫」（special_prompts）。單選一個情境：選取時把正向填進
     // 提示詞框（可再編輯），送出時把該詞庫的 negative 寫進負向節點。
     lib: { list: null, counts: {}, folders: [], cat: 'all', page: 0, loading: false,
-           enabled: false, selected: null, negative: [] },
+           enabled: false, selected: null, negative: [], negSource: 'lib' },   // negSource: 'lib' 詞庫負向 / 'default' 保留模板預設負向
   };
 
   // 兩個引擎的品牌與主題資訊
@@ -850,6 +850,11 @@
          <div class="lora-menu" id="lib-menu" style="display:none"></div>
        </div>
        <div class="lora-current" id="lib-current"></div>
+       <div class="lib-negsrc" id="lib-negsrc" style="display:none">
+         <span class="lib-negsrc-label">負向來源</span>
+         <label class="lib-negsrc-opt"><input type="radio" name="lib-negsrc" value="lib"> 詞庫負向</label>
+         <label class="lib-negsrc-opt"><input type="radio" name="lib-negsrc" value="default"> 預設負向</label>
+       </div>
        <div class="lib-note">選取後正向會填進上方提示詞框（可再編輯），負向於送出時自動套用</div>`;
     p.dataset.built = '1';
     const search = $('lib-search'), menu = $('lib-menu');
@@ -858,6 +863,9 @@
     search.addEventListener('input', () => { state.lib.page = 0; open(); });
     document.addEventListener('pointerdown', (e) => {
       if (!$('lib-panel').contains(e.target)) { menu.style.display = 'none'; hideLoraHover(); }
+    });
+    $('lib-negsrc').querySelectorAll('input[name="lib-negsrc"]').forEach(r => {
+      r.addEventListener('change', () => { if (r.checked) state.lib.negSource = r.value; });
     });
     renderLibCats(E);
     renderLibCurrent();
@@ -943,14 +951,26 @@
   function renderLibCurrent() {
     const box = $('lib-current'); if (!box) return;
     const l = state.lib.selected;
-    if (!l) { box.innerHTML = '<span class="lora-none">尚未選擇詞庫</span>'; box.classList.remove('has'); return; }
+    const negsrc = $('lib-negsrc');
+    if (!l) {
+      box.innerHTML = '<span class="lora-none">尚未選擇詞庫</span>'; box.classList.remove('has');
+      if (negsrc) negsrc.style.display = 'none';
+      return;
+    }
     const thumb = l.preview ? `<img src="${libPreviewUrl(l)}" alt="">` : '<span class="lora-thumb ph"></span>';
     box.innerHTML = `${thumb}<span class="lora-cur-name">${esc(l.name)}</span><button type="button" class="lora-clear" title="取消選擇">✕</button>`;
     box.classList.add('has');
     box.querySelector('.lora-clear').addEventListener('click', () => {
-      state.lib.selected = null; state.lib.negative = [];
+      state.lib.selected = null; state.lib.negative = []; state.lib.negSource = 'lib';
       renderLibCurrent();
     });
+    // 選到的詞庫沒有負向詞時，沒有東西可選——直接隱藏，一律用預設負向
+    if (negsrc) {
+      negsrc.style.display = state.lib.negative.length ? '' : 'none';
+      negsrc.querySelectorAll('input[name="lib-negsrc"]').forEach(r => {
+        r.checked = (r.value === state.lib.negSource);
+      });
+    }
   }
 
   function showLibHover(l, row) {
@@ -1202,10 +1222,15 @@
       log(`LoRA：${sel.title}（強度 ${state.lora.strength.toFixed(2)}` +
           `${state.lora.inject && trig ? '，觸發詞 ' + trig : ''}）`, 'info');
     }
-    // 詞庫：套用選定詞庫的負向到 neg 節點（正向已於選取時填進提示詞框）
+    // 詞庫：套用選定詞庫的負向到 neg 節點（正向已於選取時填進提示詞框）。
+    // negSource === 'default' 時使用者主動選了保留模板預設負向，不覆蓋 tpl[nd.neg]。
     if (E.promptLib && state.lib.enabled && state.lib.selected && state.lib.negative.length && tpl[nd.neg]) {
-      tpl[nd.neg].inputs.text = state.lib.negative.join(', ');
-      log(`詞庫負向已套用（${state.lib.negative.length} 個）：${state.lib.selected.name}`, 'info');
+      if (state.lib.negSource === 'default') {
+        log(`詞庫負向已略過（改用預設負向）：${state.lib.selected.name}`, 'info');
+      } else {
+        tpl[nd.neg].inputs.text = state.lib.negative.join(', ');
+        log(`詞庫負向已套用（${state.lib.negative.length} 個）：${state.lib.selected.name}`, 'info');
+      }
     }
     log(`送出節點：${Object.keys(tpl).join(', ')}`, 'info');
     // 送出

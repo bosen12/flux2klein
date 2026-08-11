@@ -1164,6 +1164,16 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 #lora-panel, #lib-panel { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
 .lib-note { font-size: var(--fs-xs); color: var(--text-faint); line-height: 1.5; }
 
+/* 詞庫負向來源：詞庫自帶負向 vs 保留模板預設負向，二擇一 */
+.lib-negsrc { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; }
+.lib-negsrc-label { font-size: var(--fs-xs); color: var(--text-faint); }
+.lib-negsrc-opt {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: var(--fs-xs); color: var(--text-dim); cursor: pointer;
+}
+.lib-negsrc-opt input { accent-color: var(--accent); cursor: pointer; }
+.lib-negsrc-opt:has(input:checked) { color: var(--text); font-weight: 600; }
+
 /* 搜尋框 + 下拉選單 */
 .lora-pick { position: relative; }
 .lora-search {
