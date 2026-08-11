@@ -200,6 +200,9 @@ input[type=text]::placeholder { color: var(--faint); }
           transition: background var(--d-micro) var(--ease-out), border-color var(--d-micro) var(--ease-out); }
 .folder.rin { animation: railIn var(--d-ui) var(--ease-out) both; }
 .folder:hover { background: #1d1f27; }
+/* 「全部」釘選項跟真正的資料夾清單隔開一點，一眼看出它是特殊項目不是排序第一的資料夾 */
+.folder-all { margin-bottom: 10px; }
+.folder-all .folder-idx { color: var(--faint); }
 .folder.active { background: #23252f; border-color: transparent; }
 /* 選中資料夾的旋轉光環（比照主面板選中分頁）。@property 把角度宣告成 <angle>
    才能補間；::before 只留一圈環（mask-composite 鏤空中間），顏色走暗房琥珀。 */

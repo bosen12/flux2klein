@@ -1,5 +1,6 @@
 let ALL = [];
 let CUR_FOLDER = null;      // 目前選中的資料夾;null = 尚未選
+let ALL_FOLDERS = false;    // 「全部」釘選項是否啟用（跨資料夾看全部詞庫，不靠搜尋）
 let VIEW = 'all';           // all | missing | have
 let RARITY_FILTER = 'all';  // all | untagged | common | rare | special | legendary
 let SEARCH = '';
@@ -47,6 +48,7 @@ async function loadAll(force = false) {
       if (typeof saved.search === 'string') { SEARCH = saved.search; $('search').value = SEARCH; }
       if (saved.view === 'all' || saved.view === 'missing' || saved.view === 'have') VIEW = saved.view;
       if (typeof saved.rarity === 'string') RARITY_FILTER = saved.rarity;
+      if (saved.allFolders === true) ALL_FOLDERS = true;
       if (typeof saved.tagQuery === 'string' && saved.tagQuery) {
         $('tag-search').value = saved.tagQuery;
         $('tag-search-clear').style.display = '';
@@ -92,6 +94,29 @@ function buildRail() {
   const list = $('rail-list');
   list.innerHTML = '';
   const frag = document.createDocumentFragment();
+
+  // 「全部」固定釘在最上面，不受 RAIL_SEARCH（資料夾名稱篩選）影響——資料夾清單
+  // 本身沒有代表「不篩資料夾」的項目，點了某個資料夾之後除了重打一次搜尋字串
+  // 沒有別的路能回到跨資料夾的全部範圍，加這顆給明確、常駐的入口。
+  const totalAll = ALL.length, haveAll = ALL.filter(x => x.has_image).length;
+  const pctAll = totalAll ? Math.round(haveAll / totalAll * 100) : 0;
+  const allBtn = document.createElement('button');
+  allBtn.className = 'folder folder-all' + (ALL_FOLDERS && !SEARCH && !TAG_MATCH_SET ? ' active' : '');
+  allBtn.innerHTML = `
+    <div class="folder-top">
+      <span class="folder-idx">✦</span>
+      <span class="folder-name">全部</span>
+      <span class="folder-count">${haveAll}/${totalAll}</span>
+    </div>
+    <div class="cover${haveAll === totalAll && totalAll > 0 ? ' full' : ''}"><span style="width:${pctAll}%"></span></div>`;
+  allBtn.onclick = () => withTransition(() => {
+    ALL_FOLDERS = true; SEARCH = ''; $('search').value = '';
+    TAG_QUERY = ''; TAG_MATCH_SET = null; tagSearchReq++;
+    $('tag-search').value = ''; $('tag-search-clear').style.display = 'none';
+    buildRail(); render(); $('main').scrollTop = 0;
+  });
+  frag.appendChild(allBtn);
+
   const q = RAIL_SEARCH.toLowerCase();
   let stats = folderStats();
   if (q) stats = stats.filter(s =>
@@ -106,7 +131,7 @@ function buildRail() {
     const pct = s.total ? Math.round(s.have / s.total * 100) : 0;
     const full = s.have === s.total && s.total > 0;
     const b = document.createElement('button');
-    b.className = 'folder' + (s.name === CUR_FOLDER && !SEARCH && !TAG_MATCH_SET ? ' active' : '');
+    b.className = 'folder' + (s.name === CUR_FOLDER && !SEARCH && !TAG_MATCH_SET && !ALL_FOLDERS ? ' active' : '');
     if (animate && i < 22) { b.classList.add('rin'); b.style.animationDelay = (i * 18) + 'ms'; }
     b.dataset.folder = s.name;
     const idx = /^\d+/.exec(s.name);
@@ -119,7 +144,7 @@ function buildRail() {
       <div class="cover${full ? ' full' : ''}"><span style="width:${pct}%"></span></div>`;
     b.querySelector('.folder-name').textContent = s.name.replace(/^\d+[_\-\s]*/, '') || s.name;
     b.onclick = () => withTransition(() => {
-      CUR_FOLDER = s.name; SEARCH = ''; $('search').value = '';
+      CUR_FOLDER = s.name; ALL_FOLDERS = false; SEARCH = ''; $('search').value = '';
       TAG_QUERY = ''; TAG_MATCH_SET = null; tagSearchReq++;
       $('tag-search').value = ''; $('tag-search-clear').style.display = 'none';
       buildRail(); render(); $('main').scrollTop = 0;
@@ -137,6 +162,8 @@ function baseList() {
     list = ALL.filter(x => x.name.toLowerCase().includes(q) || (x.folder || '').toLowerCase().includes(q));
   } else if (TAG_MATCH_SET) {
     list = ALL;   // 標籤搜尋跨資料夾，不受目前選的資料夾限制（跟名稱搜尋一樣）
+  } else if (ALL_FOLDERS) {
+    list = ALL;   // 點了左欄釘選的「全部」，不篩資料夾
   } else {
     list = ALL.filter(x => (x.folder || '(根目錄)') === CUR_FOLDER);
   }
@@ -206,6 +233,9 @@ function updateStats() {
   } else if (TAG_MATCH_SET) {
     $('mt-num').textContent = '';
     $('mt-name').textContent = `標籤:「${TAG_QUERY}」`;
+  } else if (ALL_FOLDERS) {
+    $('mt-num').textContent = '';
+    $('mt-name').textContent = '全部';
   } else {
     const idx = /^\d+/.exec(CUR_FOLDER || '');
     $('mt-num').textContent = idx ? idx[0] : '';
@@ -229,7 +259,7 @@ function updateStats() {
 // 最後都會呼叫 render，不用在每個 onclick 各自補一行、容易漏）。
 function saveViewState() {
   try {
-    localStorage.setItem('yz-view-state', JSON.stringify({ folder: CUR_FOLDER, search: SEARCH, view: VIEW, rarity: RARITY_FILTER, tagQuery: TAG_QUERY }));
+    localStorage.setItem('yz-view-state', JSON.stringify({ folder: CUR_FOLDER, search: SEARCH, view: VIEW, rarity: RARITY_FILTER, tagQuery: TAG_QUERY, allFolders: ALL_FOLDERS }));
   } catch (e) { /* 存取被封鎖或滿了，忽略即可，不影響核心功能 */ }
 }
 function loadViewState() {
