@@ -42,6 +42,11 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
     <input type="text" id="search" placeholder="跨資料夾搜尋名稱…" autocomplete="off">
   </div>
+  <div class="search-wrap tag-search-wrap" title="搜尋詞庫的正向/負向標籤，逗號分隔多個，需同時符合全部標籤">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3.24L4 3a1 1 0 0 0-1 1l.24 5.59a2 2 0 0 0 .59 1.41l9.58 9.59a2 2 0 0 0 2.83 0l4.35-4.35a2 2 0 0 0 0-2.83Z"/><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/></svg>
+    <input type="text" id="tag-search" placeholder="搜尋標籤，逗號分隔多個…" autocomplete="off">
+    <button id="tag-search-clear" aria-label="清除" title="清除" style="display:none;">✕</button>
+  </div>
   <!-- 瀏覽專屬控制項放在 spacer 之前：切模式時它們出現/消失只改變 spacer 寬度，
        不會推動 spacer 之後靠右錨定的共用群組（模式切換/抽卡/重掃/連線），共用按鈕位置不動。 -->
   <label class="steps-field browse-only" title="生成步數（套用到之後的生成）">

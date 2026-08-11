@@ -154,6 +154,12 @@ input[type=text]::placeholder { color: var(--faint); }
 .search-wrap svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
                    width: 14px; height: 14px; color: var(--faint); pointer-events: none; }
 .search-wrap input { width: 100%; }
+.tag-search-wrap { max-width: 280px; }
+.tag-search-wrap input { padding-right: 26px; }
+.tag-search-wrap button { position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+                          background: transparent; border: none; color: var(--faint);
+                          font-size: 12px; padding: 2px 5px; }
+.tag-search-wrap button:hover { color: var(--ink); }
 .spacer { flex: 1; }
 .conn { font-family: var(--mono); font-size: 11px; color: var(--dim); display: flex; align-items: center; gap: 6px; }
 /* 頂列連線指示器固定寬度、靠右對齊：文字從「…」變「ComfyUI 就緒 · steps 25」時

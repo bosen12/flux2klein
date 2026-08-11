@@ -4,6 +4,8 @@ let VIEW = 'all';           // all | missing | have
 let RARITY_FILTER = 'all';  // all | untagged | common | rare | special | legendary
 let SEARCH = '';
 let RAIL_SEARCH = '';       // 資料夾側欄搜尋
+let TAG_QUERY = '';         // 標籤搜尋原始輸入（逗號分隔多個）
+let TAG_MATCH_SET = null;   // 標籤搜尋結果：Set(rel)，null = 未啟用標籤篩選
 let VISIBLE = [];           // 目前 grid 呈現的清單(供 modal 前後導覽)
 const pollers = new Set();
 const REDUCE_MOTION = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -45,6 +47,11 @@ async function loadAll(force = false) {
       if (typeof saved.search === 'string') { SEARCH = saved.search; $('search').value = SEARCH; }
       if (saved.view === 'all' || saved.view === 'missing' || saved.view === 'have') VIEW = saved.view;
       if (typeof saved.rarity === 'string') RARITY_FILTER = saved.rarity;
+      if (typeof saved.tagQuery === 'string' && saved.tagQuery) {
+        $('tag-search').value = saved.tagQuery;
+        $('tag-search-clear').style.display = '';
+        runTagSearch(saved.tagQuery);   // 非同步；resolve 後自己會再 buildRail()/render()
+      }
     }
     if (CUR_FOLDER === null) CUR_FOLDER = folders.length ? folders[0].name : '';
     syncViewSeg();
@@ -99,7 +106,7 @@ function buildRail() {
     const pct = s.total ? Math.round(s.have / s.total * 100) : 0;
     const full = s.have === s.total && s.total > 0;
     const b = document.createElement('button');
-    b.className = 'folder' + (s.name === CUR_FOLDER && !SEARCH ? ' active' : '');
+    b.className = 'folder' + (s.name === CUR_FOLDER && !SEARCH && !TAG_MATCH_SET ? ' active' : '');
     if (animate && i < 22) { b.classList.add('rin'); b.style.animationDelay = (i * 18) + 'ms'; }
     b.dataset.folder = s.name;
     const idx = /^\d+/.exec(s.name);
@@ -111,7 +118,12 @@ function buildRail() {
       </div>
       <div class="cover${full ? ' full' : ''}"><span style="width:${pct}%"></span></div>`;
     b.querySelector('.folder-name').textContent = s.name.replace(/^\d+[_\-\s]*/, '') || s.name;
-    b.onclick = () => withTransition(() => { CUR_FOLDER = s.name; SEARCH = ''; $('search').value = ''; buildRail(); render(); $('main').scrollTop = 0; });
+    b.onclick = () => withTransition(() => {
+      CUR_FOLDER = s.name; SEARCH = ''; $('search').value = '';
+      TAG_QUERY = ''; TAG_MATCH_SET = null; tagSearchReq++;
+      $('tag-search').value = ''; $('tag-search-clear').style.display = 'none';
+      buildRail(); render(); $('main').scrollTop = 0;
+    });
     frag.appendChild(b);
   });
   list.appendChild(frag);
@@ -119,11 +131,17 @@ function buildRail() {
 
 // 只套資料夾／搜尋範圍（不含 view 與稀有度篩選）——稀有度分布數就是算這個
 function baseList() {
+  let list;
   if (SEARCH) {
     const q = SEARCH.toLowerCase();
-    return ALL.filter(x => x.name.toLowerCase().includes(q) || (x.folder || '').toLowerCase().includes(q));
+    list = ALL.filter(x => x.name.toLowerCase().includes(q) || (x.folder || '').toLowerCase().includes(q));
+  } else if (TAG_MATCH_SET) {
+    list = ALL;   // 標籤搜尋跨資料夾，不受目前選的資料夾限制（跟名稱搜尋一樣）
+  } else {
+    list = ALL.filter(x => (x.folder || '(根目錄)') === CUR_FOLDER);
   }
-  return ALL.filter(x => (x.folder || '(根目錄)') === CUR_FOLDER);
+  if (TAG_MATCH_SET) list = list.filter(x => TAG_MATCH_SET.has(x.rel));
+  return list;
 }
 
 function currentList() {
@@ -184,7 +202,10 @@ function updateStats() {
   const pct = total ? Math.round(have / total * 100) : 0;
   if (SEARCH) {
     $('mt-num').textContent = '';
-    $('mt-name').textContent = `搜尋:「${SEARCH}」`;
+    $('mt-name').textContent = TAG_QUERY ? `搜尋:「${SEARCH}」+ 標籤「${TAG_QUERY}」` : `搜尋:「${SEARCH}」`;
+  } else if (TAG_MATCH_SET) {
+    $('mt-num').textContent = '';
+    $('mt-name').textContent = `標籤:「${TAG_QUERY}」`;
   } else {
     const idx = /^\d+/.exec(CUR_FOLDER || '');
     $('mt-num').textContent = idx ? idx[0] : '';
@@ -208,7 +229,7 @@ function updateStats() {
 // 最後都會呼叫 render，不用在每個 onclick 各自補一行、容易漏）。
 function saveViewState() {
   try {
-    localStorage.setItem('yz-view-state', JSON.stringify({ folder: CUR_FOLDER, search: SEARCH, view: VIEW, rarity: RARITY_FILTER }));
+    localStorage.setItem('yz-view-state', JSON.stringify({ folder: CUR_FOLDER, search: SEARCH, view: VIEW, rarity: RARITY_FILTER, tagQuery: TAG_QUERY }));
   } catch (e) { /* 存取被封鎖或滿了，忽略即可，不影響核心功能 */ }
 }
 function loadViewState() {
@@ -751,6 +772,50 @@ let searchTimer;
 $('search').oninput = e => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => withTransition(() => { SEARCH = e.target.value.trim(); buildRail(); render(); }), 180);
+};
+
+// 標籤搜尋：逗號分隔多個標籤，需同時符合全部（AND）。詞庫檔案裡同一組標籤有時寫成
+// 獨立元素、有時整串塞一個字串（"A,B,C"／"A, B, C,"／"A,B, C," 都有人寫過），比對邏輯
+// 統一在後端 split_tags() 處理，前端只管把查詢字串原樣送過去。用遞增的請求序號擋過期
+// 回應（使用者打字很快時，先送出的請求可能比後送出的晚回來）。
+let tagSearchReq = 0;
+async function runTagSearch(query) {
+  TAG_QUERY = query;
+  if (!query) {
+    TAG_MATCH_SET = null;
+    buildRail(); render();
+    return;
+  }
+  const myReq = ++tagSearchReq;
+  try {
+    const r = await fetch('/api/tag_search?q=' + encodeURIComponent(query));
+    const j = await r.json();
+    if (myReq !== tagSearchReq) return;   // 已經有更新的查詢送出，這筆回應過期，忽略
+    TAG_MATCH_SET = new Set(j.rels || []);
+  } catch (e) {
+    if (myReq !== tagSearchReq) return;
+    console.error('標籤搜尋失敗：', e);
+    TAG_MATCH_SET = new Set();
+  }
+  buildRail(); render();
+}
+let tagSearchTimer;
+$('tag-search').oninput = e => {
+  const v = e.target.value;
+  $('tag-search-clear').style.display = v.trim() ? '' : 'none';
+  clearTimeout(tagSearchTimer);
+  tagSearchTimer = setTimeout(() => runTagSearch(v.trim()), 220);
+};
+$('tag-search').onkeydown = e => {
+  if (e.key === 'Escape') {
+    e.target.value = ''; $('tag-search-clear').style.display = 'none';
+    clearTimeout(tagSearchTimer); runTagSearch('');
+  }
+};
+$('tag-search-clear').onclick = () => {
+  $('tag-search').value = ''; $('tag-search-clear').style.display = 'none';
+  clearTimeout(tagSearchTimer); runTagSearch('');
+  $('tag-search').focus();
 };
 $('rescan').onclick = () => loadAll(true);
 $('menu-btn').onclick = () => $('rail').classList.toggle('open');

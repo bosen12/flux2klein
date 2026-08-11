@@ -61,9 +61,11 @@ from generate_special_previews import (
     http_json,
     load_lib,
     load_workflow,
+    parse_lib_ast,
     prepare_workflow,
     queue_and_wait,
     resolve_comfy_base,
+    split_tags,
 )
 
 
@@ -777,6 +779,65 @@ def _scan_note_image(rel: str, img: Path):
                 return
 
 
+# --- 標籤搜尋索引 ----------------------------------------------------------
+# rel -> frozenset(原子標籤，小寫)。跟 _scan 同一套 stale-while-revalidate：
+# 首次請求同步建（實測 25744 個檔案 ast 解析約 3.3s），之後吃快取秒回，
+# 超過 TTL 只在背景重建。用 ast（parse_lib_ast）不用 load_lib 的 importlib
+# exec_module——建索引要一次掃全部詞庫，exec 每個檔案太重。
+_tag_index = {"items": None, "at": 0.0, "refreshing": False}
+_tag_index_lock = threading.Lock()
+
+
+def _build_tag_index() -> dict[str, frozenset[str]]:
+    t0 = time.time()
+    idx: dict[str, frozenset[str]] = {}
+    for py in gsp.iter_libraries(None):
+        try:
+            req, pos, neg = parse_lib_ast(py)
+        except Exception:
+            continue
+        tags = split_tags(req) + split_tags(pos) + split_tags(neg)
+        idx[rel_of(py)] = frozenset(t.lower() for t in tags)
+    plog(f"[tagidx] 建立標籤索引 {len(idx)} 筆 · {time.time() - t0:.2f}s")
+    return idx
+
+
+def _tag_index_refresh_bg():
+    def work():
+        try:
+            items = _build_tag_index()
+            with _tag_index_lock:
+                _tag_index["items"] = items
+                _tag_index["at"] = time.time()
+        finally:
+            with _tag_index_lock:
+                _tag_index["refreshing"] = False
+    threading.Thread(target=work, daemon=True).start()
+
+
+def get_tag_index(force: bool = False) -> dict[str, frozenset[str]]:
+    with _tag_index_lock:
+        cached = _tag_index["items"]
+        stale = (time.time() - _tag_index["at"]) > SCAN_TTL
+        if cached is not None and not force:
+            if stale and not _tag_index["refreshing"]:
+                _tag_index["refreshing"] = True
+                need_bg = True
+            else:
+                need_bg = False
+        else:
+            need_bg = False
+    if cached is not None and not force:
+        if need_bg:
+            _tag_index_refresh_bg()
+        return cached
+    cached = _build_tag_index()
+    with _tag_index_lock:
+        _tag_index["items"] = cached
+        _tag_index["at"] = time.time()
+    return cached
+
+
 def get_batch() -> dict:
     with STATE["batch_lock"]:
         return dict(STATE["batch"])
@@ -1393,6 +1454,16 @@ class Handler(BaseHTTPRequestHandler):
                     "steps": STATE["steps"],
                     "special_dir": str(SPECIAL_DIR),
                 })
+                return
+            if u.path == "/api/tag_search":
+                q = qs.get("q", [""])[0]
+                query_tags = [t.lower() for t in split_tags([q])]
+                if not query_tags:
+                    self._send_json({"rels": []})
+                    return
+                idx = get_tag_index(force=qs.get("force", [""])[0] == "1")
+                rels = [rel for rel, tags in idx.items() if all(t in tags for t in query_tags)]
+                self._send_json({"rels": rels, "tags": query_tags})
                 return
             if u.path == "/api/thumb":
                 rel = qs.get("rel", [""])[0]

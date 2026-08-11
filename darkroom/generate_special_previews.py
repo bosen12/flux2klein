@@ -25,6 +25,7 @@ generate_special_previews.py
 from __future__ import annotations
 
 import argparse
+import ast
 import copy
 import importlib.util
 import json
@@ -141,6 +142,45 @@ def load_lib(py_path: Path) -> tuple[list[str], list[str], list[str]]:
     pos = list(getattr(mod, "POSITIVE", []) or [])
     neg = list(getattr(mod, "NEGATIVE", []) or [])
     return req, pos, neg
+
+
+_TAG_KEYMAP = {"REQUIRED_POSITIVE": 0, "POSITIVE": 1, "NEGATIVE": 2}
+
+
+def parse_lib_ast(py_path: Path) -> tuple[list[str], list[str], list[str]]:
+    """回傳 (REQUIRED_POSITIVE, POSITIVE, NEGATIVE)，跟 load_lib() 同樣的資料，但用
+    ast.literal_eval 唯讀解析、不 import／不執行檔案——建標籤索引要一次掃過全部詞庫
+    （上萬個檔案），用 load_lib() 的 importlib 逐一 exec_module 太重。跟 serve.py 的
+    serve_prompt_detail()（面板詞庫端點）用同一招，兩邊解析結果本來就該一致。"""
+    out: list[list[str]] = [[], [], []]
+    tree = ast.parse(py_path.read_text(encoding="utf-8"))
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for t in node.targets:
+            if isinstance(t, ast.Name) and t.id in _TAG_KEYMAP:
+                try:
+                    val = ast.literal_eval(node.value)
+                except Exception:
+                    val = []
+                if isinstance(val, list):
+                    out[_TAG_KEYMAP[t.id]] = [str(x) for x in val]
+    return out[0], out[1], out[2]
+
+
+def split_tags(items: list[str]) -> list[str]:
+    """把 REQUIRED_POSITIVE/POSITIVE/NEGATIVE 的字串元素再拆一次：詞庫檔案裡同一個
+    標籤有時寫成獨立元素、有時整組塞進一個字串（"A,B,C"／"A, B, C,"／"A,B, C," 都有人
+    寫過，逗號後面有沒有空白、結尾有沒有多逗號不一致），這裡統一 split(",") + strip()，
+    把每個字串元素再拆成一串「原子標籤」，過濾掉拆出來的空字串。跟 build_prompt()／
+    build_negative() 既有的 split(",") 是同一招，只是抽成共用函式給標籤搜尋用。"""
+    out: list[str] = []
+    for item in items:
+        for piece in str(item).split(","):
+            t = piece.strip()
+            if t:
+                out.append(t)
+    return out
 
 
 def build_prompt(req: list[str], pos: list[str]) -> str:
