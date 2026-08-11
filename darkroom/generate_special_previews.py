@@ -72,9 +72,17 @@ DEFAULT_NEG = (
 # ---------------------------------------------------------------------------
 # ComfyUI HTTP
 # ---------------------------------------------------------------------------
+# urllib 預設不帶 User-Agent（送出去是空的，或某些版本是 "Python-urllib/3.x"）。
+# RunPod 的代理會把沒有 UA 的請求當爬蟲擋掉、回 403——本機直連 ComfyUI 不會遇到，
+# 只有透過 RunPod 這種反向代理才會踩到，坑很隱蔽：resolve_comfy_base() 探測失敗後
+# 靜默 fallback 回本機 127.0.0.1:8188，表面上「連上了」，實際上整個是本機顯卡在跑，
+# 不是 RunPod 的 GPU。
+_UA_HEADERS = {"User-Agent": "darkroom-preview-ui/1.0"}
+
+
 def http_json(method: str, url: str, data: dict | None = None, timeout: float = 60):
     body = None
-    headers = {}
+    headers = dict(_UA_HEADERS)
     if data is not None:
         body = json.dumps(data).encode("utf-8")
         headers["Content-Type"] = "application/json"
@@ -87,7 +95,7 @@ def http_json(method: str, url: str, data: dict | None = None, timeout: float = 
 
 
 def http_bytes(url: str, timeout: float = 120) -> bytes:
-    req = urllib.request.Request(url, method="GET")
+    req = urllib.request.Request(url, headers=dict(_UA_HEADERS), method="GET")
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read()
 

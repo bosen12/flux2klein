@@ -322,6 +322,7 @@ Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188
 | `index.html` / `darkroom.css` / `darkroom.js` | 暗房前端（瀏覽/生成 ＋ 打標**合併成一頁**）。舊網址 `/tag` 保留，回同一頁並自動進打標模式 |
 | `preview_ui.bat` | 啟動詞庫暗房（`special_prompts`） |
 | `preview_ui_animebot.bat` | 啟動詞庫暗房（改讀 `animebot\special_prompts`，同 port 一次只能開一個） |
+| `preview_ui_runpod.bat` | 啟動詞庫暗房，`--comfy` 指到 RunPod pod 的 ComfyUI 代理網址、`--port 7861`（跟本機那份 7860 錯開，可同時開）。詞庫檔還是讀本機這份，只有實際生成送去租的 GPU |
 | `preview_config.example.json` | 暗房設定範本（複製成同目錄的 `preview_config.json`，後者已 gitignore）。**`serve.py` 也讀這份**（`darkroom/preview_config.json` 的 `special_dir`），兩邊詞庫選單同步 |
 | `.darkroom_meta/` | 依 dataset 分檔的旗標／收藏／稀有度側檔（已 gitignore） |
 | `.thumb_cache/` | 縮圖快取（已 gitignore） |

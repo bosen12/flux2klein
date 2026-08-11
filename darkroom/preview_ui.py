@@ -33,6 +33,7 @@ import random
 import re
 import shutil
 import socket
+import ssl
 import subprocess
 import sys
 import threading
@@ -1067,10 +1068,17 @@ def _comfy_ws_generate(base: str, wf: dict, timeout: float, on_preview,
     # --- 握手 ---
     try:
         sock = socket.create_connection((host, port), timeout=15)
+        if u.scheme == "https":
+            # base 是 https（例如 RunPod 代理）時，ComfyUI 那端的 TLS 是代理終結的，
+            # 這個原始 socket 沒包 TLS 會直接對著加密流量做明文 HTTP 握手，保證失敗
+            # （退化成純輪詢，看不到即時預覽）。本機 http://127.0.0.1 不受影響。
+            ctx = ssl.create_default_context()
+            sock = ctx.wrap_socket(sock, server_hostname=host)
         sock.settimeout(max(60.0, float(timeout)))
         key = base64.b64encode(os.urandom(16)).decode()
         req = (f"GET /ws?clientId={client_id} HTTP/1.1\r\nHost: {host}:{port}\r\n"
                "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+               "User-Agent: darkroom-preview-ui/1.0\r\n"
                f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n")
         sock.sendall(req.encode())
         buf = b""
