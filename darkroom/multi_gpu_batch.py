@@ -184,13 +184,16 @@ def main():
     plog(f"共 {len(live_endpoints)} 台可用")
 
     plog("掃描缺圖的詞庫...")
+    missing = [py for py in iter_libraries(None) if find_image(py) is None]
+    # 打亂順序（跟暗房本體「補缺少」同一個道理）：iter_libraries() 回傳的是照
+    # 資料夾排序，不打亂的話中途沒跑完會變成前面幾個資料夾補滿、後面完全沒碰，
+    # 隨機分佈才能讓「跑到一半」的結果也大致涵蓋全部資料夾。
+    random.shuffle(missing)
     task_q: "queue.Queue[tuple[Path, int]]" = queue.Queue()
-    total = 0
-    for py in iter_libraries(None):
-        if find_image(py) is None:
-            task_q.put((py, 0))
-            total += 1
-    plog(f"共 {total} 筆缺圖")
+    for py in missing:
+        task_q.put((py, 0))
+    total = len(missing)
+    plog(f"共 {total} 筆缺圖（已打亂順序）")
     if total == 0:
         plog("沒有缺圖，結束。")
         return
