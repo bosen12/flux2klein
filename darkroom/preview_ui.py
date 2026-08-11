@@ -815,6 +815,9 @@ def _tag_index_refresh_bg():
     threading.Thread(target=work, daemon=True).start()
 
 
+_tag_index_build_lock = threading.Lock()
+
+
 def get_tag_index(force: bool = False) -> dict[str, frozenset[str]]:
     with _tag_index_lock:
         cached = _tag_index["items"]
@@ -831,11 +834,20 @@ def get_tag_index(force: bool = False) -> dict[str, frozenset[str]]:
         if need_bg:
             _tag_index_refresh_bg()
         return cached
-    cached = _build_tag_index()
-    with _tag_index_lock:
-        _tag_index["items"] = cached
-        _tag_index["at"] = time.time()
-    return cached
+    # 還沒建過索引（或要求強制重建）：用一把鎖序列化「真的動手建」這一步。開機暖快取
+    # 的背景執行緒跟使用者第一次搜尋標籤幾乎同時抵達時，兩邊都會走到這裡；沒有這把鎖
+    # 兩邊會各自掃一次全部詞庫（實測真的重現過：同時建了兩次索引，各花 5~8s）。鎖住後
+    # 第二個呼叫等第一個建完，重新讀一次快取直接吃現成的，不用再掃一次。
+    with _tag_index_build_lock:
+        with _tag_index_lock:
+            cached = _tag_index["items"]
+        if cached is not None and not force:
+            return cached
+        cached = _build_tag_index()
+        with _tag_index_lock:
+            _tag_index["items"] = cached
+            _tag_index["at"] = time.time()
+        return cached
 
 
 def get_batch() -> dict:
@@ -1862,6 +1874,9 @@ def main():
     srv = ThreadingHTTPServer((bind_host, port), Handler)
     # 開機就先在背景把詞庫掃一遍暖快取，第一次開頁的 /api/libs 才不用等 ~1s 掃描
     threading.Thread(target=lambda: scan_libraries(), daemon=True).start()
+    # 標籤索引同一招暖快取：不暖的話，第一次有人用「搜尋標籤」要現場建索引
+    # （25744 個檔案實測約 3.3~4.8s），使用者會覺得標籤搜尋「第一次特別慢」。
+    threading.Thread(target=lambda: get_tag_index(), daemon=True).start()
     if not args.no_open:
         try:
             import webbrowser
