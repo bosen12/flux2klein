@@ -161,17 +161,21 @@ def main():
         plog("沒有缺圖，結束。")
         return
 
+    concurrency = max(1, int(cfg.get("concurrency", 2)))
+    plog(f"每台 ComfyUI 併發 {concurrency}（跟 preview_config.json 的 concurrency 一致）")
+
     stats = {"done": 0, "ok": 0, "fail": 0, "total": total}
     stats_lock = threading.Lock()
     stop_flag = [False]
     threads = []
     for i, base in enumerate(live_endpoints):
-        name = f"worker{i}({base})"
-        t = threading.Thread(target=worker,
-                              args=(name, base, task_q, template, steps, stats, stats_lock, stop_flag),
-                              daemon=True)
-        t.start()
-        threads.append(t)
+        for slot in range(concurrency):
+            name = f"worker{i}.{slot}({base})"
+            t = threading.Thread(target=worker,
+                                  args=(name, base, task_q, template, steps, stats, stats_lock, stop_flag),
+                                  daemon=True)
+            t.start()
+            threads.append(t)
 
     try:
         while any(t.is_alive() for t in threads):
