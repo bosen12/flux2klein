@@ -6,5 +6,7 @@
   "host": "0.0.0.0",
   "port": 7860,
   "steps": 25,
-  "concurrency": 2
+  "concurrency": 2,
+  "_comfy_endpoints說明": "只給 multi_gpu_batch.py 用（一次性多卡補缺圖）。填想同時使用的 ComfyUI 位址，本機＋租的 GPU（RunPod 之類的代理網址）都放這裡。省略就只用本機那張。RunPod 的網址是每次租用機器才有的，不要寫死進 .py 檔案，只放在這個已 gitignore 的設定檔。",
+  "comfy_endpoints": ["http://127.0.0.1:8188"]
 }

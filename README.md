@@ -322,8 +322,8 @@ Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188
 | `index.html` / `darkroom.css` / `darkroom.js` | 暗房前端（瀏覽/生成 ＋ 打標**合併成一頁**）。舊網址 `/tag` 保留，回同一頁並自動進打標模式 |
 | `preview_ui.bat` | 啟動詞庫暗房（`special_prompts`） |
 | `preview_ui_animebot.bat` | 啟動詞庫暗房（改讀 `animebot\special_prompts`，同 port 一次只能開一個） |
-| `preview_ui_runpod.bat` | 啟動詞庫暗房，`--comfy` 指到 RunPod pod 的 ComfyUI 代理網址、`--port 7861`（跟本機那份 7860 錯開，可同時開）。詞庫檔還是讀本機這份，只有實際生成送去租的 GPU |
-| `preview_config.example.json` | 暗房設定範本（複製成同目錄的 `preview_config.json`，後者已 gitignore）。**`serve.py` 也讀這份**（`darkroom/preview_config.json` 的 `special_dir`），兩邊詞庫選單同步 |
+| `multi_gpu_batch.py` / `multi_gpu_batch.bat` | **一次性**多 GPU 補缺圖工具，跟 `preview_ui.py` 分開、不是常駐服務。讀 `preview_config.json` 的 `comfy_endpoints` 清單（本機＋租的 GPU，例如 RunPod 代理網址），每台各開一條 worker thread 搶同一份缺圖佇列，誰先做完誰先領下一張，天生照各自速度分配。平常瀏覽/單張生成還是用 `preview_ui.bat`，這支只在需要一次補完一大批缺圖時跑 |
+| `preview_config.example.json` | 暗房設定範本（複製成同目錄的 `preview_config.json`，後者已 gitignore）。**`serve.py` 也讀這份**（`darkroom/preview_config.json` 的 `special_dir`），兩邊詞庫選單同步。`comfy_endpoints` 欄位只給 `multi_gpu_batch.py` 用 |
 | `.darkroom_meta/` | 依 dataset 分檔的旗標／收藏／稀有度側檔（已 gitignore） |
 | `.thumb_cache/` | 縮圖快取（已 gitignore） |
 | `flags.json` / `favorites.json` | 舊版共用檔，僅供首次遷移用（現行資料在 `.darkroom_meta/`，這兩份已是歷史遺留、不影響功能） |
