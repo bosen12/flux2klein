@@ -7,6 +7,6 @@
   "port": 7860,
   "steps": 25,
   "concurrency": 2,
-  "_comfy_endpoints說明": "只給 multi_gpu_batch.py 用（一次性多卡補缺圖）。填想同時使用的 ComfyUI 位址，本機＋租的 GPU（RunPod 之類的代理網址）都放這裡。省略就只用本機那張。RunPod 的網址是每次租用機器才有的，不要寫死進 .py 檔案，只放在這個已 gitignore 的設定檔。",
+  "_comfy_endpoints說明": "只給 multi_gpu_batch.py 用（一次性多卡補缺圖）。填想同時使用的 ComfyUI 位址，本機＋租的 GPU（RunPod／vast.ai 之類的代理網址）都放這裡。省略就只用本機那張。租用機器的網址是每次租用才有的，不要寫死進 .py 檔案，只放在這個已 gitignore 的設定檔。vast.ai 對外 port 一律要 Basic Auth，可以寫成 https://vastai:你的OPEN_BUTTON_TOKEN@xxx.trycloudflare.com 這種帶帳密的網址；也要注意 vast.ai 卡片上「Open」給的直連 IP:port 常常連不到，要用它自動建的 trycloudflare.com tunnel 網址。",
   "comfy_endpoints": ["http://127.0.0.1:8188"]
 }

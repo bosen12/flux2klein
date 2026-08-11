@@ -1076,9 +1076,14 @@ def _comfy_ws_generate(base: str, wf: dict, timeout: float, on_preview,
             sock = ctx.wrap_socket(sock, server_hostname=host)
         sock.settimeout(max(60.0, float(timeout)))
         key = base64.b64encode(os.urandom(16)).decode()
+        auth_line = ""
+        if u.username:
+            userinfo = u.username + (f":{u.password}" if u.password else "")
+            auth_line = "Authorization: Basic " + base64.b64encode(userinfo.encode("utf-8")).decode("ascii") + "\r\n"
         req = (f"GET /ws?clientId={client_id} HTTP/1.1\r\nHost: {host}:{port}\r\n"
                "Upgrade: websocket\r\nConnection: Upgrade\r\n"
                "User-Agent: darkroom-preview-ui/1.0\r\n"
+               f"{auth_line}"
                f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n")
         sock.sendall(req.encode())
         buf = b""

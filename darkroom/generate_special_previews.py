@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import base64
 import copy
 import importlib.util
 import json
@@ -80,13 +81,29 @@ DEFAULT_NEG = (
 _UA_HEADERS = {"User-Agent": "darkroom-preview-ui/1.0"}
 
 
+def _split_basic_auth(url: str) -> tuple[str, dict]:
+    """comfy_endpoints 有些位址帶 user:pass@host（例如 vast.ai 的 Instance Portal，
+    對外 port 一律要 Basic Auth，帳號固定 vastai、密碼是每台 instance 專屬的
+    OPEN_BUTTON_TOKEN）。urllib 不會自動把 URL 裡的 userinfo 轉成 Authorization
+    header，要自己拆出來組。回傳 (拿掉 userinfo 的乾淨 URL, 要疊加的 headers)。"""
+    u = urllib.parse.urlsplit(url)
+    if not u.username:
+        return url, {}
+    userinfo = u.username + (f":{u.password}" if u.password else "")
+    auth = base64.b64encode(userinfo.encode("utf-8")).decode("ascii")
+    netloc = u.hostname + (f":{u.port}" if u.port else "")
+    clean = urllib.parse.urlunsplit((u.scheme, netloc, u.path, u.query, u.fragment))
+    return clean, {"Authorization": f"Basic {auth}"}
+
+
 def http_json(method: str, url: str, data: dict | None = None, timeout: float = 60):
     body = None
-    headers = dict(_UA_HEADERS)
+    clean_url, auth_headers = _split_basic_auth(url)
+    headers = dict(_UA_HEADERS, **auth_headers)
     if data is not None:
         body = json.dumps(data).encode("utf-8")
         headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(url, data=body, headers=headers, method=method)
+    req = urllib.request.Request(clean_url, data=body, headers=headers, method=method)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         raw = resp.read()
         if not raw:
@@ -95,7 +112,8 @@ def http_json(method: str, url: str, data: dict | None = None, timeout: float = 
 
 
 def http_bytes(url: str, timeout: float = 120) -> bytes:
-    req = urllib.request.Request(url, headers=dict(_UA_HEADERS), method="GET")
+    clean_url, auth_headers = _split_basic_auth(url)
+    req = urllib.request.Request(clean_url, headers=dict(_UA_HEADERS, **auth_headers), method="GET")
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read()
 

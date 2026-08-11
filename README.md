@@ -322,7 +322,7 @@ Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188
 | `index.html` / `darkroom.css` / `darkroom.js` | 暗房前端（瀏覽/生成 ＋ 打標**合併成一頁**）。舊網址 `/tag` 保留，回同一頁並自動進打標模式 |
 | `preview_ui.bat` | 啟動詞庫暗房（`special_prompts`） |
 | `preview_ui_animebot.bat` | 啟動詞庫暗房（改讀 `animebot\special_prompts`，同 port 一次只能開一個） |
-| `multi_gpu_batch.py` / `multi_gpu_batch.bat` | **一次性**多 GPU 補缺圖工具，跟 `preview_ui.py` 分開、不是常駐服務。讀 `preview_config.json` 的 `comfy_endpoints` 清單（本機＋租的 GPU，例如 RunPod 代理網址），每台各開一條 worker thread 搶同一份缺圖佇列，誰先做完誰先領下一張，天生照各自速度分配。平常瀏覽/單張生成還是用 `preview_ui.bat`，這支只在需要一次補完一大批缺圖時跑 |
+| `multi_gpu_batch.py` / `multi_gpu_batch.bat` | **一次性**多 GPU 補缺圖工具，跟 `preview_ui.py` 分開、不是常駐服務。讀 `preview_config.json` 的 `comfy_endpoints` 清單（本機＋租的 GPU，例如 RunPod／vast.ai 的代理網址），每台開 `concurrency` 條 worker thread 搶同一份缺圖佇列，誰先做完誰先領下一張，天生照各自速度分配。`comfy_endpoints` 可以用 `https://帳號:密碼@主機` 這種帶認證的網址（vast.ai 對外 port 一律要 Basic Auth）。某台跑到一半斷線會自動把失敗的項目放回佇列給還活著的接手（最多重試 3 次），連續失敗 3 次就判定那台斷線、自動停止派工作給它，不會卡住或錯殺項目。平常瀏覽/單張生成還是用 `preview_ui.bat`，這支只在需要一次補完一大批缺圖時跑 |
 | `preview_config.example.json` | 暗房設定範本（複製成同目錄的 `preview_config.json`，後者已 gitignore）。**`serve.py` 也讀這份**（`darkroom/preview_config.json` 的 `special_dir`），兩邊詞庫選單同步。`comfy_endpoints` 欄位只給 `multi_gpu_batch.py` 用 |
 | `.darkroom_meta/` | 依 dataset 分檔的旗標／收藏／稀有度側檔（已 gitignore） |
 | `.thumb_cache/` | 縮圖快取（已 gitignore） |

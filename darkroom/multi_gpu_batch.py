@@ -23,6 +23,12 @@ thread 搶同一個 STATE['gen_sem']（同一台 ComfyUI）」改成「每條 wo
 沿用，RunPod 那個位址連不上時會靜默退回本機 127.0.0.1:8188，導致兩個 worker
 其實都在打本機那張卡，多卡平行就變假的了（跟 CLAUDE.md 記錄過的那個坑一樣）。
 這裡連不上的 endpoint 會直接跳過、印出來，不會偷偷換成別的位址。
+
+跑到一半某台斷線／壞掉怎麼辦：那台生成失敗的項目會**放回共用佇列**給還活著
+的 endpoint 接手（同一項目最多重試 3 次才真的放棄標成失敗），該台連續失敗
+3 次就判定斷線、自己停止領新工作，不會卡在失敗迴圈裡把項目白白吃掉。全部
+endpoint 都斷線的話會直接中止（不會傻等到逐張逾時），剩下沒做完的項目留在
+原地——之後端點恢復連線，重跑這支程式會自動只補還缺的那些。
 """
 
 from __future__ import annotations
@@ -64,6 +70,13 @@ DEFAULT_COMFY_ENDPOINTS = ["http://127.0.0.1:8188"]
 TIMEOUT = 600
 OUT_EXT = ".webp"
 
+# 同一個項目最多被重試幾次（不同 endpoint 各算一次）才真的放棄標成失敗。
+MAX_ITEM_RETRIES = 3
+# 同一台 endpoint 連續失敗幾次，就判定它斷線／壞掉，停止繼續派工作給它
+# （不然一台斷線的話，它的 worker 會一直領新項目、一直失敗，白白把項目
+# 從佇列吃掉又標成失敗，本來可以留給還活著的那幾台做）。
+MAX_CONSECUTIVE_FAILS = 3
+
 
 def plog(msg: str):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
@@ -78,13 +91,21 @@ def check_endpoint(base: str, timeout: float = 5.0) -> bool:
         return False
 
 
-def worker(name: str, base: str, task_q: "queue.Queue[Path]", template: dict, steps: int,
-           stats: dict, stats_lock: threading.Lock, stop_flag: list):
+def worker(name: str, base: str, task_q: "queue.Queue[tuple[Path, int]]", template: dict, steps: int,
+           stats: dict, stats_lock: threading.Lock, stop_flag: list,
+           dead_endpoints: set, dead_lock: threading.Lock):
+    consecutive_fails = 0
     while not stop_flag[0]:
+        with dead_lock:
+            if base in dead_endpoints:
+                return  # 這台已經被判定斷線，這條 worker 不再領新工作
         try:
-            py = task_q.get_nowait()
+            py, retry = task_q.get(timeout=0.5)
         except queue.Empty:
-            return
+            # 佇列暫時空了，但可能是別的 worker 領走的項目待會失敗又會放回來，
+            # 不能直接當作「沒工作了」——這裡只是先繼續等，真正的收尾判斷交給
+            # main() 的 task_q.join()。
+            continue
         try:
             req, pos, neg = load_lib(py)
             positive = build_prompt(req, pos)
@@ -99,6 +120,7 @@ def worker(name: str, base: str, task_q: "queue.Queue[Path]", template: dict, st
             out_img = py.with_suffix(OUT_EXT)
             out_img.write_bytes(img_bytes)
             dt = time.time() - t0
+            consecutive_fails = 0
             with stats_lock:
                 stats["ok"] += 1
                 stats["done"] += 1
@@ -106,12 +128,24 @@ def worker(name: str, base: str, task_q: "queue.Queue[Path]", template: dict, st
             plog(f"[{name}] OK  {py.parent.name}/{py.stem}  {dt:.1f}s  "
                  f"{len(img_bytes)//1024}KB  ({done}/{total} · ok {ok} · fail {fail})")
         except Exception as e:
-            with stats_lock:
-                stats["fail"] += 1
-                stats["done"] += 1
-                done, ok, fail, total = stats["done"], stats["ok"], stats["fail"], stats["total"]
-            plog(f"[{name}] ERR {py.parent.name}/{py.stem}  {type(e).__name__}: {e}  "
-                 f"({done}/{total} · ok {ok} · fail {fail})")
+            consecutive_fails += 1
+            if retry + 1 < MAX_ITEM_RETRIES:
+                task_q.put((py, retry + 1))
+                plog(f"[{name}] ERR {py.parent.name}/{py.stem}  {type(e).__name__}: {e}  "
+                     f"→ 放回佇列給其他 endpoint 重試（第 {retry + 1} 次）")
+            else:
+                with stats_lock:
+                    stats["fail"] += 1
+                    stats["done"] += 1
+                    done, ok, fail, total = stats["done"], stats["ok"], stats["fail"], stats["total"]
+                plog(f"[{name}] ERR {py.parent.name}/{py.stem}  {type(e).__name__}: {e}  "
+                     f"→ 已重試 {MAX_ITEM_RETRIES} 次都失敗，放棄這張 "
+                     f"({done}/{total} · ok {ok} · fail {fail})")
+            if consecutive_fails >= MAX_CONSECUTIVE_FAILS:
+                with dead_lock:
+                    dead_endpoints.add(base)
+                plog(f"[{name}] 連續失敗 {consecutive_fails} 次，判定 {base} 斷線／異常，"
+                     f"這台停止領新工作（還活著的 endpoint 繼續跑）")
         finally:
             task_q.task_done()
 
@@ -150,11 +184,11 @@ def main():
     plog(f"共 {len(live_endpoints)} 台可用")
 
     plog("掃描缺圖的詞庫...")
-    task_q: "queue.Queue[Path]" = queue.Queue()
+    task_q: "queue.Queue[tuple[Path, int]]" = queue.Queue()
     total = 0
     for py in iter_libraries(None):
         if find_image(py) is None:
-            task_q.put(py)
+            task_q.put((py, 0))
             total += 1
     plog(f"共 {total} 筆缺圖")
     if total == 0:
@@ -167,31 +201,47 @@ def main():
     stats = {"done": 0, "ok": 0, "fail": 0, "total": total}
     stats_lock = threading.Lock()
     stop_flag = [False]
+    dead_endpoints: set = set()
+    dead_lock = threading.Lock()
     threads = []
     for i, base in enumerate(live_endpoints):
         for slot in range(concurrency):
             name = f"worker{i}.{slot}({base})"
             t = threading.Thread(target=worker,
-                                  args=(name, base, task_q, template, steps, stats, stats_lock, stop_flag),
+                                  args=(name, base, task_q, template, steps, stats, stats_lock,
+                                        stop_flag, dead_endpoints, dead_lock),
                                   daemon=True)
             t.start()
             threads.append(t)
 
+    # 用 task_q.join() 判斷「真的全部做完了」（含重試被放回去的項目）——不能只看
+    # 佇列是否清空一次，失敗重試會讓佇列暫時空了又補回東西。背景 thread 等 join()
+    # 回來就設旗標，主迴圈定期醒來檢查有沒有「全部 endpoint 都斷線」這種要提早
+    # 中止的情況。
+    done_event = threading.Event()
+
+    def _joiner():
+        task_q.join()
+        done_event.set()
+    threading.Thread(target=_joiner, daemon=True).start()
+
     try:
-        while any(t.is_alive() for t in threads):
-            for t in threads:
-                t.join(timeout=1.0)
+        while not done_event.is_set():
+            done_event.wait(timeout=1.0)
+            with dead_lock:
+                all_dead = len(dead_endpoints) >= len(live_endpoints)
+            if all_dead and not done_event.is_set():
+                plog("所有 ComfyUI 端點都判定斷線／異常，中止（還沒做完的項目留在佇列，"
+                     "之後端點恢復後重跑這支程式會自動只補剩下的）。")
+                stop_flag[0] = True
+                break
     except KeyboardInterrupt:
         plog("收到中止：在途的生成會跑完，還沒領到的項目不會再送出去...")
         stop_flag[0] = True
-        try:
-            while True:
-                task_q.get_nowait()
-                task_q.task_done()
-        except queue.Empty:
-            pass
-        for t in threads:
-            t.join()
+
+    stop_flag[0] = True  # 讓還卡在 task_q.get(timeout=0.5) 裡等的 worker 自然退出
+    for t in threads:
+        t.join(timeout=5.0)
 
     plog(f"完成：{stats['done']}/{stats['total']} · ok {stats['ok']} · fail {stats['fail']}")
 
