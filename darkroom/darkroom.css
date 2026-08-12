@@ -20,7 +20,12 @@
   --focus:   #eaad57;
   --mono: ui-monospace, "Cascadia Code", "Cascadia Mono", Consolas, "Roboto Mono", monospace;
   --sans: -apple-system, "Segoe UI", "Microsoft JhengHei", "PingFang TC", sans-serif;
-  --radius: 13px;
+  /* 圓角半徑。squircle 在相同半徑下「切掉」的角比正圓少（見下方 corner-shape 一節），
+     所以換成連續曲率之後，面級元素的半徑一併放大約 1.25 倍才維持原本的柔軟度
+     ——這個比例來自 Apple 自己的做法（iOS app icon 從舊版的正圓角 ~17.5% 換成連續
+     曲率時，半徑改成 22.37%，比值 ≈1.28）。10px 以下的小晶片／小鈕不動，那個尺寸下
+     半徑差 2px 只會讓元件看起來腫，形狀差異本來也看不出來。 */
+  --radius: 16px;
   --shadow: 0 12px 34px -8px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.35);
   /* motion tokens ── 與主面板 styles.css 同一套動效語言（值刻意相同，方便維護） */
   --ease-out: cubic-bezier(.22,.61,.36,1);   /* 柔和加速、緩降落定（= KLEIN --ease-out） */
@@ -38,6 +43,35 @@
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes railIn { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
 * { box-sizing: border-box; }
+
+/* ── 連續曲率圓角（Apple 那種「squircle」）─────────────────────────
+   一般 `border-radius` 的角是**正圓弧**：從直邊切進圓弧的那一瞬間，曲率從 0 直接
+   跳到 1/r，眼睛看得出那兩個「接點」，角落因此顯得有點生硬。Apple 從 iOS 7 起
+   全系統改用**連續曲率**（SwiftUI 的 `.continuous`、UIKit 的 continuous corner
+   curve）：曲率是漸進變化的，沒有接點，角落與直邊融成一條線。
+
+   數學上那是一條**超橢圓**（superellipse）：|x|^n + |y|^n = 1。n=2 就是正圓，
+   Apple 的形狀約在 n=4。CSS Borders Level 4 的 `corner-shape` 直接提供這個：
+   `superellipse(K)` 的實際指數是 2K，所以關鍵字 `squircle` = `superellipse(2)`
+   = n=4，正好對上 Apple 的角。
+
+   為什麼可以放心用萬用選擇器：
+   ① `corner-shape` 只在 `border-radius` 不為 0 時才有作用，半徑 0 的元素完全
+      不受影響，所以「掃全部」不會誤傷任何東西；
+   ② 不支援的瀏覽器會直接丟掉這個宣告，`border-radius` 原本的正圓角照常生效，
+      天然就是漸進增強，不需要 @supports 包起來；
+   ③ 萬用選擇器的優先權是 0，任何有 class 的規則都蓋得過它——例外（見下）就寫在
+      各自原本那條規則裡，不用另外維護一份清單。
+   ④ 這是瀏覽器原生的角形狀，`overflow: hidden` 的裁切、邊框、box-shadow 全部
+      跟著變成同一個形狀；用 clip-path／SVG mask 手刻 squircle 這三樣都會壞掉。
+
+   例外：**真圓（50%）與膠囊（999px）維持 `corner-shape: round`**。Apple 自己也是
+   如此——圓點就是圓點（`Circle()`）、膠囊就是膠囊（`Capsule()`），不是超橢圓。
+   半徑到達 50% 時 squircle 會把圓變成一顆鼓起來的方塊、把膠囊變成兩端削平的橢圓，
+   兩個都不是原本要的形狀。那些規則各自在 `border-radius` 旁邊標了 `corner-shape:
+   round`，改動時一眼看得到。 */
+*, *::before, *::after { corner-shape: squircle; }
+
 html, body { height: 100%; }
 body { margin: 0; font-family: var(--sans); background: var(--bg); color: var(--ink);
        display: flex; flex-direction: column; overflow: hidden; }
@@ -113,7 +147,7 @@ input[type=text]::placeholder { color: var(--faint); }
 .boot-logo { position: relative; width: 104px; height: 104px; display: grid; place-items: center; }
 .boot-ap { width: 50px; height: 50px; color: var(--amber); fill: none;
   filter: drop-shadow(0 0 10px rgba(234,173,87,.55)); animation: apSpin 9s linear infinite; }
-.boot-ring { position: absolute; inset: 0; border-radius: 50%;
+.boot-ring { position: absolute; inset: 0; border-radius: 50%; corner-shape: round;
   background: conic-gradient(from var(--beam), transparent 0 62%, rgba(234,173,87,.14) 70%, var(--amber) 86%, #ffe9b8 93%, transparent 100%);
   -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
           mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
@@ -167,7 +201,7 @@ input[type=text]::placeholder { color: var(--faint); }
    寬度不變，右側按鈕群才不會因為 spacer 重排而瞬移（換頁時尤其明顯）。170 = 最長
    字串「…steps 250」151px + led/gap/餘裕。只作用在頂列 #conn，不動 batch-progress。 */
 #conn { min-width: 170px; justify-content: flex-end; }
-.conn .led { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+.conn .led { width: 7px; height: 7px; border-radius: 50%; corner-shape: round; background: var(--faint); }
 .conn.on .led { background: var(--ok); box-shadow: 0 0 7px var(--ok); }
 
 /* ── 主體 ─────────────────────────────────────────────────────── */
@@ -227,9 +261,12 @@ input[type=text]::placeholder { color: var(--faint); }
 .folder-name { font-size: 13px; color: var(--ink); line-height: 1.3; word-break: break-all;
                overflow: hidden; text-overflow: ellipsis; }
 .folder-count { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--faint); flex: none; }
-.cover { height: 4px; border-radius: 3px; background: #24262f; margin-top: 7px; overflow: hidden; }
+/* 覆蓋率條是 4px/6px 高的細長條，半徑已經接近半高＝實質上是膠囊。膠囊維持正圓端頭
+   （Apple 的進度條也是 Capsule，不是超橢圓）——squircle 會把兩端削平，這個尺寸下
+   看起來就只是「圓角沒做好」。見檔案開頭 corner-shape 一節的例外說明。 */
+.cover { height: 4px; border-radius: 3px; corner-shape: round; background: #24262f; margin-top: 7px; overflow: hidden; }
 .cover > span { display: block; height: 100%; background: linear-gradient(90deg, var(--amber-d), var(--amber));
-                border-radius: 3px; transition: width .3s ease; }
+                border-radius: 3px; corner-shape: round; transition: width .3s ease; }   /* 同 .cover：填色條也是膠囊 */
 .cover.full > span { background: linear-gradient(90deg, #4f9e6d, var(--ok)); }
 
 /* 內容區 */
@@ -248,7 +285,7 @@ input[type=text]::placeholder { color: var(--faint); }
    自然對到「對這個分類動作」，不用另外說明；只在瀏覽/生圖顯示，打標模式隱藏（打標有自己
    一套 R/S/Z 抽卡打標流程，跟分類抽卡是不同機制）。 */
 .cat-draw-btn { width: 26px; height: 26px; padding: 0; display: grid; place-items: center;
-  font-size: 13px; border-radius: 999px; flex: none; align-self: center;
+  font-size: 13px; border-radius: 999px; corner-shape: round; flex: none; align-self: center;
   transition: transform var(--d-micro) var(--ease-out), border-color var(--d-micro) var(--ease-out), color var(--d-micro) var(--ease-out); }
 .cat-draw-btn:hover { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 45%, var(--line)); transform: scale(1.08); }
 body[data-mode="tag"] .cat-draw-btn { display: none !important; }
@@ -272,11 +309,11 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
 .gen-group button { padding: 5px 10px; font-size: 12px; }
 
 /* 大覆蓋率條 */
-.coverbar { margin: 0 20px 10px; height: 6px; border-radius: 4px; background: #1e2028; overflow: hidden; }
+.coverbar { margin: 0 20px 10px; height: 6px; border-radius: 4px; corner-shape: round; background: #1e2028; overflow: hidden; }   /* 同 .cover：細長進度條維持膠囊 */
 /* 稀有度分布條：目前資料夾/搜尋範圍各等級數量，點晶片只看該等級 */
 .rarity-bar { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 20px 12px; }
 .rarity-bar:empty { display: none; }
-.rar-chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 999px;
+.rar-chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 999px; corner-shape: round;
   background: var(--sunk); border: 1px solid var(--line); color: var(--dim); cursor: pointer; font-size: 12.5px;
   transition: color var(--d-micro) var(--ease-out), border-color var(--d-micro) var(--ease-out), box-shadow var(--d-micro) var(--ease-out); }
 .rar-chip:hover { color: var(--ink); border-color: var(--line-2); }
@@ -284,7 +321,7 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
   font-variant-numeric: tabular-nums; }   /* 切資料夾時數字會變，等寬數字才不會讓晶片寬度抖一下 */
 .rar-chip.on { color: var(--ink); }
 .rar-chip.on .rc-count { color: inherit; }
-.rar-chip .rc-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+.rar-chip .rc-dot { width: 8px; height: 8px; border-radius: 50%; corner-shape: round; background: var(--faint); flex: none; }
 .rc-all .rc-dot { display: none; }
 .rc-untagged  .rc-dot { background: #5a6070; }
 .rc-common    .rc-dot { background: #9aa0ad; }
@@ -298,7 +335,7 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
 .rar-chip.rc-rare.on      { border-color: var(--rar-rare); box-shadow: 0 0 0 1px var(--rar-rare) inset; }
 .rar-chip.rc-special.on   { border-color: var(--rar-special); box-shadow: 0 0 0 1px var(--rar-special) inset; }
 .rar-chip.rc-legendary.on { border-color: #b47bff; box-shadow: 0 0 0 1px #b47bff inset; }
-.coverbar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--amber-d), var(--amber)); transition: width .35s; }
+.coverbar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--amber-d), var(--amber)); corner-shape: round; transition: width .35s; }
 
 /* 卡片牆 */
 .grid { display: grid; gap: 14px; padding: 6px 20px 40px;
@@ -340,7 +377,7 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
   background: radial-gradient(150px circle at var(--mx, 50%) var(--my, 50%), rgba(234,173,87,.28), transparent 62%); }
 .card:hover .thumb::after { opacity: 1; }
 .sparkles { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
-.sparkles i { position: absolute; width: var(--sz, 3px); height: var(--sz, 3px); border-radius: 50%; background: #fff;
+.sparkles i { position: absolute; width: var(--sz, 3px); height: var(--sz, 3px); border-radius: 50%; corner-shape: round; background: #fff;
   box-shadow: 0 0 6px 1px rgba(255,255,255,.9), 0 0 11px 2px rgba(180,123,255,.6);
   opacity: 0; animation: sparkTwinkle 2.4s ease-in-out infinite; }
 @keyframes sparkTwinkle { 0%,100% { opacity: 0; transform: scale(.4); } 45% { opacity: 1; transform: scale(1); } }
@@ -381,7 +418,7 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
          display: none; align-items: center; justify-content: center; z-index: 130; padding: 24px; }   /* 高於抽卡覆蓋層(120)：抽卡點卡片時大圖疊在牌上、關掉回到那批牌 */
 .modal.open { display: flex; animation: fadeIn var(--d-pop) var(--ease-out); }
 .modal-inner { max-width: 1040px; width: 100%; max-height: 92vh; overflow: auto; overscroll-behavior: contain; box-shadow: var(--shadow);
-               background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 22px;
+               background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 22px;
                display: grid; grid-template-columns: minmax(0,1.05fr) minmax(0,1fr); gap: 22px;
                /* 兩欄版面，捲軸一出現欄寬就變——用上一張/下一張連續看圖時（提示詞長短不同，
                   有的要捲有的不用）大圖會一張一個尺寸。永遠預留捲軸位置。 */
@@ -465,7 +502,7 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
 .tarot-card.revealed .tarot-inner { transform: rotateY(0deg); }   /* 翻開：牌面朝上、且非鏡像 */
 .tarot-back, .tarot-front {
   backface-visibility: hidden; -webkit-backface-visibility: hidden;
-  border-radius: 13px; overflow: hidden; border: 1px solid var(--line-2);
+  border-radius: 16px; overflow: hidden; border: 1px solid var(--line-2);
   box-shadow: 0 12px 30px -10px rgba(0,0,0,.6);
 }
 /* 牌面在流內定尺寸（不旋轉＝翻開後非鏡像）；牌背絕對定位疊上、旋轉 180 藏在背面 */
@@ -482,7 +519,7 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
 }
 .tarot-emblem {
   width: 58px; height: 58px; display: grid; place-items: center; font-size: 26px;
-  color: var(--amber); border-radius: 50%;
+  color: var(--amber); border-radius: 50%; corner-shape: round;
   border: 2px solid color-mix(in srgb, var(--amber) 50%, transparent);
   box-shadow: 0 0 18px rgba(234,173,87,.35), inset 0 0 12px rgba(234,173,87,.25);
 }
@@ -520,14 +557,14 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
 }
 /* loader（來源 css-loaders l24，三層同心圓不同速旋轉，橘色）：迴圈動畫維持字面時長 */
 .gen-loader {
-  width: 50px; aspect-ratio: 1; border-radius: 50%;
+  width: 50px; aspect-ratio: 1; border-radius: 50%; corner-shape: round;
   border: 8px solid #0000; border-right-color: #ffa50097;
   position: relative; animation: gen-l24 1s infinite linear;
 }
 .gen-loader::before,
 .gen-loader::after {
   content: ""; position: absolute; inset: -8px;
-  border-radius: 50%; border: inherit;
+  border-radius: 50%; corner-shape: round; border: inherit;
   animation: inherit; animation-duration: 2s;
 }
 .gen-loader::after { animation-duration: 4s; }
@@ -579,7 +616,7 @@ body.selecting .thumb { cursor: pointer; }
 /* 收藏星號：右上角。桌面平常藏、hover 卡片才浮現；已收藏＝金色實心星常駐。
    選取模式讓位給 pick-box（兩者同在右上角）。 */
 .fav-btn { position: absolute; top: 7px; right: 7px; z-index: 4; width: 30px; height: 30px;
-  display: grid; place-items: center; padding: 0; border: none; border-radius: 999px;
+  display: grid; place-items: center; padding: 0; border: none; border-radius: 999px; corner-shape: round;
   background: rgba(18,19,28,.5); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
   color: var(--ink); cursor: pointer; opacity: 0; transform: scale(.82) translateY(-2px);
   transition: opacity var(--d-micro) var(--ease-out), transform var(--d-micro) var(--ease-out),
@@ -760,7 +797,7 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 .cs-scope-block { display: flex; flex-direction: column; gap: 4px; transition: opacity var(--d-micro) var(--ease-out); }
 .cs-scope-label { font-size: 12px; color: var(--dim); }
 .cs-scope-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.cs-skip-toggle { flex: none; font-size: 11px; padding: 3px 9px; border-radius: 999px;
+.cs-skip-toggle { flex: none; font-size: 11px; padding: 3px 9px; border-radius: 999px; corner-shape: round;
   border: 1px solid var(--line-2); background: var(--sunk); color: var(--dim); cursor: pointer;
   transition: border-color var(--d-micro) var(--ease-out), background var(--d-micro) var(--ease-out), color var(--d-micro) var(--ease-out); }
 .cs-skip-toggle:hover { border-color: var(--line-2); color: var(--ink); }
@@ -774,13 +811,13 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 /* 這格鎖定時取代範圍晶片顯示——縮圖跟 .lm-slot-tab 的 28px 縮圖同一個尺寸感，
    hover 走既有的 .lora-preview-tip（showSingleLoraPreviewTip），不用另外做一套。 */
 .cs-locked-card { display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px 5px 5px;
-  border-radius: 999px; background: var(--amber-soft); border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--line)); cursor: default; }
-.cs-locked-card img, .cs-locked-card video, .cs-locked-card .ph { width: 28px; height: 28px; border-radius: 50%;
+  border-radius: 999px; corner-shape: round; background: var(--amber-soft); border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--line)); cursor: default; }
+.cs-locked-card img, .cs-locked-card video, .cs-locked-card .ph { width: 28px; height: 28px; border-radius: 50%; corner-shape: round;
   object-fit: cover; flex: none; background: var(--sunk); }
 .cs-locked-name { font-size: 12px; color: var(--ink); }
 /* 清空鈕，跟 .lm-slot-clear 同一套「小方塊置中符號」做法——這裡是琥珀底，用透明背景＋
    hover 才顯色，不然常駐一個灰底方塊在膠囊型卡片裡會很突兀。 */
-.cs-locked-clear { flex: none; width: 20px; height: 20px; padding: 0; border-radius: 50%; border: 0;
+.cs-locked-clear { flex: none; width: 20px; height: 20px; padding: 0; border-radius: 50%; corner-shape: round; border: 0;
   background: transparent; color: var(--dim); display: grid; place-items: center; cursor: pointer;
   font-size: 11px; transition: background var(--d-micro) var(--ease-out), color var(--d-micro) var(--ease-out); }
 .cs-locked-clear:hover { background: color-mix(in srgb, var(--amber) 30%, transparent); color: var(--ink); }
@@ -911,7 +948,7 @@ body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不�
 .lm-cats { display: flex; flex-wrap: wrap; gap: 6px; padding: 14px 14px 0; flex: none; }
 .lm-cats[hidden] { display: none; }
 .lm-cat { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line-2); background: var(--sunk);
-  color: var(--dim); padding: 5px 10px; border-radius: 999px; font-size: 11.5px; cursor: pointer;
+  color: var(--dim); padding: 5px 10px; border-radius: 999px; corner-shape: round; font-size: 11.5px; cursor: pointer;
   transition: border-color var(--d-micro) var(--ease-out), background var(--d-micro) var(--ease-out), color var(--d-micro) var(--ease-out); }
 .lm-cat:hover { border-color: var(--line-2); color: var(--ink); }
 .lm-cat.on { border-color: var(--amber); background: var(--amber-soft); color: var(--ink); }
@@ -923,7 +960,7 @@ body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不�
 .lm-subcats[hidden] { display: none; }
 .lm-subcats:empty { padding: 0 14px; }
 .lm-subcat { display: inline-flex; align-items: center; gap: 4px; border: 1px solid transparent; background: transparent;
-  color: var(--faint); padding: 3px 9px; border-radius: 999px; font-size: 10.5px; cursor: pointer;
+  color: var(--faint); padding: 3px 9px; border-radius: 999px; corner-shape: round; font-size: 10.5px; cursor: pointer;
   transition: border-color var(--d-micro) var(--ease-out), background var(--d-micro) var(--ease-out), color var(--d-micro) var(--ease-out); }
 .lm-subcat:hover { color: var(--dim); border-color: var(--line-2); }
 .lm-subcat.on { border-color: var(--line-2); background: var(--sunk); color: var(--ink); }
@@ -988,7 +1025,7 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 /* 教學疊層示意用的「參與判斷／已跳過」小標籤，樣式跟真正的 .cs-skip-toggle 一致但
    class 不同（見上面 .lora-help-demo 那條註解，避免跟真正互動的按鈕撞名）。 */
 .help-demo-skip { display: inline-flex; align-items: center; font-size: 11px; padding: 3px 9px;
-  border-radius: 999px; border: 1px solid var(--line-2); background: var(--sunk); color: var(--dim); }
+  border-radius: 999px; corner-shape: round; border: 1px solid var(--line-2); background: var(--sunk); color: var(--dim); }
 .help-demo-skip.active { border-color: var(--amber); background: var(--amber-soft); color: var(--ink); }
 
 /* 選了一個 LoRA、右欄整塊內容重繪時的進場節奏（呼應 animation-systems 的「hero 先動、
@@ -1008,7 +1045,7 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 .lm-actions-row { display: flex; align-items: center; gap: 8px; margin-top: 7px; flex-wrap: wrap; }
 /* 一鍵直達 LoRA Manager 詳情（見 renderLmCurrent 註解）：小徽章式連結 */
 .lm-detail-link { display: inline-flex; align-items: center; gap: 5px;
-  padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--sunk);
+  padding: 3px 9px; border-radius: 999px; corner-shape: round; border: 1px solid var(--line-2); background: var(--sunk);
   color: var(--dim); font-size: 11px; text-decoration: none;
   transition: border-color var(--d-micro) var(--ease-out), color var(--d-micro) var(--ease-out), background var(--d-micro) var(--ease-out); }
 .lm-detail-link:hover { border-color: var(--amber); color: var(--ink); background: var(--amber-soft); }
@@ -1017,7 +1054,7 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
    一致的圓角徽章，因為 base model 是分類性資訊（Illustrious/Pony/SDXL 1.0…），標籤比純
    文字更好辨識、掃過去就懂。純顯示、不可點擊，跟旁邊「詳情」連結（可點）視覺上有區分
    （沒有 hover 態、border 較淡）。 */
-.lm-base-model { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px;
+.lm-base-model { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; corner-shape: round;
   border: 1px solid var(--line); background: transparent; color: var(--faint);
   font-family: var(--mono); font-size: 10.5px; letter-spacing: .2px; }
 
@@ -1055,7 +1092,7 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
    就顯示幾張，一眼比對兩個 LoRA 長什麼樣，不用開大面板。 */
 .lora-preview-tip { position: fixed; z-index: 200; pointer-events: none;
   display: flex; gap: 10px; background: var(--panel); border: 1px solid var(--line-2);
-  border-radius: 12px; box-shadow: var(--shadow); padding: 10px;
+  border-radius: 15px; box-shadow: var(--shadow); padding: 10px;
   opacity: 0; transform: translateY(6px) scale(.97);
   transition: opacity var(--d-ui) var(--ease-out), transform var(--d-ui) var(--ease-spring); }
 .lora-preview-tip.show { opacity: 1; transform: none; }
@@ -1078,7 +1115,7 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 /* 大預覽圖：強度列下方，整段訓練詞讀完後最後出場（呼應「hero 先動、其餘跟隨」——這裡
    反過來，文字是重點先看，圖片是補充放最後）。用 contain 而非 cover：這是參考圖，使用者
    要看完整構圖判斷風格，裁掉一部分反而失去意義。 */
-.lm-preview { border-radius: 12px; overflow: hidden; background: var(--sunk); border: 1px solid var(--line);
+.lm-preview { border-radius: 15px; overflow: hidden; background: var(--sunk); border: 1px solid var(--line);
   animation: lmFadeUp var(--d-pop) var(--ease-entrance) both; }
 .lm-preview img, .lm-preview video { display: block; width: 100%; max-height: 320px; object-fit: contain; }
 @keyframes lmFadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
@@ -1151,7 +1188,7 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
   background: radial-gradient(circle at 50% 45%, rgba(255,255,255,.6), rgba(180,123,255,.32) 46%, transparent 70%);
   box-shadow: inset 0 0 0 3px rgba(255,255,255,.75), inset 0 0 30px rgba(180,123,255,.6); }
 .ttag-card.focused { outline: 3px solid var(--amber); outline-offset: 3px;
-  border-radius: 15px; transform: translateY(-6px); z-index: 6; }
+  border-radius: 19px; transform: translateY(-6px); z-index: 6; }
 
 /* ── 稀有度：檔名前綴標註（稀有=黃／特別=藍／傳奇=彩色），格線＋抽卡都顯示 ──
    光暈一律用 box-shadow（不受卡片 overflow:hidden 裁切）。傳奇用 @property 讓
@@ -1161,7 +1198,7 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 @keyframes rarHue { from { --rar-h: 0; } to { --rar-h: 360; } }
 
 .rar-tag { position: absolute; z-index: 3; font-size: 10px; font-weight: 800; letter-spacing: .06em;
-  padding: 2px 8px; border-radius: 999px; line-height: 1.5; pointer-events: none;
+  padding: 2px 8px; border-radius: 999px; corner-shape: round; line-height: 1.5; pointer-events: none;
   box-shadow: 0 2px 8px rgba(0,0,0,.45); }
 .rar-tag.common    { color: #10121a; background: #9aa0ad; }   /* 普通：灰色小角標、無光環 */
 .rar-tag.rare      { color: #241a00; background: var(--rar-rare); }
@@ -1220,7 +1257,7 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 .tarot-card.rar-rare.revealed::after,
 .tarot-card.rar-special.revealed::after,
 .tarot-card.rar-legendary.revealed::after {
-  content: ""; position: absolute; inset: -8%; z-index: -1; border-radius: 22px;
+  content: ""; position: absolute; inset: -8%; z-index: -1; border-radius: 27px;
   filter: blur(22px); opacity: 0; pointer-events: none;
   animation: magic-spin 3s linear .42s infinite, magic-in .5s var(--ease-out) .42s forwards;
 }
@@ -1250,7 +1287,7 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 .shortcuts-head { display: flex; align-items: center; gap: 16px; margin-bottom: 26px; }
 /* 呼應品牌 logo 的安全燈呼吸光（見 .brand-logo/@keyframes safelight），同一個視覺母題
    延伸到這個疊層——這個 app 的「簽名元素」就是暗房安全燈的暖光呼吸，不是另外發明。 */
-.shortcuts-emblem { flex: none; width: 46px; height: 46px; border-radius: 12px;
+.shortcuts-emblem { flex: none; width: 46px; height: 46px; border-radius: 15px;
   display: grid; place-items: center; font-size: 22px; background: var(--amber-soft);
   border: 1px solid color-mix(in srgb, var(--amber) 35%, var(--line));
   animation: safelight 3.4s ease-in-out infinite; }
@@ -1364,12 +1401,12 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 
 /* 樣式切換鈕：右上角一顆 ⚙，點開兩個選項（跑馬燈／無限畫布）。 */
 .intro-style-switch { position: absolute; top: 16px; right: 16px; z-index: 3; }
-.intro-style-btn { width: 34px; height: 34px; border-radius: 50%; padding: 0;
+.intro-style-btn { width: 34px; height: 34px; border-radius: 50%; corner-shape: round; padding: 0;
   background: color-mix(in srgb, var(--panel) 80%, transparent); border: 1px solid var(--line);
   color: var(--dim); display: grid; place-items: center; font-size: 15px; }
 .intro-style-btn:hover { color: var(--ink); border-color: var(--line-2); }
 .intro-style-menu { position: absolute; top: 42px; right: 0; display: flex; flex-direction: column;
-  gap: 2px; padding: 6px; border-radius: 12px; min-width: 128px;
+  gap: 2px; padding: 6px; border-radius: 15px; min-width: 128px;
   background: color-mix(in srgb, var(--panel) 92%, transparent); backdrop-filter: blur(8px);
   border: 1px solid var(--line); box-shadow: 0 12px 30px rgba(0,0,0,.45); }
 .intro-style-menu[hidden] { display: none; }
@@ -1379,7 +1416,7 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 .intro-style-menu button.on { background: var(--amber-soft); color: var(--ink); }
 
 .intro-copy { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 2;
-  text-align: center; padding: 30px 40px 32px; border-radius: 20px; max-width: 420px;
+  text-align: center; padding: 30px 40px 32px; border-radius: 25px; max-width: 420px;
   background: color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter: blur(6px);
   border: 1px solid var(--line); box-shadow: 0 20px 60px rgba(0,0,0,.55); }
 /* 光漏細線：呼應安全燈，標題正上方一道會呼吸的琥珀光。 */
@@ -1391,7 +1428,7 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 .intro-copy h2 { margin: 0 0 10px; font-size: 28px; letter-spacing: 5px; color: var(--ink);
   text-shadow: 0 0 24px rgba(234,173,87,.35); }
 .intro-copy p { margin: 0 0 22px; font-size: 13px; color: var(--dim); line-height: 1.6; }
-.intro-enter-btn { padding: 12px 30px; border-radius: 999px; font-size: 14px; font-weight: 600;
+.intro-enter-btn { padding: 12px 30px; border-radius: 999px; corner-shape: round; font-size: 14px; font-weight: 600;
   background: linear-gradient(180deg, #eaad57, var(--amber-d)); border: 1px solid var(--amber-d);
   color: #201405; }
 .intro-enter-btn:hover { filter: brightness(1.06); }
