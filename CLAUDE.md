@@ -135,7 +135,9 @@ API 格式的範本在啟動時一次 fetch 進 `state.zTemplates`，送出前 d
 
 **顏色值來自 CSS 變數又要過渡時，不能直接 transition 那個屬性。** `background: var(--x)` 搭配 `transition: background-color`，當引擎切換改了 `--x`，Chrome 不會重啟過渡，顏色會卡在舊值（頂部開關就這樣四個引擎全停在同一色）。註冊 `@property` 沒用，反而會被釘在 `initial-value`。正解是兩層堆疊、只對 `opacity` 過渡：把新顏色放在 `::after` 上淡入淡出，變數變動立即生效。
 
-**捲軸出現會讓欄寬跳動。** 左右欄都是 `overflow-y: auto`，展開會增高的區塊（例如 Illustrious 的 ControlNet 參考圖上傳區，多 153px）時，捲軸突然出現會吃掉 15px，內容區變窄、卡片被壓到文字折行，看起來像欄寬自己變了。已用 `scrollbar-gutter: stable` 永遠預留空間。**除錯這類問題要先量出「展開前後的內容高度差」，推算出會觸發的視窗高度區間再重現**——視窗太矮兩種狀態都有捲軸、太高兩種都沒有，都測不出來。另外 `scrollHeight` 在內容比容器矮時會回傳容器高度，要量內容真實高度得改量內層元素。
+**捲軸出現會讓欄寬跳動。** 左右欄都是 `overflow-y: auto`，展開會增高的區塊（例如 Illustrious 的 ControlNet 參考圖上傳區，多 153px）時，捲軸突然出現會吃掉 15px，內容區變窄、卡片被壓到文字折行，看起來像欄寬自己變了。已用 `scrollbar-gutter: stable` 永遠預留空間。**除錯這類問題要先量出「展開前後的內容高度差」，推算出會觸發的視窗高度區間再重現**——視窗太矮兩種狀態都有捲軸、太高兩種都沒有，都測不出來。另外 `scrollHeight` 在內容比容器矮時會回傳容器高度，要量內容真實高度得改量內層元素。**同一條坑在暗房重演過一次，而且更嚴重**：`darkroom.css` 的 `.main` 是 `repeat(auto-fill, minmax(184px, 1fr))` 的卡片牆，捲軸吃掉的 15px 不只是「變窄一點」，是**整排少排一欄**（實測常見視窗寬度下 5 欄變 4 欄），從一頁裝得下的資料夾切到要捲的資料夾時整面圖重排。`.rail`（左欄搜尋篩剩幾個資料夾時捲軸消失）與 `.modal-inner`（兩欄版面，連續按上一張/下一張時大圖一張一個尺寸）也是同一回事。**教訓是：這條規則要套在「每一個」`overflow-y: auto` 的容器上，不是只有當初出問題的那個**；新增捲動容器時順手加。驗證方法很簡單——切一個 2 筆的資料夾和一個 400 筆的資料夾，比對 `getComputedStyle(grid).gridTemplateColumns.split(' ').length`。
+
+**每個捲動容器都要想一下 `overscroll-behavior`。** 暗房有八個捲動容器（大圖 modal、提示詞區塊、抽取設定、LoRA 說明／清單／右欄、詞庫跳轉結果、快捷鍵面板）原本都沒設，捲到底會繼續帶動背後的卡片牆。在「全部」視圖下這不只是視覺干擾——背後動的是 28000 筆的格線，捲到 sentinel 還會觸發 `appendPage()` 在背後默默長出更多卡片。凡是疊在主捲動區之上的面板一律 `overscroll-behavior: contain`。
 
 **`state` 物件初始化時不能引用後面才 `const` 宣告的模組變數。** `app.js` 開頭 `const state = {…}` 在第 9 行，而 `const I = window.YZ_I` 在第 29 行。曾經在 state 裡寫 `strength: I.lora.defaultStrength`，觸發 TDZ（暫時性死區）——`const` 在宣告前存取會直接拋 `ReferenceError`，整個 IIFE 載入即掛，所有事件都沒綁上（引擎切換按鈕 `onclick` 是 `false`、頁面像壞掉但 console 不一定抓得到）。要用引擎設定的預設值就寫字面值、另在該設定檔用註解標明兩邊要一致。**判斷方法**：頁面互動全失效但版面正常時，先在 console 查某個按鈕的 `.onclick` 是不是 `null`，是的話就是 init 中途拋錯，不是事件邏輯問題。
 
