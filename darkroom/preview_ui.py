@@ -308,6 +308,19 @@ LORA_FOLDERS = ["style", "Character", "HENTAI", "illus"]
 AGENT_DRAW_DEFAULT_LORAS = [
     {"folder": "style", "file": "Takeda_HiromitsuV3.safetensors", "strength": 0.8},
 ]
+# ---------------------------------------------------------------------------
+# checkpoint 選擇（給「生圖」模式用，見 docs/superpowers/specs/
+# 2026-08-12-darkroom-checkpoint-picker-design.md）。只鎖定這一個資料夾，不是整個
+# checkpoints 樹——裡面放的都是跟現有 LoRA 相容的 Illustrious 系底模，其他底模套進
+# 這條管線不會有意義的結果。**只影響生圖模式**（手動生圖／塔羅抽卡／agent-draw），
+# 瀏覽模式的「重新生成」單張縮圖刻意不受影響，見 apply_checkpoint_override() 的
+# 說明與它唯一的呼叫點。
+# ---------------------------------------------------------------------------
+DARKROOM_CHECKPOINT_ROOT = Path(os.environ.get(
+    "DARKROOM_CHECKPOINT_ROOT",
+    r"C:\ComfyUI\ComfyUI_windows_portable_nvidia\ComfyUI_windows_portable\ComfyUI\models\checkpoints\illurtrious",
+))
+DARKROOM_DEFAULT_CHECKPOINT = "waiIllustriousSDXL_v170.safetensors"
 LORA_PREVIEW_EXTS = (".preview.png", ".preview.jpeg", ".preview.jpg", ".preview.webp",
                      ".preview.mp4", ".preview.webm",
                      ".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm")
@@ -490,6 +503,7 @@ STATE = {
     "template": None,
     "comfy_base": None,
     "steps": 25,
+    "checkpoint": None,   # 生圖模式的底模覆寫；None＝不覆寫，見 DARKROOM_CHECKPOINT_ROOT 說明
     "timeout": 600,
     "jobs": {},                     # rel(str) -> {status, message, updated}
     "jobs_lock": threading.Lock(),
@@ -1598,6 +1612,13 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/loras":
                 self._send_json(list_loras())
                 return
+            if u.path == "/api/checkpoints":
+                try:
+                    items = sorted(p.name for p in DARKROOM_CHECKPOINT_ROOT.glob("*.safetensors"))
+                except OSError:
+                    items = []
+                self._send_json({"items": items, "current": STATE.get("checkpoint")})
+                return
             if u.path == "/api/lora-preview":
                 p = lora_preview_path(qs.get("folder", [""])[0], qs.get("file", [""])[0])
                 if p is None:
@@ -1949,6 +1970,15 @@ def main():
     STATE["timeout"] = args.timeout
     STATE["concurrency"] = max(1, args.concurrency)
     STATE["gen_sem"] = PrioritySemaphore(STATE["concurrency"])
+
+    checkpoint_cfg = cfg.get("checkpoint") or DARKROOM_DEFAULT_CHECKPOINT
+    if (DARKROOM_CHECKPOINT_ROOT / checkpoint_cfg).is_file():
+        STATE["checkpoint"] = checkpoint_cfg
+        print(f"[checkpoint] 生圖模式底模：{checkpoint_cfg}")
+    else:
+        print(f"[checkpoint] 找不到 {checkpoint_cfg}（{DARKROOM_CHECKPOINT_ROOT}），"
+              f"生圖模式沿用 workflow.json 原本內建的底模")
+        STATE["checkpoint"] = None
 
     print(f"[workflow] {wf_path}")
     print(f"[special ] {SPECIAL_DIR}")
