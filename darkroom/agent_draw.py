@@ -351,7 +351,8 @@ def draw_and_stream_to_discord(n: int, *, base_url: str = DEFAULT_BASE_URL,
                                 loras: list[tuple[str, float]] | None = None,
                                 no_lora: bool = False, trigger: str = "",
                                 out_dir: str | Path = "agent_draws", seed: int | None = None,
-                                bot_token: str, user_id: str,
+                                bot_token: str, user_id: str | None = None,
+                                channel_id: str | None = None,
                                 timeout: float = POLL_TIMEOUT_S,
                                 on_update=None) -> tuple[list[dict], list[tuple[str, float]]]:
     """跟 draw_and_generate() 做同一件事（抽 n 張→送生成→等完成→存檔），差別是
@@ -370,7 +371,9 @@ def draw_and_stream_to_discord(n: int, *, base_url: str = DEFAULT_BASE_URL,
 
     # 頻道只解析一次，每張圖各自送一則訊息時重複使用（見 _post_embeds_to_channel
     # 的說明——n 次個別發送不該變成 n 次「開頻道」呼叫）。
-    channel_id = _resolve_dm_channel(bot_token, user_id)
+    # --discord-channel 直接給頻道 id；--discord-dm 才用 user_id 解析 DM 頻道。
+    if channel_id is None:
+        channel_id = _resolve_dm_channel(bot_token, user_id)
 
     pending = set(id_to_meta)
     results: list[dict] = []
@@ -440,32 +443,48 @@ def main() -> int:
                           "詞庫名稱、LoRA 欄位、圖片），不等其他張——抽多張時看到一張是一張。"
                           "需要 preview_config.json 設好 discord_bot_token 與 "
                           "discord_dm_user_id，見 AGENT_DRAW.md")
+    ap.add_argument("--discord-channel", metavar="CHANNEL_ID", default=None,
+                     help="改成把 embed 送進指定的文字頻道（而非 DM）。"
+                          "需要 preview_config.json 設好 discord_bot_token。"
+                          "與 --discord-dm 互斥；都不給就不送 Discord。")
     args = ap.parse_args()
 
     loras = [_parse_lora_arg(s) for s in args.lora] or None
 
     bot_token = user_id = None
-    if args.discord_dm:
+    target_channel_id = None
+    if args.discord_dm or args.discord_channel:
         # 先檢查設定，不要等抽完卡才發現少填——那樣等於白跑一輪生成。
         cfg = _load_darkroom_config()
         bot_token = cfg.get("discord_bot_token")
-        user_id = cfg.get("discord_dm_user_id")
-        if not bot_token or not user_id:
-            msg = ("--discord-dm 需要 preview_config.json 設好 discord_bot_token 與 "
-                   "discord_dm_user_id，目前缺少其中之一")
+        if not bot_token:
+            msg = "--discord-dm / --discord-channel 需要 preview_config.json 設好 discord_bot_token"
             if args.json:
                 print(json.dumps({"error": msg}, ensure_ascii=False))
             else:
                 print(f"錯誤：{msg}", file=sys.stderr)
             return 1
+        if args.discord_dm:
+            user_id = cfg.get("discord_dm_user_id")
+            if not user_id:
+                msg = "--discord-dm 需要 preview_config.json 設好 discord_dm_user_id"
+                if args.json:
+                    print(json.dumps({"error": msg}, ensure_ascii=False))
+                else:
+                    print(f"錯誤：{msg}", file=sys.stderr)
+                return 1
+        else:
+            target_channel_id = str(args.discord_channel).strip()
 
     try:
-        if args.discord_dm:
+        if args.discord_dm or args.discord_channel:
             # 串流版：每張圖一生完就立刻送，不等其他張（見 draw_and_stream_to_discord）。
+            # --discord-dm 用 user_id 解析 DM 頻道；--discord-channel 直接用頻道 id。
             results, loras_used = draw_and_stream_to_discord(
                 args.n, base_url=args.base_url, folder=args.folder, rarity=args.rarity,
                 loras=loras, no_lora=args.no_lora, trigger=args.trigger, out_dir=args.out,
-                seed=args.seed, bot_token=bot_token, user_id=str(user_id),
+                seed=args.seed, bot_token=bot_token, user_id=str(user_id) if user_id else None,
+                channel_id=target_channel_id,
             )
         else:
             results, loras_used = draw_and_generate(
@@ -482,8 +501,9 @@ def main() -> int:
     ok = [r for r in results if r["status"] == "done"]
     fail = [r for r in results if r["status"] != "done"]
 
-    if args.discord_dm:
-        print(f"已送出 {len(ok)}/{len(results)} 張到 Discord DM", file=sys.stderr)
+    if args.discord_dm or args.discord_channel:
+        dest = f"頻道 {target_channel_id}" if args.discord_channel else "Discord DM"
+        print(f"已送出 {len(ok)}/{len(results)} 張到 {dest}", file=sys.stderr)
 
     if args.json:
         # 只留呼叫端真正用得到的欄位：done 的要 out_path（絕對路徑，可直接餵給
