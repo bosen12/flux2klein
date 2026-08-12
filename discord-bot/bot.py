@@ -29,9 +29,7 @@ from discord.ext import commands
 import darkroom_client as dc
 
 CONFIG_PATH = Path(__file__).resolve().parent / "config.json"
-LORA_CATEGORIES = ["style", "Character", "HENTAI", "illus"]
-LORA_STRENGTH = 0.8   # 比照暗房 AGENT_DRAW_DEFAULT_LORAS 的既有慣例，不開放調整
-LORA_PAGE_SIZE = 25   # Discord select 單一元件最多 25 個選項
+LORA_STRENGTH = 0.8   # /lora 選定時的初始強度，之後可用 ➖/➕ 按鈕調整
 GACHA_MAX_N = 100
 POLL_INTERVAL_S = 1.0
 EMBED_COLOR = 0xEAAD57   # 跟 agent_draw.py 的 DISCORD_EMBED_COLOR 一致
@@ -92,7 +90,7 @@ async def intro(interaction: discord.Interaction) -> None:
         color=EMBED_COLOR,
     )
     embed.add_field(name="/gacha n:<1~100>", value="抽卡生圖，逐張生完就送圖", inline=False)
-    embed.add_field(name="/lora", value="點選分類→翻頁選 LoRA→確認，切換抽卡套用的 LoRA（全局共用）", inline=False)
+    embed.add_field(name="/lora query:<打字搜尋>", value="切換抽卡套用的 LoRA，可調強度/觸發詞（全局共用）", inline=False)
     embed.add_field(name="/chkp", value="點選 checkpoint→確認，切換底模（全局共用）", inline=False)
     await interaction.response.send_message(embed=embed)
 
@@ -103,16 +101,12 @@ LORA_STRENGTH_STEP = 0.05   # 跟暗房自己的強度滑桿（darkroom.js sInpu
 
 
 class LoraDetailView(discord.ui.View):
-    """按鈕流程最後一步：調強度、勾選要套用的觸發詞段落、確認/取消。
-    取消回到剛才那一頁的項目清單。"""
+    """/lora 選定項目後的畫面：調強度、勾選要套用的觸發詞段落、確認/取消。"""
 
-    def __init__(self, item: dict, category: str, items: list[dict], page: int,
-                 strength: float = LORA_STRENGTH, selected_words: set[int] | None = None) -> None:
+    def __init__(self, item: dict, strength: float = LORA_STRENGTH,
+                 selected_words: set[int] | None = None) -> None:
         super().__init__(timeout=180)
         self.item = item
-        self.category = category
-        self.items = items
-        self.page = page
         self.strength = strength
         words = item.get("trainedWords") or []
         # 沒指定就預設全選——比照暗房面板選 LoRA 時「自動把觸發詞帶進提示詞框」的既有行為
@@ -163,13 +157,13 @@ class LoraDetailView(discord.ui.View):
 
     async def _on_words_change(self, interaction: discord.Interaction) -> None:
         selected = {int(v) for v in interaction.data.get("values", [])}
-        view = LoraDetailView(self.item, self.category, self.items, self.page, self.strength, selected)
+        view = LoraDetailView(self.item, self.strength, selected)
         await interaction.response.edit_message(embed=view.build_embed(), view=view)
 
     def _make_strength_callback(self, delta: float):
         async def callback(interaction: discord.Interaction) -> None:
             strength = round(min(LORA_STRENGTH_MAX, max(LORA_STRENGTH_MIN, self.strength + delta)), 2)
-            view = LoraDetailView(self.item, self.category, self.items, self.page, strength, self.selected_words)
+            view = LoraDetailView(self.item, strength, self.selected_words)
             await interaction.response.edit_message(embed=view.build_embed(), view=view)
         return callback
 
@@ -184,122 +178,62 @@ class LoraDetailView(discord.ui.View):
         )
 
     async def _on_cancel(self, interaction: discord.Interaction) -> None:
-        view = LoraItemPageView(self.category, self.items, self.page)
-        await interaction.response.edit_message(embed=view.build_embed(), view=view)
+        await interaction.response.edit_message(content="已取消", embed=None, view=None)
 
 
-class LoraItemPageView(discord.ui.View):
-    """單一分類內的分頁下拉選單（每頁最多 25 個，Discord select 的硬上限），
-    選單本身支援打字過濾當前頁的選項（Discord 原生能力，不用自己實作搜尋），
-    另外配上一頁/下一頁/換分類三顆按鈕。"""
-
-    def __init__(self, category: str, items: list[dict], page: int) -> None:
-        super().__init__(timeout=180)
-        self.category = category
-        self.items = items
-        self.page = page
-        self._build()
-
-    @property
-    def total_pages(self) -> int:
-        return max(1, (len(self.items) + LORA_PAGE_SIZE - 1) // LORA_PAGE_SIZE)
-
-    def _page_items(self) -> list[dict]:
-        start = self.page * LORA_PAGE_SIZE
-        return self.items[start:start + LORA_PAGE_SIZE]
-
-    def build_embed(self) -> discord.Embed:
-        return discord.Embed(
-            title=f"選擇 LoRA · {self.category}（第 {self.page + 1}/{self.total_pages} 頁，共 {len(self.items)} 筆）",
-            color=EMBED_COLOR,
-        )
-
-    def _build(self) -> None:
-        self.clear_items()
-        page_items = self._page_items()
-        select = discord.ui.Select(
-            placeholder="選擇 LoRA（可在選單內打字過濾這一頁）",
-            row=0,
-            options=[
-                discord.SelectOption(label=_lora_label(it), value=str(i))
-                for i, it in enumerate(page_items)
-            ],
-        )
-        select.callback = self._make_select_callback(page_items)
-        self.add_item(select)
-
-        prev_btn = discord.ui.Button(label="◀ 上一頁", style=discord.ButtonStyle.secondary,
-                                      disabled=self.page <= 0, row=1)
-        prev_btn.callback = self._make_page_callback(self.page - 1)
-        self.add_item(prev_btn)
-        next_btn = discord.ui.Button(label="下一頁 ▶", style=discord.ButtonStyle.secondary,
-                                      disabled=self.page >= self.total_pages - 1, row=1)
-        next_btn.callback = self._make_page_callback(self.page + 1)
-        self.add_item(next_btn)
-        back_btn = discord.ui.Button(label="🔙 換分類", style=discord.ButtonStyle.secondary, row=1)
-        back_btn.callback = self._back_callback
-        self.add_item(back_btn)
-
-    def _make_page_callback(self, page: int):
-        async def callback(interaction: discord.Interaction) -> None:
-            view = LoraItemPageView(self.category, self.items, page)
-            await interaction.response.edit_message(embed=view.build_embed(), view=view)
-        return callback
-
-    def _make_select_callback(self, page_items: list[dict]):
-        async def callback(interaction: discord.Interaction) -> None:
-            idx = int(interaction.data["values"][0])
-            item = page_items[idx]
-            view = LoraDetailView(item, self.category, self.items, self.page)
-            await interaction.response.edit_message(embed=view.build_embed(), view=view)
-        return callback
-
-    async def _back_callback(self, interaction: discord.Interaction) -> None:
-        embed = discord.Embed(title="選擇 LoRA 分類", color=EMBED_COLOR)
-        await interaction.response.edit_message(embed=embed, view=LoraCategoryView())
+LORA_NONE_VALUE = "__none__"
 
 
-class LoraCategoryView(discord.ui.View):
-    """/lora 第一步：4 個分類按鈕。"""
+def _lora_choice_value(item: dict) -> str:
+    # folder 可能自己帶 "/"（子資料夾），file 不會，所以用 rsplit 還原時從最後一個
+    # "/" 切開是安全的。
+    return f"{item['folder']}/{item['file']}"
 
-    def __init__(self) -> None:
-        super().__init__(timeout=180)
-        for cat in LORA_CATEGORIES:
-            btn = discord.ui.Button(label=cat, style=discord.ButtonStyle.primary)
-            btn.callback = self._make_callback(cat)
-            self.add_item(btn)
-        none_btn = discord.ui.Button(label="🚫 不套用 LoRA", style=discord.ButtonStyle.secondary)
-        none_btn.callback = self._no_lora_callback
-        self.add_item(none_btn)
 
-    def _make_callback(self, category: str):
-        async def callback(interaction: discord.Interaction) -> None:
-            assert http_session is not None
-            try:
-                data = await dc.get_loras(http_session, BASE_URL)
-            except dc.DarkroomError as e:
-                await interaction.response.edit_message(content=str(e), embed=None, view=None)
-                return
-            items = [it for it in data.get("items", []) if it.get("category") == category]
-            if not items:
-                await interaction.response.edit_message(content=f"{category} 分類目前沒有 LoRA", embed=None, view=None)
-                return
-            view = LoraItemPageView(category, items, page=0)
-            await interaction.response.edit_message(embed=view.build_embed(), view=view)
-        return callback
-
-    async def _no_lora_callback(self, interaction: discord.Interaction) -> None:
+@bot.tree.command(name="lora", description="切換抽卡套用的 LoRA")
+@app_commands.describe(query="輸入關鍵字搜尋 LoRA 名稱/檔名，或選第一個「不套用 LoRA」")
+async def lora_cmd(interaction: discord.Interaction, query: str) -> None:
+    if query == LORA_NONE_VALUE:
         # 存空陣列，不是 None——None 代表「還沒選過」，/gacha 會落到暗房伺服器端自己的
         # 預設 LoRA；空陣列才是「使用者明確選了不套用」，語意跟 /api/agent-draw 的
         # loras 欄位一致（不帶欄位＝套預設，帶空陣列＝真的不套）。
         save_selected_lora([])
-        await interaction.response.edit_message(content="LoRA 已設為：無", embed=None, view=None)
+        await interaction.response.send_message("LoRA 已設為：無", ephemeral=True)
+        return
+    assert http_session is not None
+    try:
+        data = await dc.get_loras(http_session, BASE_URL)
+    except dc.DarkroomError as e:
+        await interaction.response.send_message(str(e), ephemeral=True)
+        return
+    match = next((it for it in data.get("items", []) if _lora_choice_value(it) == query), None)
+    if match is None:
+        await interaction.response.send_message(
+            "找不到符合的 LoRA，請從輸入時跳出的自動完成清單裡選一個，不要自己打完整路徑",
+            ephemeral=True,
+        )
+        return
+    view = LoraDetailView(match)
+    await interaction.response.send_message(embed=view.build_embed(), view=view, ephemeral=True)
 
 
-@bot.tree.command(name="lora", description="切換抽卡套用的 LoRA")
-async def lora_cmd(interaction: discord.Interaction) -> None:
-    embed = discord.Embed(title="選擇 LoRA 分類", color=EMBED_COLOR)
-    await interaction.response.send_message(embed=embed, view=LoraCategoryView(), ephemeral=True)
+@lora_cmd.autocomplete("query")
+async def lora_query_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+    assert http_session is not None
+    try:
+        data = await dc.get_loras(http_session, BASE_URL)
+    except dc.DarkroomError:
+        return []
+    needle = current.lower()
+    out = [app_commands.Choice(name="🚫 不套用 LoRA", value=LORA_NONE_VALUE)]
+    for it in data.get("items", []):
+        haystack = f"{it.get('file', '')} {it.get('title', '')} {it.get('name', '')}".lower()
+        if needle and needle not in haystack:
+            continue
+        out.append(app_commands.Choice(name=_lora_label(it), value=_lora_choice_value(it)))
+        if len(out) >= 25:
+            break
+    return out
 
 
 class ChkpConfirmView(discord.ui.View):

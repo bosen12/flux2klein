@@ -43,6 +43,6 @@ Windows 上也可以直接雙擊 `discord-bot/start_bot.bat`。
 ## 指令
 
 - `/intro` — 說明
-- `/lora category:<style|Character|HENTAI|illus> query:<搜尋>` — 切換 `/gacha` 套用的 LoRA（全局共用，跨重啟保留）
+- `/lora query:<打字搜尋，可跨全部分類>` — 切換 `/gacha` 套用的 LoRA，選定後可再調強度／勾選要套用哪些觸發詞（全局共用，跨重啟保留）；第一個選項是「🚫 不套用 LoRA」
 - `/chkp file:<搜尋>` — 切換暗房生圖模式的底模（跟暗房面板自己的 checkpoint 選擇器同一份全局狀態）
 - `/gacha n:<1~100，不給預設 1>` — 抽卡生圖，逐張生完就送到 `gacha_output_channel_id` 指定的頻道；確認/完成提示留在呼叫的頻道

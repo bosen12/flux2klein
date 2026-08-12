@@ -43,22 +43,33 @@
 
 純文字或簡短 embed，說明機器人能做什麼、其他三個指令的用法。不呼叫暗房 API。
 
-### `/lora`（點選式，2026-08-13 改版——原本是 autocomplete 打字搜尋，使用者要求改成純點按鈕）
+### `/lora query:<autocomplete>`（2026-08-13 三次改版——最終定案）
 
-無參數，靠 Discord message component（按鈕／下拉選單）一步步往下選，全程不用打字：
+先後試過兩種點選式設計（分類按鈕→分頁項目按鈕；分類按鈕→分頁下拉選單），都在
+「使用者實際點開 Discord 用手機/桌面測試」時發現同一個問題：**Discord 的 `Select`
+字串選單元件沒有內建打字過濾功能**——一開始誤以為選單本身像角色/頻道選單一樣能
+打字搜尋，實測完全不行，只能滑鼠捲動固定的最多 25 個選項。因為使用者的核心需求
+就是「可搜尋」，而 Discord 唯一真正支援打字即時搜尋一大批選項的機制是 slash
+command 的 **autocomplete**（打指令參數時即時算候選、不受 25 筆的頁面限制，可以
+跨全部 921 筆即時過濾），所以最終改回單一 `query` 參數 + autocomplete，等於回到
+最初的設計，只是拿掉了 `category` 這個參數（不再需要先選分類）：
 
-1. `/lora` → 回一則 ephemeral 訊息＋4 個分類按鈕（`style`／`Character`／`HENTAI`／`illus`，對應暗房 `LORA_FOLDERS`）＋一顆「🚫 不套用 LoRA」按鈕（點了直接把 `selected_lora` 存成空陣列 `[]`，跟「還沒選過」的 `null` 是不同語意，見下方 config 說明）
-2. 點分類 → 打 `GET /api/loras`、篩出該分類，`edit_message` 換成該分類的分頁下拉選單（2026-08-13 二次改版，見下）
-3. 選單選某一筆 → `edit_message` 換成**詳情畫面**（見下）
-4. 詳情畫面確認 → 把 `{folder, file, strength, trigger}` 寫進 `discord-bot/config.json` 的 `selected_lora`，`edit_message` 顯示「LoRA 已設為 `<title>`（強度 X.XX）」；取消 → 回到剛才那一頁的選單
+1. `/lora query:<打字>` → autocomplete 打 `GET /api/loras`，用打字內容過濾
+   `file`/`title`/`name`（不分類、不分大小寫，跨全部 921 筆），回傳最多 25 筆候選；
+   **候選清單第一項固定是「🚫 不套用 LoRA」**（`value` 用 sentinel 字串
+   `"__none__"`，不會撞到真正的 LoRA 值，因為真正的值是 `folder/file` 格式）
+2. 選「🚫 不套用 LoRA」→ 直接把 `selected_lora` 存成空陣列 `[]`（跟「還沒選過」的
+   `null` 是不同語意，見下方 config 說明），回覆「LoRA 已設為：無」，流程結束
+3. 選某個 LoRA → 送出後直接進入**詳情畫面**（見下）
 
-**分頁下拉選單**（2026-08-13 二次改版——第一版是每頁 20 顆項目按鈕，使用者要求改成下拉選單＋可搜尋）：每頁最多 25 筆（Discord `Select` 元件單一頁的選項數硬上限），`SelectOption.label` 用 LoRA 標題（`item.title or item.name or item.file`，跟暗房自己 `darkroom.js` 的 `lora.title || lora.name` 同一套慣例，截斷到 100 字元）。**選單本身支援打字過濾當前頁的選項**——這是 Discord 客戶端的原生能力，不用自己實作搜尋邏輯，但只能篩選「已經裝進這個選單的 25 筆」，篩不到還沒翻到的其他頁。選單下方一列放「◀ 上一頁」「下一頁 ▶」（到頁首/頁尾自動 `disabled`）「🔙 換分類」三顆按鈕。
-
-**詳情畫面**（2026-08-13 追加——使用者要求能調強度、能像暗房面板一樣勾選要套用哪些觸發詞段落）：
-
-- 有 `trainedWords` 的 LoRA 會多一列下拉式多選選單（`discord.ui.Select`，`min_values=0`），列出每個觸發詞段落，預設全選（比照暗房面板選 LoRA 時「自動把觸發詞帶進提示詞框」的既有行為），可以複選/全不選；選單變動時即時 `edit_message` 更新 embed 顯示目前組出來的觸發詞句子
-- 強度用「➖ 0.05」「➕ 0.05」兩顆按鈕逐步調整（跟暗房自己的強度滑桿 `darkroom.js` 的 `min=0 max=1 step=0.05` 同一組上下限與步進，到邊界自動 `disabled`），初始值 `0.8`；embed 即時顯示目前強度
-- 「✅ 確認」「❌ 取消」跟原本一樣
+**詳情畫面**：有 `trainedWords` 的 LoRA 會多一列下拉式多選選單（`discord.ui.Select`，
+`min_values=0`），列出每個觸發詞段落，預設全選（比照暗房面板選 LoRA 時「自動把
+觸發詞帶進提示詞框」的既有行為），可以複選/全不選；選單變動時即時 `edit_message`
+更新 embed 顯示目前組出來的觸發詞句子。強度用「➖ 0.05」「➕ 0.05」兩顆按鈕逐步
+調整（跟暗房自己的強度滑桿 `darkroom.js` 的 `min=0 max=1 step=0.05` 同一組上下限
+與步進，到邊界自動 `disabled`），初始值 `0.8`；embed 即時顯示目前強度。「✅ 確認」
+把 `{folder, file, strength, trigger}` 寫進 `discord-bot/config.json` 的
+`selected_lora`；「❌ 取消」顯示「已取消」，不改動任何設定。
 
 ### `selected_lora` 的三種狀態（config.json）
 
@@ -70,9 +81,9 @@
 | `[]`（點過「🚫 不套用 LoRA」） | 明確選了不套用 | 帶空陣列 `[]`，暗房收到空陣列就真的不套任何 LoRA |
 | `{folder, file, strength, trigger}`（選過某個 LoRA） | 套用這個 | 帶 `[{folder, file, strength}]`，`trigger` 欄位帶使用者勾選的觸發詞句子 |
 
-`GET /api/loras` 每次點分類按鈕才打一次（不是每次翻頁/調整強度都重打），項目清單在整條互動鏈裡用 view 的屬性帶著走。分頁數視分類而定（實測 `Character` 496 筆 ÷ 20 ≈ 25 頁，`illus` 7 筆只有 1 頁）——比打字搜尋慢，但符合使用者明確要的「遷點式」體驗，不是打字。
+`GET /api/loras` 有 5 分鐘 TTL 快取（暗房伺服器端本身就有），autocomplete 每次打字都直接打，不用另外快取。
 
-### `/chkp`（點選式，同上一併改版）
+### `/chkp`（點選式）
 
 無參數：
 
