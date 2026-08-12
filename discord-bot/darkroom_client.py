@@ -53,13 +53,16 @@ async def set_checkpoint(session: aiohttp.ClientSession, base_url: str, file: st
 
 
 async def agent_draw(session: aiohttp.ClientSession, base_url: str, n: int,
-                      loras: list[dict] | None = None) -> dict:
+                      loras: list[dict] | None = None, trigger: str | None = None) -> dict:
     """回傳 {"ok": True, "items": [{"id", "rel", "name"}, ...], "loras": [[name, strength], ...]}。
     loras 是 None 時完全不帶這個欄位（讓暗房套伺服器端自己的預設 LoRA），跟明確傳
-    空陣列（不套任何 LoRA）是兩種不同語意，呼叫端要分清楚。"""
+    空陣列（不套任何 LoRA）是兩種不同語意，呼叫端要分清楚。trigger 不給就讓暗房自己
+    用 loras 的 civitai 觸發詞算預設值（見 _default_trigger_for_loras）。"""
     payload: dict = {"n": n}
     if loras is not None:
         payload["loras"] = loras
+    if trigger is not None:
+        payload["trigger"] = trigger
     return await _post_json(session, f"{base_url}/api/agent-draw", payload)
 
 

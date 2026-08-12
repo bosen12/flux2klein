@@ -388,6 +388,7 @@ Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188
 | `bot.py` | 主程式：slash command 定義與 `/gacha` 的逐張輪詢送圖邏輯 |
 | `darkroom_client.py` | 打暗房 API 的 async 小工具（用 aiohttp，不阻塞 bot 的事件迴圈） |
 | `config.example.json` | 設定範本（複製成同目錄的 `config.json`，已 gitignore） |
+| `start_bot.bat` | Windows 啟動捷徑（等同 `python bot.py`） |
 | `requirements.txt` | `discord.py`／`aiohttp` |
 
 ---

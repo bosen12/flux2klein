@@ -43,24 +43,47 @@
 
 純文字或簡短 embed，說明機器人能做什麼、其他三個指令的用法。不呼叫暗房 API。
 
-### `/lora category:<choice> query:<autocomplete>`
+### `/lora`（點選式，2026-08-13 改版——原本是 autocomplete 打字搜尋，使用者要求改成純點按鈕）
 
-- `category` 是固定 4 選項的下拉（`style` / `Character` / `HENTAI` / `illus`，對應暗房 `LORA_FOLDERS`），Discord 原生 choice，不用打字
-- `query` 是 Discord 原生 autocomplete 欄位：使用者打字時，機器人即時用目前已選的 `category` 過濤 `GET /api/loras` 的結果（`item.category == category` 且 `file`/`name`/`title` 包含打字內容，不分大小寫），回傳最多 25 筆候選（Discord autocomplete 硬上限）
-- 選定送出後，把 `{folder: item.folder, file: item.file}` 寫進 `discord-bot/config.json` 的 `selected_lora`，strength 固定 `0.8`（比照暗房 `AGENT_DRAW_DEFAULT_LORAS` 現有慣例，不開放調整——沒人要求，YAGNI）
-- 回覆訊息：「LoRA 已設為 `<title>`」，只在呼叫的頻道可見（ephemeral 或一般回覆皆可，這裡用一般回覆，讓同頻道的人也看得到目前套用哪個）
-- `/api/loras` 有 5 分鐘 TTL 快取（暗房伺服器端本身就有），機器人這邊不用另外快取，每次 autocomplete 直接打
+無參數，靠 Discord message component（按鈕／下拉選單）一步步往下選，全程不用打字：
 
-### `/chkp file:<autocomplete>`
+1. `/lora` → 回一則 ephemeral 訊息＋4 個分類按鈕（`style`／`Character`／`HENTAI`／`illus`，對應暗房 `LORA_FOLDERS`）＋一顆「🚫 不套用 LoRA」按鈕（點了直接把 `selected_lora` 存成空陣列 `[]`，跟「還沒選過」的 `null` 是不同語意，見下方 config 說明）
+2. 點分類 → 打 `GET /api/loras`、篩出該分類，`edit_message` 換成該分類項目按鈕清單：每頁最多 20 個（4 列 × 5 顆，留第 5 列給導覽），項目按鈕 label 是 LoRA 標題（截斷到 80 字元，Discord 按鈕 label 上限）；第 5 列固定放「◀ 上一頁」「下一頁 ▶」（到頁首/頁尾自動 `disabled`）「🔙 換分類」
+3. 點某個項目 → `edit_message` 換成**詳情畫面**（2026-08-13 追加，見下）
+4. 詳情畫面確認 → 把 `{folder, file, strength, trigger}` 寫進 `discord-bot/config.json` 的 `selected_lora`，`edit_message` 顯示「LoRA 已設為 `<title>`（強度 X.XX）」；取消 → 回到剛才那一頁的項目清單
 
-- 單一 autocomplete 欄位：機器人打 `GET /api/checkpoints`，用打字內容過濾 `items[]`（檔案少，通常不用分類）
-- 選定送出後直接呼叫 `POST /api/checkpoint {file}`。暗房回 `{error}` 就照原文回覆錯誤；成功就回覆「checkpoint 已設為 `<file>`」
-- 這是暗房自己的全局狀態（跟目前面板上的 checkpoint 選擇器同一份 `STATE["checkpoint"]`），機器人不需要在 `config.json` 存這個值——每次要顯示目前值時直接 `GET /api/checkpoints` 讀 `current` 欄位
+**詳情畫面**（2026-08-13 追加——使用者要求能調強度、能像暗房面板一樣勾選要套用哪些觸發詞段落）：
+
+- 有 `trainedWords` 的 LoRA 會多一列下拉式多選選單（`discord.ui.Select`，`min_values=0`），列出每個觸發詞段落，預設全選（比照暗房面板選 LoRA 時「自動把觸發詞帶進提示詞框」的既有行為），可以複選/全不選；選單變動時即時 `edit_message` 更新 embed 顯示目前組出來的觸發詞句子
+- 強度用「➖ 0.05」「➕ 0.05」兩顆按鈕逐步調整（跟暗房自己的強度滑桿 `darkroom.js` 的 `min=0 max=1 step=0.05` 同一組上下限與步進，到邊界自動 `disabled`），初始值 `0.8`；embed 即時顯示目前強度
+- 「✅ 確認」「❌ 取消」跟原本一樣
+
+### `selected_lora` 的三種狀態（config.json）
+
+因為新增了「不套用 LoRA」跟強度/觸發詞，`selected_lora` 不再只是「有沒有選」的二元狀態，`/gacha` 呼叫 `/api/agent-draw` 時要分三種情況組 payload：
+
+| `selected_lora` 的值 | 意思 | `/api/agent-draw` 的 `loras` 欄位 |
+|---|---|---|
+| `null`（初始值，從沒點過 `/lora`） | 還沒選過 | 不帶這個欄位，讓暗房套伺服器端自己的預設 LoRA（`AGENT_DRAW_DEFAULT_LORAS`） |
+| `[]`（點過「🚫 不套用 LoRA」） | 明確選了不套用 | 帶空陣列 `[]`，暗房收到空陣列就真的不套任何 LoRA |
+| `{folder, file, strength, trigger}`（選過某個 LoRA） | 套用這個 | 帶 `[{folder, file, strength}]`，`trigger` 欄位帶使用者勾選的觸發詞句子 |
+
+`GET /api/loras` 每次點分類按鈕才打一次（不是每次翻頁/調整強度都重打），項目清單在整條互動鏈裡用 view 的屬性帶著走。分頁數視分類而定（實測 `Character` 496 筆 ÷ 20 ≈ 25 頁，`illus` 7 筆只有 1 頁）——比打字搜尋慢，但符合使用者明確要的「遷點式」體驗，不是打字。
+
+### `/chkp`（點選式，同上一併改版）
+
+無參數：
+
+1. `/chkp` → 打 `GET /api/checkpoints`，回一則 ephemeral 訊息＋每個 checkpoint 各一顆按鈕（檔案少，通常一頁放得下，不用分頁；目前選中的那顆用綠色 `success` 樣式跟其他顆區分）
+2. 點某個 → `edit_message` 換成確認畫面＋「✅ 確認」「❌ 取消」
+3. 確認 → 呼叫 `POST /api/checkpoint {file}`。暗房回 `{error}` 就照原文顯示；成功就顯示「checkpoint 已設為 `<file>`」；取消 → 顯示「已取消」
+
+這是暗房自己的全局狀態（跟面板上的 checkpoint 選擇器同一份 `STATE["checkpoint"]`），機器人不在 `config.json` 存這個值——每次要顯示目前值都直接 `GET /api/checkpoints` 讀 `current` 欄位。
 
 ### `/gacha n:<1~100，不給預設 1>`
 
 1. 立即（3 秒內）回覆呼叫頻道：「🎴 已排入 {n} 張，開始生成…」（`interaction.response.send_message`）
-2. 背景呼叫 `POST /api/agent-draw`：`selected_lora` 有值就帶 `{n, loras: [{"folder": selected_lora.folder, "file": selected_lora.file, "strength": 0.8}]}`；`selected_lora` 是 `null` 就只帶 `{n}`（不含 `loras` 欄位，讓暗房套自己的伺服器端預設）。回應拿到 `items`（含 `id`/`rel`/`name`）與實際套用的 `loras`
+2. 背景呼叫 `POST /api/agent-draw`，`loras`/`trigger` 依 `selected_lora` 的三種狀態組出對應 payload（見上方「`selected_lora` 的三種狀態」表格）。回應拿到 `items`（含 `id`/`rel`/`name`）與實際套用的 `loras`
 3. 輪詢 `GET /api/gen-status?ids=<全部 id 逗號接>`（間隔 1 秒），任何一個 id 第一次轉成 `done` 就：
    - `GET /api/gen-result?id=<id>` 拿圖片 bytes
    - 組一則 embed：title = 資料夾（系列）＋詞庫名稱、欄位放套用的 LoRA（沒套就顯示「無」）、圖片用 embed 的 `attachment://`

@@ -38,6 +38,8 @@ cp discord-bot/config.example.json discord-bot/config.json
 python discord-bot/bot.py
 ```
 
+Windows 上也可以直接雙擊 `discord-bot/start_bot.bat`。
+
 ## 指令
 
 - `/intro` — 說明
