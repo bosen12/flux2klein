@@ -19,8 +19,15 @@
 套用，但「共用同一個函式」不代表「該有同一種行為」——瀏覽模式跟生圖模式的目的不同
 （前者是詞庫的標準預覽、後者是使用者主動在試效果），使用者確認要分開。
 
-**不在範圍內**：`darkroom/lora-manager/`（那是獨立工具，checkpoint 路徑另外用
-`CHECKPOINT_ROOT` 環境變數同步，見 `2026-08-12` 那筆修復，跟這次是兩件事）。
+**不在範圍內**：
+- `darkroom/lora-manager/`（那是獨立工具，checkpoint 路徑另外用 `CHECKPOINT_ROOT`
+  環境變數同步，見 `2026-08-12` 那筆修復，跟這次是兩件事）
+- **KLEIN 主面板**（根目錄 `illustrious.js` 的 `CKPT` 常數、`app.js` 送出時用它覆蓋
+  `illustrious.json` 的 `ckpt_name`）——這是完全獨立的另一條生成管線，這次的選擇器
+  不會自動同步過去。目前兩邊的值剛好都是 `waiIllustriousSDXL_v170.safetensors`，
+  沒有不一致要修；之後如果要換主面板的底模，照專案既有的模式（見 LoRA 換過幾次
+  的先例）直接明講要換成哪個，屆時會一併檢查 `illustrious.js` 有沒有跟著改，
+  不會自動連動。
 
 ## 限定資料夾
 
