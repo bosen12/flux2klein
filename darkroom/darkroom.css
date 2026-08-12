@@ -1322,11 +1322,15 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
    ---------------------------------------------------------------------------
    整片詞庫的接觸印樣鋪滿畫面、滿版不減光，而且一直往下流（每欄各有自己的速度）。
    捲動是 #intro-gl 的片段著色器裡的 uv 運算，這裡的 CSS 只負責版面：把 canvas
-   鋪滿、壓一層底部 scrim、把題字與數字疊上去（刻意不置中，取非對稱的編輯式
-   配置）。著色器本體見 darkroom.js 的「印樣瀑布」一節。
+   鋪滿、壓一層 scrim、把題字卡疊在正中央。著色器本體見 darkroom.js 的「印樣
+   瀑布」一節。
 
-   底部 scrim 是必要的、不是裝飾：印樣是滿版全亮的照片，文字直接壓上去讀不到。
-   著色器裡只留很輕的暗角，文字的底襯全部交給這一層。
+   題字卡是 **liquid glass 浮空視窗**：`backdrop-filter` 把身後流過的印樣糊成一片
+   色塊、一條由亮到透的高光邊模擬玻璃厚度、外陰影讓它浮起來。三件事要記得：
+   ① 圓角是**蘋果那種連續曲率**，但這裡不用寫——檔案開頭的 `corner-shape: squircle`
+   全域規則已經套到所有元素了（膠囊狀的「進入」鈕才需要自己標回 `round`）；
+   ② `backdrop-filter` 要有東西可糊，所以整片 scrim 必須在卡片**底下**（它是背景的
+   一部分），不能疊在上面；③ 玻璃在全亮的照片上對比不夠，scrim 是必要的、不是裝飾。
 
    z-index 230，比 #boot（300）低——boot 淡出的 600ms 期間這層已經在底下跑，
    boot 一收起就無縫接上（沿用原本的分層，沒有改）。
@@ -1341,11 +1345,11 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 
 .intro-gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 
-/* 文字的底襯。上緣要夠柔、不能出現一條看得見的界線，所以中段多插一個節點。 */
+/* 玻璃卡身後的 scrim：中央壓得多一點，讓卡片有對比可站。z-index 保持在卡片
+   （z-index 2）之下，backdrop-filter 才吃得到它。 */
 .intro-modal::after { content: ""; position: absolute; inset: 0; z-index: 1;
   pointer-events: none;
-  background: linear-gradient(180deg, transparent 38%,
-              rgba(8,9,13,.35) 62%, rgba(8,9,13,.82) 84%, rgba(8,9,13,.96) 100%); }
+  background: radial-gradient(60% 50% at 50% 50%, rgba(8,9,13,.55), rgba(8,9,13,.22) 70%, transparent 100%); }
 
 /* 退化版（拿不到 WebGL）：每欄一個直條，內容重複兩份、用 transform 平移 -50%
    無縫循環。--dur/--delay 由 darkroom.js 逐欄設，跟著色器那組流速對齊。 */
@@ -1355,36 +1359,61 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 .intro-fb-col { flex: 1 1 0; overflow: hidden; }
 .intro-fb-run { display: block; animation: introFall var(--dur, 24s) linear infinite;
   animation-delay: var(--delay, 0s); will-change: transform; }
+/* 縮圖到齊才淡上來（.in 由 darkroom.js 在 load 時加），不要「啪一下出現」 */
 .intro-fb-run img { width: 100%; aspect-ratio: 1/1; object-fit: cover; display: block;
-  padding: 2px; }
+  padding: 2px; opacity: 0; transition: opacity .9s var(--ease-out); }
+.intro-fb-run img.in { opacity: 1; }
 @keyframes introFall { from { transform: translateY(-50%); } to { transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .intro-fb-run { animation: none; } }
 
-/* 題字靠左下、數字靠右下：非對稱的編輯式配置 */
-.intro-copy { position: absolute; left: 7vw; bottom: 9vh; z-index: 2;
-  pointer-events: none; max-width: min(60vw, 460px); }
-.intro-copy > * { pointer-events: auto; }
-.intro-copy h2 { margin: 0 0 10px; font-size: clamp(28px, 4.6vw, 46px);
-  letter-spacing: .22em; font-weight: 500; color: var(--ink);
-  text-shadow: 0 2px 24px rgba(0,0,0,.75); }
-.intro-lede { margin: 0 0 26px; font-size: 13px; letter-spacing: .06em; color: var(--dim);
-  text-shadow: 0 1px 14px rgba(0,0,0,.85); }
-/* 幽靈鈕：一條琥珀髮絲線，跟鏡框是同一種筆畫，不引入第三種材質 */
-.intro-enter-btn { padding: 11px 30px; border-radius: 999px; corner-shape: round;
-  font-size: 13px; font-weight: 500; letter-spacing: .18em; background: transparent;
+/* ── 題字卡：置中的 liquid glass 浮空視窗 ──────────────────────────────────
+   圓角刻意開大（36px）：squircle 在相同半徑下切掉的角比正圓少，要夠大才讀得出
+   是蘋果那種連續曲率的弧，而不是「有點圓的方框」。 */
+.intro-copy { position: absolute; left: 50%; top: 50%; translate: -50% -50%; z-index: 2;
+  width: min(86vw, 420px); padding: 44px 40px 34px; text-align: center;
+  border-radius: 36px;
+  background: linear-gradient(150deg, rgba(255,255,255,.13), rgba(255,255,255,.05) 46%,
+              rgba(255,255,255,.085));
+  backdrop-filter: blur(30px) saturate(165%);
+  -webkit-backdrop-filter: blur(30px) saturate(165%);
+  box-shadow: 0 40px 90px -34px rgba(0,0,0,.92),
+              inset 0 1px 0 rgba(255,255,255,.22),
+              inset 0 -18px 34px -26px rgba(255,255,255,.30); }
+/* 玻璃的厚度感：一條從左上亮到右下再回亮的高光邊。用 padding + mask 做出「只有
+   邊框」的漸層——border-image 吃不到 border-radius，直接畫在背景上會蓋住內容。 */
+.intro-copy::before { content: ""; position: absolute; inset: 0; border-radius: inherit;
+  padding: 1px; pointer-events: none;
+  background: linear-gradient(145deg, rgba(255,255,255,.62), rgba(255,255,255,.07) 36%,
+              rgba(255,255,255,.02) 60%, rgba(255,255,255,.34));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude; }
+.intro-copy h2 { margin: 0 0 12px; font-size: clamp(26px, 5.4vw, 34px);
+  letter-spacing: .24em; text-indent: .24em;   /* 字距是加在右邊的，補回來才真的置中 */
+  font-weight: 500; color: var(--ink); text-shadow: 0 2px 20px rgba(0,0,0,.6); }
+.intro-lede { margin: 0 0 28px; font-size: 12.5px; letter-spacing: .1em; text-indent: .1em;
+  color: var(--dim); }
+/* 幽靈鈕：一條琥珀髮絲線，跟玻璃的高光邊是同一種筆畫，不引入第三種材質 */
+.intro-enter-btn { padding: 11px 34px; border-radius: 999px; corner-shape: round;
+  font-size: 13px; font-weight: 500; letter-spacing: .18em; text-indent: .18em;
+  background: rgba(255,255,255,.06);
   border: 1px solid color-mix(in srgb, var(--amber) 55%, transparent); color: var(--amber);
   transition: background var(--d-micro) var(--ease-out), border-color var(--d-micro) var(--ease-out); }
-.intro-enter-btn:hover { background: color-mix(in srgb, var(--amber) 12%, transparent);
+.intro-enter-btn:hover { background: color-mix(in srgb, var(--amber) 16%, transparent);
   border-color: var(--amber); }
 
-/* 右下角的真數字：等寬、tabular-nums，不是裝飾性的 01/02/03 */
-.intro-meta { position: absolute; right: 7vw; bottom: 9vh; z-index: 2; pointer-events: none;
-  font-family: var(--mono); font-size: 10px; letter-spacing: .2em;
-  font-variant-numeric: tabular-nums;
+/* 真數字：等寬、tabular-nums，不是裝飾性的 01/02/03 */
+.intro-meta { margin-top: 24px; font-family: var(--mono); font-size: 9.5px;
+  letter-spacing: .2em; text-indent: .2em; font-variant-numeric: tabular-nums;
   color: color-mix(in srgb, var(--amber) 45%, transparent); }
 
 @media (max-width: 640px) {
-  .intro-copy { left: 7vw; right: 7vw; bottom: 13vh; max-width: none; }
-  .intro-copy h2 { letter-spacing: .16em; }
-  .intro-meta { right: 7vw; bottom: 7vh; font-size: 9px; letter-spacing: .12em; }
+  .intro-copy { padding: 36px 26px 28px; border-radius: 30px; }
+  .intro-copy h2 { letter-spacing: .16em; text-indent: .16em; }
+}
+/* backdrop-filter 拿不到時（舊瀏覽器）玻璃會變成幾乎全透明的白框，文字讀不到。
+   退回實心暗底，形狀與邊框維持不變。 */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .intro-copy { background: rgba(14,15,21,.86); }
 }

@@ -3327,6 +3327,7 @@ function hideBoot() {
   const b = document.getElementById('boot');
   if (!b || b.classList.contains('hide')) return;
   b.classList.add('hide');
+  introReveal();   // 印樣的顯影要等 boot 讓開才開始播，不然全被蓋著跑完了
   setTimeout(() => b.remove(), 600);
 }
 /* ---------------------------------------------------------------------------
@@ -3351,6 +3352,12 @@ function hideBoot() {
 const INTRO_COLS = 8, INTRO_ROWS = 8;   // atlas 的格數；縱向 8 格 = 一欄要跑很久才重複
 // 每欄的流速（格/秒）區間。下限不能太低，否則看起來是「畫面在飄」而不是「在流」。
 const INTRO_FLOW_MIN = 0.30, INTRO_FLOW_VAR = 0.22;
+const INTRO_FADE_MS = 900;         // 一格從底色顯影到滿的時間
+const INTRO_CELL_FAILED = -2;      // at[i] 的哨兵值：這格的縮圖載入失敗，永遠不會顯影
+// boot 載入畫面至少要等到這個比例的格子到齊才收（上限 INTRO_WARMUP_MAX_MS）。
+// 沒有這段等待的話，boot 一收起看到的是一整片底色，圖才陸續補上——那個空窗比
+// 多轉半秒的載入動畫難看得多。
+const INTRO_WARMUP_RATIO = 0.55, INTRO_WARMUP_MAX_MS = 2200;
 
 let introGL = null;         // { gl, prog, loc, tex, canvas, … } 或 null（退化模式）
 let introRAF = null;
@@ -3372,7 +3379,10 @@ varying vec2 vUv;
 uniform vec2  uRes;
 uniform float uTime;
 uniform sampler2D uTex;
-uniform float uHasTex;
+// 每格的顯影進度（0..1）。用一張 COLS×ROWS 的 NEAREST 材質而不是 uniform 陣列：
+// GLSL ES 1.0 的片段著色器不保證能用算出來的索引讀 uniform 陣列，而格號本來就是
+// 算出來的。這張圖只有 64 bytes，每幀重傳的成本可以忽略。
+uniform sampler2D uCell;
 
 const float COLS = ${INTRO_COLS}.0;
 const float ROWS = ${INTRO_ROWS}.0;
@@ -3396,11 +3406,17 @@ void main() {
 
   // mod 把格號捲回 atlas 範圍。uv 在格子邊界是不連續的——LINEAR 取樣不在意（只有
   // mipmap 會依導數挑階），所以這裡刻意沒有 mipmap，見上方 darkroom.js 的說明。
-  vec2 uv = (vec2(mod(ci, COLS), mod(ri, ROWS)) + vec2(fx, fy)) / vec2(COLS, ROWS);
-  vec3 col = uHasTex > 0.5 ? texture2D(uTex, uv).rgb : vec3(0.031, 0.035, 0.051);
+  vec2 cell = vec2(mod(ci, COLS), mod(ri, ROWS));
+  vec2 uv = (cell + vec2(fx, fy)) / vec2(COLS, ROWS);
+  vec3 bg = vec3(0.031, 0.035, 0.051);
 
-  // 只有很輕的暗角：印樣本身是滿版不減光的，這裡單純把視線收回來、順便讓四角的
-  // 題字與數字讀得到。真正的文字底襯交給 CSS 的漸層 scrim。
+  // 每格自己的顯影：縮圖到齊時不是「啪一下出現」，而是從底色淡上來。取格子中心
+  // 的 texel，uCell 是 NEAREST，所以整格拿到同一個值。
+  float f = texture2D(uCell, (cell + 0.5) / vec2(COLS, ROWS)).r;
+  // smoothstep 曲線（兩頭慢、中段快）比線性淡入更像顯影，也不會有「開始」的硬邊
+  vec3 col = mix(bg, texture2D(uTex, uv).rgb, f * f * (3.0 - 2.0 * f));
+
+  // 只有很輕的暗角：印樣本身是滿版不減光的，這裡單純把視線收回來。
   col *= 1.0 - 0.30 * pow(clamp(length(p) * 0.80, 0.0, 1.0), 2.2);
 
   gl_FragColor = vec4(col, 1.0);
@@ -3453,10 +3469,25 @@ function introInitGL() {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 1, 1, 0, gl.RGB, gl.UNSIGNED_BYTE, new Uint8Array([8, 9, 13]));
 
+  // 每格的顯影進度：COLS×ROWS 的 LUMINANCE 材質，NEAREST（整格要拿到同一個值，
+  // 不能被相鄰格內插）。UNPACK_ALIGNMENT 設 1，否則列寬不是 4 的倍數時會錯位。
+  const cellTex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, cellTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, INTRO_COLS, INTRO_ROWS, 0,
+                gl.LUMINANCE, gl.UNSIGNED_BYTE, new Uint8Array(INTRO_COLS * INTRO_ROWS));
+  gl.activeTexture(gl.TEXTURE0);
+
   const loc = {};
-  for (const n of ['uRes','uTime','uTex','uHasTex']) loc[n] = gl.getUniformLocation(prog, n);
+  for (const n of ['uRes','uTime','uTex','uCell']) loc[n] = gl.getUniformLocation(prog, n);
   gl.uniform1i(loc.uTex, 0);
-  return { gl, prog, loc, tex, canvas, hasTex: 0, maxTex: gl.getParameter(gl.MAX_TEXTURE_SIZE) };
+  gl.uniform1i(loc.uCell, 1);
+  return { gl, prog, loc, tex, cellTex, canvas, maxTex: gl.getParameter(gl.MAX_TEXTURE_SIZE) };
 }
 
 function introResize() {
@@ -3495,7 +3526,17 @@ function introBuildAtlas() {
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#08090d';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  return { canvas, ctx, cell, dirty: true, any: false };
+  const n = INTRO_COLS * INTRO_ROWS;
+  return {
+    canvas, ctx, cell, dirty: true, count: 0,
+    reveal: 0,                          // 顯影可以開始播的時間戳（0 = boot 還蓋著）
+    at: new Float64Array(n).fill(-1),   // 每格縮圖到齊的時間戳（-1 = 還沒到）
+    // 縮圖常常是一整批同時回來（尤其後端有快取時），全部同時淡入就跟「啪一下
+    // 出現」沒兩樣。每格再加一點隨機延遲，讓它們錯開成一片陸續浮現。
+    lag: Float64Array.from({ length: n }, () => Math.random() * 420),
+    px: new Uint8Array(n),              // 送進 uCell 的進度值
+    fading: true,                       // 還有格子在動就要每幀重傳 uCell
+  };
 }
 
 // 逐格載入縮圖。每到一張就標記 dirty，由幀迴圈**一幀最多重傳一次**材質——
@@ -3515,11 +3556,41 @@ function introLoadCells() {
       const s = Math.min(img.width, img.height);      // cover 裁切自己算，drawImage 不做
       introAtlas.ctx.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s,
                                cx + 2, cy + 2, cell - 4, cell - 4);
-      introAtlas.dirty = true; introAtlas.any = true;
+      introAtlas.dirty = true;
+      if (introAtlas.at[i] < 0) { introAtlas.at[i] = performance.now(); introAtlas.count++; }
+      introAtlas.fading = true;
+    };
+    // 載入失敗的格子留空（底色），不影響其餘；標成哨兵值免得顯影迴圈一直等它
+    img.onerror = () => {
+      if (introAtlas && introAtlas.at[i] < 0) { introAtlas.at[i] = INTRO_CELL_FAILED; introAtlas.count++; }
     };
     // 這裡要的是「正好 cell 像素」的來源，不隨 DPR 再放大，所以不走 thumbURL(it, px)
     img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}&w=${cell}`;
   }
+}
+
+// boot 開始淡出時呼叫：這一刻起才播顯影。已經到齊的格子會從這裡一起（各自帶著
+// lag 錯開地）浮現，之後才到的則以自己的到齊時間為準。
+function introReveal() {
+  if (introAtlas && !introAtlas.reveal) {
+    introAtlas.reveal = performance.now() + 180;   // 讓 boot 先讓開一點點再開始
+    introAtlas.fading = true;
+  }
+}
+
+// boot 載入畫面多轉一下，等印樣鋪到看得出是一片圖再收。用 setTimeout 而不是 rAF——
+// 分頁在背景時 rAF 不觸發，那樣會一路撐到上限才放行（CLAUDE.md 記過的老坑）。
+function introWarmup() {
+  if (!introAtlas) return Promise.resolve();
+  const need = Math.ceil(INTRO_COLS * INTRO_ROWS * INTRO_WARMUP_RATIO);
+  const t0 = performance.now();
+  return new Promise(res => {
+    const tick = () => {
+      if (!introAtlas || introAtlas.count >= need || performance.now() - t0 > INTRO_WARMUP_MAX_MS) res();
+      else setTimeout(tick, 70);
+    };
+    tick();
+  });
 }
 
 function introFrame(now) {
@@ -3528,17 +3599,38 @@ function introFrame(now) {
   if (!introT0) introT0 = now;
   introResize();
 
-  // 材質重傳：一幀最多一次
+  // atlas 重傳：一幀最多一次（十幾 MB 的上傳，不能每張縮圖各觸發一次）
   if (introAtlas && introAtlas.dirty) {
     gl.bindTexture(gl.TEXTURE_2D, introGL.tex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, introAtlas.canvas);
-    introGL.hasTex = introAtlas.any ? 1 : 0;
     introAtlas.dirty = false;
+  }
+  // 每格的顯影進度。全部跑完就不再重傳——這張圖雖然只有 64 bytes，但 texImage2D
+  // 本身有固定開銷，穩定播放時沒必要每幀都付。
+  if (introAtlas && introAtlas.fading) {
+    let moving = false;
+    for (let i = 0; i < introAtlas.px.length; i++) {
+      const t0 = introAtlas.at[i];
+      if (t0 === INTRO_CELL_FAILED) continue;           // 這格永遠不會來，別讓它一直撐著
+      if (t0 < 0) { moving = true; continue; }          // 縮圖還沒到，之後才會開始
+      // 起算點取「縮圖到齊」與「boot 讓開」兩者的晚者：warmup 期間到齊的那批不能
+      // 在 boot 底下就把顯影跑完，要留到畫面露出來才一起（錯開地）浮現。
+      const start = Math.max(t0, introAtlas.reveal) + introAtlas.lag[i];
+      const k = Math.min(1, Math.max(0, (now - start) / INTRO_FADE_MS));
+      introAtlas.px[i] = Math.round(k * 255);
+      if (k < 1) moving = true;
+    }
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, introGL.cellTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, INTRO_COLS, INTRO_ROWS, 0,
+                  gl.LUMINANCE, gl.UNSIGNED_BYTE, introAtlas.px);
+    gl.activeTexture(gl.TEXTURE0);
+    introAtlas.fading = moving;
   }
 
   gl.uniform1f(loc.uTime, (now - introT0) / 1000);
-  gl.uniform1f(loc.uHasTex, introGL.hasTex);
   gl.drawArrays(gl.TRIANGLES, 0, 6);
   introRAF = requestAnimationFrame(introFrame);
 }
@@ -3565,6 +3657,15 @@ function introFallback() {
       const it = introPool[(c * INTRO_ROWS + (k % INTRO_ROWS)) % introPool.length];
       const img = new Image();
       img.alt = ''; img.decoding = 'async'; img.fetchPriority = 'low';
+      // 跟 WebGL 版一樣不要「啪一下出現」：到齊才加 .in，由 CSS 過渡淡上來。
+      // inline 的 transition-delay 播完一定要拆掉——它對這個元素上「所有」過渡都
+      // 生效，留著會拖累之後的任何過渡（CLAUDE.md 記過的坑）。
+      const lag = Math.round(Math.random() * 420);
+      img.style.transitionDelay = lag + 'ms';
+      img.addEventListener('load', () => {
+        img.classList.add('in');
+        setTimeout(() => { img.style.transitionDelay = ''; }, lag + INTRO_FADE_MS + 60);
+      }, { once: true });
       img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}&w=${cell}`;
       inner.appendChild(img);
     }
@@ -3606,8 +3707,8 @@ function closeIntro() {
     modal.classList.remove('open');
     // 釋放 GL 資源——進場只播一次，留著等於白佔一張材質與一個 context
     if (introGL) {
-      const { gl, tex, prog } = introGL;
-      gl.deleteTexture(tex); gl.deleteProgram(prog);
+      const { gl, tex, cellTex, prog } = introGL;
+      gl.deleteTexture(tex); gl.deleteTexture(cellTex); gl.deleteProgram(prog);
       const lose = gl.getExtension('WEBGL_lose_context');
       if (lose) lose.loseContext();
       introGL = null;
@@ -3642,8 +3743,11 @@ function startApp() {
   // 啟動 pollBatch，讓 finally(hideBoot) 立刻收尾、pollBatch 自行在背景跑。
   // maybeStartIntro() 排在 pollBatch() 之前：進場疊層（z-index 230）比 #boot（300）
   // 低，boot 淡出的 600ms 期間進場畫面已經在底下跑，boot 一收起就無縫接上。
+  // introWarmup() 讓 boot 再多轉一下、等印樣鋪到看得出是一片圖才收（有上限），
+  // 否則 boot 收起的瞬間是一整片底色。pollBatch() 刻意不 return——它的 while(true)
+  // 永不 resolve，鏈在後面會讓 boot 一直等到下面的 20s 保險才關。
   $('boot').style.display = '';
-  loadAll().then(() => { maybeStartIntro(); pollBatch(); }).finally(hideBoot);
+  loadAll().then(() => { maybeStartIntro(); pollBatch(); return introWarmup(); }).finally(hideBoot);
   setTimeout(hideBoot, 20000);   // 保險：萬一 loadAll 本身卡住也別讓載入畫面永遠蓋著
 }
 function initAgeGate() {

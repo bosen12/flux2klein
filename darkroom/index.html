@@ -394,14 +394,15 @@
        退化版本（CSS transform 的欄式瀑布）。 -->
   <canvas class="intro-gl" id="intro-gl" aria-hidden="true"></canvas>
   <div class="intro-fallback" id="intro-fallback" hidden aria-hidden="true"></div>
-  <!-- 刻意不置中：題字靠左下、數字靠右下，取非對稱的編輯式配置 -->
+  <!-- 題字卡：置中的 liquid glass 浮空視窗（背景模糊＋高光邊＋蘋果連續曲率圓角，
+       圓角形狀由 darkroom.css 開頭的 corner-shape: squircle 全域規則自動給）。
+       .intro-meta 是真實的詞庫總數與覆蓋數，不是裝飾性編號。 -->
   <div class="intro-copy">
     <h2>詞庫暗房</h2>
     <p class="intro-lede">整座詞庫，正在流過</p>
     <button type="button" class="intro-enter-btn" id="intro-enter-btn">進入</button>
+    <div class="intro-meta" id="intro-meta"></div>
   </div>
-  <!-- 右下角是真實的總數與覆蓋數（不是裝飾性編號，是這個工具本來就在追蹤的數字） -->
-  <div class="intro-meta" id="intro-meta"></div>
 </div>
 <script src="/darkroom.js" defer></script>
 </body>
