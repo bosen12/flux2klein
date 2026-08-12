@@ -3356,6 +3356,24 @@ const INTRO_ROWS_MOBILE = [
 ];
 const INTRO_IMG_SIZE = { edge: 108, mid: 168 };   // 對照 darkroom.css 的 .intro-row.edge/.mid img 尺寸，寫進 width/height 屬性避免版面跳動（CLS）
 const INTRO_IMG_SIZE_MOBILE = { edge: 68, mid: 100 };
+
+// ── 縮圖要「顯示多大就要多大」──────────────────────────────────
+// 使用者回報兩種進場動畫都會「整張圖忽明忽暗、紋理在跳、像摩爾紋」。根因不是
+// 動畫本身，是**縮小取樣走樣**：`/api/thumb` 預設回 360px（當初是照「格子 180px
+// @2x DPR」訂的），但進場畫面把它顯示成 108～130px，在 1x DPR 的螢幕上等於縮小
+// 2.8～3.3 倍。走樣在**靜止**畫面幾乎看不出來（只是有點銳利過頭），所以同樣被
+// 縮小 1.96 倍的格線縮圖從來沒人抱怨；可是只要內容在動（3D 漂移、橫向捲動），
+// 每一幀取樣到的來源像素子集都不一樣，細節就逐幀跳動＝閃，整塊的平均亮度跟著
+// 抖＝忽明忽暗，規律紋理互相干涉＝摩爾紋。
+//
+// 治本就是讓縮放比例接近 1：依實際顯示尺寸（× devicePixelRatio）跟後端要對應
+// 級距的縮圖（見 preview_ui.py 的 THUMB_SIZES）。順帶好處是進場要載 81 張圖，
+// 128px 的 webp 只有 360px 的約 1/8 像素量，載入與解碼都明顯更省。
+function thumbURL(it, displayPx) {
+  const u = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
+  if (!displayPx) return u;
+  return u + '&w=' + Math.round(displayPx * (window.devicePixelRatio || 1));
+}
 function buildIntroRow(items, durS, px) {
   const track = document.createElement('div'); track.className = 'intro-track';
   track.style.setProperty('--intro-dur', durS + 's');
@@ -3372,7 +3390,7 @@ function buildIntroRow(items, durS, px) {
       img.fetchPriority = 'low';
       img.draggable = false;
       img.alt = ''; img.width = px; img.height = px;
-      img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
+      img.src = thumbURL(it, px);   // 顯示多大就要多大，見 thumbURL 的說明
       track.appendChild(img);
     }
   }
@@ -3562,7 +3580,8 @@ function prefetchAheadChunks(cx0, cy0, cz0) {
           const it = introPool[Math.floor(c.pickSeed * introPool.length) % introPool.length];
           const pre = new Image();
           pre.decoding = 'async'; pre.fetchPriority = 'low';
-          pre.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
+          // 必須跟真正要用的網址完全一致（含 &w=），不然暖到的是另一份快取、白暖
+          pre.src = thumbURL(it, isMobile() ? 100 : 130);
         });
       }
     }
@@ -3712,7 +3731,11 @@ function updateIntroChunks() {
       // loadIdx 只在單次呼叫內錯開，連續好幾次呼叫（例如快速拖曳連續跨過
       // 好幾個區塊邊界）各自的錯開會疊在同一個時間點，還是會擠爆；改成共
       // 用佇列後，不管哪一批發出的請求都照同一個全域節奏排隊，不會疊加。
-      const src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
+      // 依卡片實際顯示尺寸要縮圖（見 thumbURL）。130px @1x 會落在 192 這一級：
+      // 卡片會隨透視在 41～294px 之間變動，單一來源尺寸不可能對所有深度都剛好，
+      // 192 是折衷——最近的卡片放大 1.5 倍（略軟但不會閃），中距離接近 1:1，
+      // 最遠那段殘留的縮小由景深低通（introBlurFor）收尾。
+      const src = thumbURL(it, cardPx);
       const startLoad = () => {
         if (rec.cancelled) return;   // 排隊等待期間卡片已經被移除，不用再發這個請求
         let retried = false;
@@ -3874,7 +3897,7 @@ function renderIntroCanvas() {
       if (gen !== introPrefetchGen) return;
       const pre = new Image();
       pre.decoding = 'async'; pre.fetchPriority = 'low';
-      pre.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
+      pre.src = thumbURL(it, isMobile() ? 100 : 130);   // 同上：要跟卡片真正要的網址一致
     }, i * 70);
   });
   applyIntroCanvasTransform();

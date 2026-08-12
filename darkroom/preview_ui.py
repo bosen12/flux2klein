@@ -542,6 +542,14 @@ def strip_rarity(stem: str) -> str:
 
 # --- 縮圖快取 -------------------------------------------------------------
 THUMB_MAX = 360           # 縮圖最長邊(px);格子 ~180px @2x DPR 剛好
+# 允許用 ?w= 指定較小的尺寸。動機是「進場動畫的圖片在動的時候會閃/出現摩爾紋」:
+# 縮圖固定 360px,但進場畫面把它顯示成 108~130px(1x DPR),等於縮小 2.8~3.3 倍。
+# 靜止的格線看不出來(走樣在靜態畫面只是「有點鋭利過頭」),但只要內容在動,每一幀
+# 取樣到的來源像素子集都不一樣,細節就會逐幀跳動 —— 看起來就是整張圖在閃、密集
+# 紋理處出現摩爾紋。治本的做法是「顯示多大就送多大」,讓縮放比例接近 1。
+# 用固定的尺寸級距(不是任意數字)是為了限制磁碟快取的條目數:每多一個尺寸就多一
+# 份快取,開放任意 w 會讓 .thumb_cache 無限膨脹。
+THUMB_SIZES = (128, 192, 256, 360)
 THUMB_QUALITY = 72
 THUMB_DIR = Path(__file__).resolve().parent / ".thumb_cache"
 _thumb_locks: dict[str, threading.Lock] = {}
@@ -560,13 +568,32 @@ def _thumb_lock(key: str) -> threading.Lock:
         return lk
 
 
-def make_thumb(src: Path) -> tuple[bytes, str]:
+def thumb_size_for(raw: str) -> int:
+    """把 ?w= 收斂到 THUMB_SIZES 裡的級距;沒給或不合法一律回 THUMB_MAX。
+
+    取「不小於需求的最小級距」——寧可送稍大一點讓瀏覽器再縮一點點,也不要送比
+    需求小的然後被放大成糊的。
+    """
+    try:
+        want = int(raw)
+    except (TypeError, ValueError):
+        return THUMB_MAX
+    for s in THUMB_SIZES:
+        if s >= want:
+            return s
+    return THUMB_MAX
+
+
+def make_thumb(src: Path, size: int = THUMB_MAX) -> tuple[bytes, str]:
     """回傳 (webp bytes, etag)。磁碟快取,靠來源 mtime+size 失效。
+
+    size 必須是 THUMB_SIZES 裡的值(由 thumb_size_for 收斂),它會進 etag/快取鍵,
+    不同尺寸各自一份快取檔,不會互相覆蓋。
 
     Pillow 不可用時,退回原圖(較大但仍可顯示)。
     """
     st = src.stat()
-    sig = f"{src}|{int(st.st_mtime)}|{st.st_size}|{THUMB_MAX}"
+    sig = f"{src}|{int(st.st_mtime)}|{st.st_size}|{size}"
     etag = hashlib.sha1(sig.encode("utf-8")).hexdigest()
 
     if not _HAS_PIL:
@@ -587,7 +614,7 @@ def make_thumb(src: Path) -> tuple[bytes, str]:
             plog(f"[thumb] Pillow 縮圖 {src.parent.name}/{src.name}")
             with Image.open(src) as im:
                 im = im.convert("RGB")
-                im.thumbnail((THUMB_MAX, THUMB_MAX), Image.LANCZOS)
+                im.thumbnail((size, size), Image.LANCZOS)
                 buf = io.BytesIO()
                 im.save(buf, format="WEBP", quality=THUMB_QUALITY, method=1)
             data = buf.getvalue()
@@ -1496,7 +1523,7 @@ class Handler(BaseHTTPRequestHandler):
                 if img is None:
                     self._send_bytes(b"not found", "text/plain", 404)
                     return
-                data, etag = make_thumb(img)
+                data, etag = make_thumb(img, thumb_size_for(qs.get("w", [""])[0]))
                 ct = "image/webp" if _HAS_PIL else (
                     "image/webp" if img.suffix.lower() == ".webp" else "image/png")
                 self._send_cacheable(data, ct, etag)
