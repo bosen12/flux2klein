@@ -330,9 +330,10 @@ function render() {
       let i = 0;
       for (const e of entries) {
         if (!e.isIntersecting) continue;
-        e.target.style.transitionDelay = (Math.min(i, 12) * 30) + 'ms';
+        e.target.style.transitionDelay = (Math.min(i, 12) * REVEAL_STAGGER) + 'ms';
         e.target.classList.add('in');
         _revealIO.unobserve(e.target);
+        settleReveal(e.target, Math.min(i, 12) * REVEAL_STAGGER);
         i++;
       }
     }, { root: $('main'), rootMargin: '0px 0px -6% 0px', threshold: 0.02 });
@@ -361,6 +362,23 @@ function render() {
 const PAGE = 120;
 const AUTO_LOAD_CAP = 600;
 let _rendered = 0, _io = null, _revealIO = null, _pruneIO = null;
+
+const REVEAL_STAGGER = 30;   // ms/張，最多 12 張份（見 _revealIO）
+const REVEAL_DUR = 440;      // = CSS --d-enter，.card.reveal.in 的過渡時長
+// 進場動畫「收尾」：把 .reveal/.in 與 inline transition-delay 一併拆掉。
+// 這一步不是可有可無的清理——不拆的話有兩個看得見的後果：
+//   ① inline 的 transition-delay 對這個元素上「所有」過渡都生效，於是進場排在後面的
+//      卡片，之後每次 hover 都要先等 0.36 秒才會浮起來，感覺像頁面在卡；
+//   ② .card.reveal.in 自帶的 transition 清單（只有 opacity/transform）比 .card 的
+//      基礎清單更具體，會蓋掉它，hover 的邊框色與陰影因此完全沒有過渡、直接跳色。
+// 依 CLAUDE.md 的教訓不靠 transitionend 收尾（分頁在背景時 rAF 不跑、事件永遠不結算），
+// 直接用 setTimeout 算好時間拆。
+function settleReveal(card, delay) {
+  setTimeout(() => {
+    card.classList.remove('reveal', 'in');
+    card.style.transitionDelay = '';
+  }, delay + REVEAL_DUR + 60);
+}
 
 // 全庫瀏覽／跨資料夾搜尋時 VISIBLE 可能有上萬筆，appendPage() 只增不減會讓 DOM 裡
 // 累積的縮圖（解碼後的點陣圖）越捲越多、越捲越頓。只在筆數超過 AUTO_LOAD_CAP（跟
@@ -440,7 +458,13 @@ function appendPage() {
     fresh.forEach(c => _revealIO.observe(c));
     // 保險：IO 若因分頁在背景（不合成畫面）等原因沒觸發，逾時仍把還沒進場的
     // 顯示出來，避免卡片永遠停在 opacity:0（CLAUDE.md 隱藏分頁的教訓）。
-    setTimeout(() => fresh.forEach(c => c.classList.add('in')), 2500);
+    // 走這條路的卡片沒有經過 _revealIO，也就沒人幫它們收尾，要自己補 settleReveal()，
+    // 不然 .reveal.in 會永久留著、把 hover 的過渡蓋掉（見 settleReveal 的說明）。
+    setTimeout(() => fresh.forEach(c => {
+      if (!c.classList.contains('reveal')) return;   // 已經進場並收尾過了
+      c.classList.add('in');
+      settleReveal(c, 0);
+    }), 2500);
   }
   ensurePruneIO();
   if (_pruneIO) cards.forEach(c => _pruneIO.observe(c));
@@ -2721,11 +2745,18 @@ function updateGalleryHead() {
   const empty = $('gallery-empty'); if (empty) empty.style.display = n ? 'none' : '';
   updateCancelAllBtn();
 }
+// 已經在畫面上出現過的卡片 id。renderGallery() 是整格重建，若不記著誰是舊的，每按一次
+// 生圖都會讓所有既有卡片重播一次進場動畫——整面圖突然一起閃，看起來像畫面壞掉。
+const _gcSeen = new Set();
 function buildGalleryCard(g, i) {
   const card = document.createElement('div');
-  card.className = 'gcard' + (g.done ? '' : ' pending') + (g.err ? ' gr-err' : '');
+  const fresh = !_gcSeen.has(g.id);
+  _gcSeen.add(g.id);
+  card.className = 'gcard' + (g.done ? '' : ' pending') + (g.err ? ' gr-err' : '') + (fresh ? '' : ' seen');
   card.dataset.gid = g.id;
-  card.style.setProperty('--i', i || 0);
+  // stagger 上限：新卡永遠疊在最前面（陣列反過來走），所以 i 小的就是新的那幾張。
+  // 不設上限的話一批 50 張會排到 1.4 秒後才出現最後一張，尾巴看起來像卡住沒反應。
+  card.style.setProperty('--i', Math.min(i || 0, 11));
   const sq = document.createElement('div'); sq.className = 'gc-square';
   const img = document.createElement('img'); img.className = 'gen-live'; img.alt = ''; img.decoding = 'async';
   img.onload = () => img.classList.add('ld');
@@ -2745,6 +2776,9 @@ function renderGallery() {
 }
 function openGallery() {
   if (GALLERY_OPEN) return;
+  // 開啟圖庫是一次「換頁」，整批卡片一起進場才有進到新畫面的感覺——清掉已見過的名單，
+  // 讓這一次全部重播（之後在圖庫裡新增才只動新卡，見 buildGalleryCard）。
+  _gcSeen.clear();
   switchView(() => { GALLERY_OPEN = true; document.body.classList.add('gallery-open'); $('gallery-btn').classList.add('on'); renderGallery(); });
 }
 function closeGallery() {

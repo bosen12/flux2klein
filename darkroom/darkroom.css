@@ -28,6 +28,7 @@
   --ease-entrance: cubic-bezier(.22,1,.36,1);   /* 進場，收得更穩（= KLEIN --ease-entrance） */
   --ease-spring:   cubic-bezier(.34,1.4,.64,1); /* 輕微過衝（= KLEIN --ease-spring） */
   --d-micro: 140ms;   /* hover/press（≈ KLEIN --dur-1） */
+  --d-exit:  100ms;   /* 退場：比對應的進場短，配 --ease-in（專案慣例「進場慢收、退場快走」） */
   --d-ui:    220ms;   /* 狀態切換（= KLEIN --dur-2） */
   --d-pop:   280ms;   /* modal/popover（≈ KLEIN --dur-3） */
   --d-enter: 440ms;   /* 卡片入場（≈ KLEIN --dur-4） */
@@ -297,12 +298,17 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
         overflow: hidden; display: flex; flex-direction: column;
         touch-action: manipulation; -webkit-tap-highlight-color: transparent;
-        transition: border-color var(--d-micro) var(--ease-out),
-                    transform var(--d-micro) var(--ease-out),
-                    box-shadow var(--d-micro) var(--ease-out);
+        /* 這條是「放開 hover」時用的（退場）：短一點、ease-in，游標一離開就快速落回。
+           進場那條寫在 :hover 上，見下。 */
+        transition: border-color var(--d-exit) var(--ease-in),
+                    transform var(--d-exit) var(--ease-in),
+                    box-shadow var(--d-exit) var(--ease-in);
         content-visibility: auto; contain-intrinsic-size: auto 260px; }
 .card:hover { border-color: rgba(234,173,87,.5); transform: translateY(-4px);
-              box-shadow: 0 14px 30px -8px rgba(0,0,0,.5), 0 0 0 3px var(--amber-soft); }
+              box-shadow: 0 14px 30px -8px rgba(0,0,0,.5), 0 0 0 3px var(--amber-soft);
+              transition: border-color var(--d-micro) var(--ease-out),
+                          transform var(--d-micro) var(--ease-out),
+                          box-shadow var(--d-micro) var(--ease-out); }
 .card.missing { border-style: dashed; border-color: #34363f; }
 /* reveal-on-scroll：卡片預設藏起，捲進視野加 .in 才淡入上升（stagger 由 JS 設 delay） */
 .card.reveal { opacity: 0; transform: translateY(12px); }
@@ -848,6 +854,9 @@ body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不�
 .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 18px; padding: 0 2px 48px; }
 .gcard { display: flex; flex-direction: column; gap: 5px;
          animation: gcardIn .34s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 28ms); }
+/* .seen：整格重建時已經在畫面上的舊卡（見 darkroom.js _gcSeen）。不重播進場動畫，
+   不然每加一批新圖，整面圖庫都會跟著閃一次。 */
+.gcard.seen { animation: none; }
 .gc-square { position: relative; border-radius: 10px; overflow: hidden; background: var(--sunk); }
 .gcard .gen-live { border-radius: 10px; transition: transform var(--d-ui) var(--ease-out); }
 .gcard:not(.pending) .gen-live { cursor: zoom-in; }
