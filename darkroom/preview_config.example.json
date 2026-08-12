@@ -8,5 +8,8 @@
   "steps": 25,
   "concurrency": 2,
   "_comfy_endpoints說明": "只給 multi_gpu_batch.py 用（一次性多卡補缺圖）。填想同時使用的 ComfyUI 位址，本機＋租的 GPU（RunPod／vast.ai 之類的代理網址）都放這裡。省略就只用本機那張。租用機器的網址是每次租用才有的，不要寫死進 .py 檔案，只放在這個已 gitignore 的設定檔。vast.ai 對外 port 一律要 Basic Auth，可以寫成 https://vastai:你的OPEN_BUTTON_TOKEN@xxx.trycloudflare.com 這種帶帳密的網址；也要注意 vast.ai 卡片上「Open」給的直連 IP:port 常常連不到，要用它自動建的 trycloudflare.com tunnel 網址。",
-  "comfy_endpoints": ["http://127.0.0.1:8188"]
+  "comfy_endpoints": ["http://127.0.0.1:8188"],
+  "_discord說明": "只給 agent_draw.py 的 --discord-dm 用（送真正的 Discord embed，見 AGENT_DRAW.md）。兩個都要填才會生效，任一沒填就不能用 --discord-dm（改用 MEDIA: 附件那條路）。bot 必須跟 discord_dm_user_id 那個使用者共用至少一個伺服器，Discord 才允許主動開 DM。bot token 比暗房本身的無驗證還敏感——外流等於任何人都能用它冒充這個 bot 發訊息，不要提交進 git、不要貼進聊天視窗。",
+  "discord_bot_token": "",
+  "discord_dm_user_id": ""
 }

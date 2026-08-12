@@ -58,7 +58,7 @@ API 格式的範本在啟動時一次 fetch 進 `state.zTemplates`，送出前 d
 | `styles.css` | 樣式。設計 token 在 `:root`，各引擎主題色用 `:root[data-engine="..."]` 覆寫 |
 | `design-ref/hero_demo.html` | **設計參考，不是面板的一部分。** 獨立單檔，用 `file://` 直接開；刻意不列入 `STATIC_FILES`，不要把它加進去 |
 | `darkroom/preview_ui.py` | 詞庫暗房後端，獨立工具（見上「專案結構」）。改路徑相關程式碼前先確認 `Path(__file__).resolve().parent` 現在指的是 `darkroom/`，不是根目錄 |
-| `darkroom/agent_draw.py` | 給外部 AI agent 用的抽卡 CLI／函式庫，呼叫 `preview_ui.py` 的 `/api/agent-draw` 等端點，不重複實作抽卡邏輯 |
+| `darkroom/agent_draw.py` | 給外部 AI agent 用的抽卡 CLI／函式庫，呼叫 `preview_ui.py` 的 `/api/agent-draw` 等端點，不重複實作抽卡邏輯。`--discord-dm` 額外直接用 bot token 送真正的 Discord embed（繞過 agent 框架的訊息工具） |
 | `darkroom/AGENT_DRAW.md` | 給只能打 HTTP API（function calling）的 agent 看的端點說明與呼叫範例 |
 | `groq_proxy.py` | Groq 多 key 輪替代理。留根目錄（跟 `config.js` 同層），被面板 AI 優化與 `voice-assistant/` 的語音助理／LiveTalking 三邊共用 |
 

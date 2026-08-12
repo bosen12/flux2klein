@@ -1781,7 +1781,10 @@ class Handler(BaseHTTPRequestHandler):
                 items = start_gen(jobs, client)
                 lora_desc = "、".join(f"{n_}@{s}" for n_, s in loras) or "(無)"
                 plog(f"[agent-draw] 抽 {len(items)} 張 · folder={folder or '(全部)'} · rarity={rarity or '(預設池)'} · lora={lora_desc}")
-                self._send_json({"ok": True, "items": items})
+                # 把實際套用的 loras 一起回傳——呼叫端沒帶 loras 時套的是伺服器端的
+                # AGENT_DRAW_DEFAULT_LORAS，呼叫端不該自己重複那份預設值才知道套了
+                # 什麼（例如組 Discord embed 要顯示 LoRA 名稱時），單一事實來源在這裡。
+                self._send_json({"ok": True, "items": items, "loras": [[n_, s] for n_, s in loras]})
                 return
             if u.path == "/api/gen-cancel":
                 # 帶 ids（陣列）＝只取消這幾張——抽卡疊層的「取消」鈕（只停當批）、圖庫的

@@ -133,6 +133,41 @@ Hermes（[NousResearch/hermes-agent](https://github.com/nousresearch/hermes-agen
 >      兩個 `MEDIA:` 標籤，順序要跟名稱列表對上。重複直到全部送完。
 > 5. 如果 `fail` 陣列不是空的，最後補一句「N 張生成失敗」。
 
+## 真正的 Discord embed（不是 MEDIA: 附件）
+
+`MEDIA:` 標籤送出去的是「文字訊息 + 附件」，不是官方 embed 卡片（沒有 title／
+image／footer 這些結構化欄位，Discord 不會渲染成卡片樣式）。原因不是 Discord
+擋你，是 Hermes 開放給模型的 `send_message` 工具本身沒有 embed 參數——它要同時
+支援 Telegram／WhatsApp／Signal 等十幾個平台，這些平台大多沒有「embed」這個概念，
+所以 Hermes 的跨平台訊息工具只給「純文字 + 附件」這種各平台都有的最大公約數。
+Hermes 內部其實有 `discord.Embed`（讀過原始碼確認），但那是它自己系統訊息用的，
+沒開放給模型呼叫。
+
+要拿到真正的 embed，得繞過 Hermes 的訊息工具，直接用一個**真正的 Discord bot
+token** 打 Discord 官方 REST API。webhook 做不到這件事——webhook 綁定的是伺服器
+頻道，Discord 不支援 webhook 投遞到 DM；bot token 沒有這個限制，一樣可以 DM。
+
+```bash
+python agent_draw.py --n 8 --discord-dm
+```
+
+抽完會自動組出 embed（**title = 系列（資料夾）＋詞庫名稱、一個 LoRA 欄位、圖片**）
+直接送到指定使用者的 DM，不用另外跑 `send_message`／組 `MEDIA:` 標籤。超過 10
+張自動分成多則訊息（Discord 平台上限）。
+
+**設定**（`preview_config.json`，已 gitignore，跟 `comfy_endpoints` 那些機器相關
+設定同一份檔案）：
+```json
+{
+  "discord_bot_token": "你的 bot token",
+  "discord_dm_user_id": "你的 Discord 使用者 ID（數字）"
+}
+```
+⚠️ 這個 bot **必須跟你至少共用一個伺服器**，Discord 才允許它主動幫你開 DM 頻道
+（`POST /users/@me/channels`）——如果你們純粹只在一個沒有共同伺服器的地方互動，
+這條路打不通，只能退回 `MEDIA:` 方案。bot token 洩漏出去等於任何人都能用它發訊息
+到你的帳號能看到的地方，比暗房本身的無驗證還敏感，不要貼進聊天視窗或提交進 git。
+
 ## 改預設 LoRA
 
 伺服器端的預設 LoRA 寫在 `preview_ui.py` 的 `AGENT_DRAW_DEFAULT_LORAS`（靠近檔案開頭

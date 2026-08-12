@@ -23,17 +23,23 @@ CLI 用法：
 
 當函式庫用：
     from agent_draw import draw_and_generate
-    results = draw_and_generate(n=3, base_url="http://127.0.0.1:7860")
+    results, loras_used = draw_and_generate(n=3, base_url="http://127.0.0.1:7860")
     for r in results:
         print(r["rel"], r["out_path"])
 
 只用 HTTP 呼叫（不能跑 shell/python 的 agent）：直接呼叫 /api/agent-draw，
 不需要這支腳本——見同目錄 AGENT_DRAW.md。
+
+Discord 真正的 rich embed（不是 MEDIA: 附件那種）：
+    python agent_draw.py --n 8 --discord-dm
+需要先在 preview_config.json（已 gitignore，跟 comfy_endpoints 那些機器相關設定
+同一份檔案）填 discord_bot_token 與 discord_dm_user_id，見 AGENT_DRAW.md。
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -44,6 +50,27 @@ from pathlib import Path
 DEFAULT_BASE_URL = "http://127.0.0.1:7860"
 POLL_INTERVAL_S = 0.8   # 前端是 500ms，這裡沒有即時預覽的需求，放寬一點不必要地打伺服器
 POLL_TIMEOUT_S = 300.0  # 單張生成逾時（跟前端 preview_config 的 timeout 概念一致）
+DISCORD_API = "https://discord.com/api/v10"
+DISCORD_EMBED_COLOR = 0xEAAD57   # 面板安全燈琥珀色，跟暗房其他地方的 accent 一致
+DISCORD_MAX_EMBEDS_PER_MSG = 10  # Discord 平台限制，不是我們自己定的
+
+# preview_config.json 跟 preview_ui.py 共用同一份（同目錄），機器相關的路徑／密鑰都
+# 放這裡、已 gitignore。這支腳本刻意不 import preview_ui（那邊會拉 Pillow 等依賴，
+# 這支腳本要維持「只依賴標準函式庫」），所以自己讀一次，邏輯跟 preview_ui.load_config()
+# 一致但不共用程式碼——各自獨立、互不影響。
+CONFIG_PATH = Path(__file__).resolve().parent / "preview_config.json"
+
+
+def _load_darkroom_config() -> dict:
+    if CONFIG_PATH.is_file():
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            if isinstance(cfg, dict):
+                return cfg
+        except Exception as e:
+            print(f"[config] 讀取 {CONFIG_PATH.name} 失敗：{e}", file=sys.stderr)
+    return {}
 
 
 class DarkroomError(RuntimeError):
@@ -72,12 +99,16 @@ def submit_draw(n: int, *, base_url: str = DEFAULT_BASE_URL,
                  loras: list[tuple[str, float]] | None = None,
                  no_lora: bool = False,
                  trigger: str = "", client: str = "agent",
-                 seed: int | None = None) -> list[dict]:
+                 seed: int | None = None) -> tuple[list[dict], list[tuple[str, float]]]:
     """POST /api/agent-draw——伺服器端隨機抽 n 張並直接送生成。
-    回傳 [{"id", "rel", "name"}, ...]，用 id 去 gen-status / gen-result 追蹤。
+    回傳 (items, loras_used)：items 是 [{"id", "rel", "name"}, ...]，用 id 去
+    gen-status / gen-result 追蹤；loras_used 是伺服器端**實際套用**的 LoRA
+    [(name, strength), ...]——不給 loras 時伺服器套的是它自己的
+    AGENT_DRAW_DEFAULT_LORAS，呼叫端不用（也不該）自己重複那份預設值，跟伺服器
+    要回來的才是單一事實來源。
 
-    loras 不給（且 no_lora 不是 True）＝套伺服器端的預設畫風 LoRA（見 preview_ui.py
-    的 AGENT_DRAW_DEFAULT_LORAS）。no_lora=True 會明確送 "loras": []，關掉預設值。"""
+    loras 不給（且 no_lora 不是 True）＝套伺服器端的預設畫風 LoRA。no_lora=True
+    會明確送 "loras": []，關掉預設值。"""
     payload: dict = {"n": n, "client": client}
     if folder is not None:
         payload["folder"] = folder
@@ -94,7 +125,8 @@ def submit_draw(n: int, *, base_url: str = DEFAULT_BASE_URL,
     j = _http_json("POST", f"{base_url}/api/agent-draw", payload)
     if j.get("error"):
         raise DarkroomError(j["error"])
-    return j.get("items", [])
+    loras_used = [(name, strength) for name, strength in j.get("loras", [])]
+    return j.get("items", []), loras_used
 
 
 def wait_for_results(ids: list[str], *, base_url: str = DEFAULT_BASE_URL,
@@ -133,15 +165,16 @@ def draw_and_generate(n: int, *, base_url: str = DEFAULT_BASE_URL,
                        loras: list[tuple[str, float]] | None = None,
                        no_lora: bool = False,
                        trigger: str = "", out_dir: str | Path = "agent_draws",
-                       seed: int | None = None) -> list[dict]:
-    """一次做完：抽 n 張 → 送生成 → 等完成 → 存檔。回傳每張的
-    [{"rel", "name", "id", "status", "out_path" 或 "error"}, ...]。
+                       seed: int | None = None) -> tuple[list[dict], list[tuple[str, float]]]:
+    """一次做完：抽 n 張 → 送生成 → 等完成 → 存檔。回傳 (results, loras_used)：
+    results 是每張的 [{"rel", "name", "id", "status", "out_path" 或 "error"}, ...]，
+    loras_used 是伺服器端實際套用的 LoRA（見 submit_draw 的說明）。
 
     n 大於候選池時會抽到全部（不重複抽同一張——暗房塔羅抽卡也是這樣，一批裡不重複）。
     不給 loras 就套伺服器端的預設畫風 LoRA；no_lora=True 明確關掉。
     """
-    submitted = submit_draw(n, base_url=base_url, folder=folder, rarity=rarity,
-                             loras=loras, no_lora=no_lora, trigger=trigger, seed=seed)
+    submitted, loras_used = submit_draw(n, base_url=base_url, folder=folder, rarity=rarity,
+                                         loras=loras, no_lora=no_lora, trigger=trigger, seed=seed)
     id_to_meta = {it["id"]: it for it in submitted}
 
     def progress(status_map):
@@ -171,7 +204,7 @@ def draw_and_generate(n: int, *, base_url: str = DEFAULT_BASE_URL,
         else:
             results.append({"rel": rel, "name": name, "id": gid, "status": st.get("status", "error"),
                              "error": st.get("err", "")})
-    return results
+    return results, loras_used
 
 
 def _parse_lora_arg(spec: str) -> tuple[str, float]:
@@ -180,6 +213,110 @@ def _parse_lora_arg(spec: str) -> tuple[str, float]:
         path, strength = spec.rsplit(":", 1)
         return path, float(strength)
     return spec, 0.8
+
+
+# ── Discord 真正的 rich embed（DM，用 bot token 直接打 REST API）─────────────
+# 為什麼不是走 Hermes 的 send_message 工具：那個工具是 Hermes 十幾個平台共用的
+# 「最大公約數」介面，只有純文字 + MEDIA: 附件，沒有 embed 參數（Telegram/WhatsApp
+# 沒有 embed 這個概念，Hermes 沒把它做進跨平台抽象裡）。Hermes 內部其實有
+# discord.Embed，但那是它自己系統訊息用的，沒開放給模型呼叫。
+# 為什麼不是走 webhook：webhook 綁定的是伺服器頻道，Discord 不支援 webhook 投遞到
+# DM。要嘛換頻道用 webhook，要嘛用一個真正有 bot token 的身分直接呼叫 REST API
+# 送 DM——這裡走後者，好處是不用换收圖的地方，仍然留在 DM。
+
+def _lora_desc(loras: list[tuple[str, float]] | None) -> str:
+    if not loras:
+        return "無"
+    return "、".join(f"{Path(name).stem} @ {strength}" for name, strength in loras)
+
+
+def build_discord_embeds(results: list[dict], loras: list[tuple[str, float]] | None) -> list[tuple[dict, str, bytes]]:
+    """把 draw_and_generate() 的結果轉成 [(embed_dict, filename, file_bytes), ...]，
+    只含 status=done 的項目（失敗的沒有圖可以嵌）。
+
+    標題＝系列（資料夾）＋詞庫名稱；欄位只放 LoRA——使用者只要這兩件事，不多加
+    seed/steps 這些暗房本來就沒有特別強調的資訊，需要的話之後再加。
+    """
+    lora_text = _lora_desc(loras)
+    out = []
+    for r in results:
+        if r.get("status") != "done":
+            continue
+        rel = r["rel"]
+        folder = rel.rsplit("/", 1)[0] if "/" in rel else "(根目錄)"
+        title = f"{folder} ・ {r['name']}"
+        out_path = Path(r["out_path"])
+        filename = f"{r['id']}.webp"
+        embed = {
+            "title": title[:256],   # Discord embed title 上限 256 字元
+            "color": DISCORD_EMBED_COLOR,
+            "fields": [{"name": "LoRA", "value": lora_text, "inline": True}],
+            "image": {"url": f"attachment://{filename}"},
+        }
+        out.append((embed, filename, out_path.read_bytes()))
+    return out
+
+
+def _multipart_body(fields: dict, files: list[tuple[str, str, bytes]]) -> tuple[bytes, str]:
+    """組 multipart/form-data 的 body。fields 是一般表單欄位（{name: value}），
+    files 是 [(form_field_name, filename, bytes), ...]。回傳 (body, content_type)。
+    只依賴標準函式庫——這專案的依賴政策不用 requests。"""
+    boundary = "----darkroomAgentDraw" + os.urandom(8).hex()
+    parts = []
+    for name, value in fields.items():
+        parts.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8")
+            + value.encode("utf-8") + b"\r\n"
+        )
+    for field_name, filename, data in files:
+        parts.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'
+            f'Content-Type: image/webp\r\n\r\n'.encode("utf-8")
+            + data + b"\r\n"
+        )
+    parts.append(f"--{boundary}--\r\n".encode("utf-8"))
+    return b"".join(parts), f"multipart/form-data; boundary={boundary}"
+
+
+def _resolve_dm_channel(bot_token: str, user_id: str) -> str:
+    """開（或拿到既有的）跟這個使用者的 DM 頻道 id。Discord 這端要求 bot 跟這個
+    使用者share 過至少一個伺服器，不然開不了。"""
+    req = urllib.request.Request(
+        f"{DISCORD_API}/users/@me/channels",
+        data=json.dumps({"recipient_id": user_id}).encode("utf-8"),
+        method="POST",
+        headers={"Authorization": f"Bot {bot_token}", "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.loads(resp.read().decode("utf-8"))["id"]
+
+
+def send_discord_embeds_dm(embeds_with_files: list[tuple[dict, str, bytes]], *,
+                            bot_token: str, user_id: str) -> None:
+    """把 build_discord_embeds() 的結果送成 DM。超過 10 個 embed 自動分成多則訊息
+    （Discord 平台上限），每則各自帶自己的圖片附件。"""
+    if not embeds_with_files:
+        return
+    channel_id = _resolve_dm_channel(bot_token, user_id)
+    chunks = [embeds_with_files[i:i + DISCORD_MAX_EMBEDS_PER_MSG]
+              for i in range(0, len(embeds_with_files), DISCORD_MAX_EMBEDS_PER_MSG)]
+    for chunk in chunks:
+        embeds = [e for e, _, _ in chunk]
+        files = [(f"files[{i}]", fname, data) for i, (_, fname, data) in enumerate(chunk)]
+        attachments = [{"id": i, "filename": fname} for i, (_, fname, _) in enumerate(chunk)]
+        payload = {"embeds": embeds, "attachments": attachments}
+        body, content_type = _multipart_body({"payload_json": json.dumps(payload)}, files)
+        req = urllib.request.Request(
+            f"{DISCORD_API}/channels/{channel_id}/messages",
+            data=body, method="POST",
+            headers={"Authorization": f"Bot {bot_token}", "Content-Type": content_type},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                resp.read()
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", "replace")
+            raise DarkroomError(f"Discord 回傳 {e.code}：{detail}") from e
 
 
 def main() -> int:
@@ -199,11 +336,15 @@ def main() -> int:
     ap.add_argument("--json", action="store_true",
                      help="stdout 改印一個 JSON 物件（{\"ok\":[...], \"fail\":[...]}），"
                           "給會解析工具輸出的呼叫端（例如 LLM agent）用，比逐行文字穩")
+    ap.add_argument("--discord-dm", action="store_true",
+                     help="抽完直接用真正的 Discord embed 送 DM（title=系列＋詞庫名稱、"
+                          "LoRA 欄位、圖片）。需要 preview_config.json 設好 "
+                          "discord_bot_token 與 discord_dm_user_id，見 AGENT_DRAW.md")
     args = ap.parse_args()
 
     loras = [_parse_lora_arg(s) for s in args.lora] or None
     try:
-        results = draw_and_generate(
+        results, loras_used = draw_and_generate(
             args.n, base_url=args.base_url, folder=args.folder, rarity=args.rarity,
             loras=loras, no_lora=args.no_lora, trigger=args.trigger, out_dir=args.out, seed=args.seed,
         )
@@ -216,6 +357,26 @@ def main() -> int:
 
     ok = [r for r in results if r["status"] == "done"]
     fail = [r for r in results if r["status"] != "done"]
+
+    if args.discord_dm:
+        cfg = _load_darkroom_config()
+        bot_token = cfg.get("discord_bot_token")
+        user_id = cfg.get("discord_dm_user_id")
+        if not bot_token or not user_id:
+            msg = ("--discord-dm 需要 preview_config.json 設好 discord_bot_token 與 "
+                   "discord_dm_user_id，目前缺少其中之一")
+            if args.json:
+                print(json.dumps({"error": msg}, ensure_ascii=False))
+            else:
+                print(f"錯誤：{msg}", file=sys.stderr)
+            return 1
+        try:
+            embeds = build_discord_embeds(ok, loras_used)
+            send_discord_embeds_dm(embeds, bot_token=bot_token, user_id=str(user_id))
+            print(f"已送出 {len(embeds)} 張到 Discord DM", file=sys.stderr)
+        except DarkroomError as e:
+            print(f"Discord 送出失敗：{e}", file=sys.stderr)
+            return 1
 
     if args.json:
         # 只留呼叫端真正用得到的欄位：done 的要 out_path（絕對路徑，可直接餵給
