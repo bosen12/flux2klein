@@ -1318,71 +1318,73 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
   .shortcut-keys { width: auto; }
 }
 /* ---------------------------------------------------------------------------
-   進場畫面「顯影盤」
+   進場畫面「印樣瀑布」
    ---------------------------------------------------------------------------
-   一張相紙躺在顯影液裡，影像從銀鹽顆粒中長出來（暗部先出、亮部最後），游標是
-   攪動。整個場景在 #intro-gl 的片段著色器裡算完——這裡的 CSS 只負責版面：把
-   canvas 鋪滿、把題字與底片邊緣印字疊上去。著色器本體與流程見 darkroom.js 的
-   「顯影盤」一節。
+   整片詞庫的接觸印樣鋪滿畫面、滿版不減光，而且一直往下流（每欄各有自己的速度）。
+   捲動是 #intro-gl 的片段著色器裡的 uv 運算，這裡的 CSS 只負責版面：把 canvas
+   鋪滿、壓一層底部 scrim、把題字與數字疊上去（刻意不置中，取非對稱的編輯式
+   配置）。著色器本體見 darkroom.js 的「印樣瀑布」一節。
+
+   底部 scrim 是必要的、不是裝飾：印樣是滿版全亮的照片，文字直接壓上去讀不到。
+   著色器裡只留很輕的暗角，文字的底襯全部交給這一層。
 
    z-index 230，比 #boot（300）低——boot 淡出的 600ms 期間這層已經在底下跑，
    boot 一收起就無縫接上（沿用原本的分層，沒有改）。
    --------------------------------------------------------------------------- */
 .intro-modal { position: fixed; inset: 0; z-index: 230; display: none;
-  background: #101118;   /* 盤子外的暗；其餘明暗全部由著色器裡的安全燈決定 */
+  background: #08090d;   /* 縮圖還沒到齊時的底色，跟 atlas 的底色同一個值 */
   overflow: hidden; }
 .intro-modal.open { display: block; animation: fadeIn var(--d-pop) var(--ease-out); }
 @media (prefers-reduced-motion: reduce) { .intro-modal.open { animation: none; } }
-/* 拖曳/揮動時滑鼠會掃過題字，原生文字選取會整片反白——這層只用來攪動，整片關掉。 */
+/* 滑鼠掃過題字時原生文字選取會整片反白——這層不給選取。 */
 .intro-modal { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 
-.intro-gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block;
-  cursor: crosshair;   /* 游標是「攪動棒」，不是指標 */
-  touch-action: none; }
+.intro-gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 
-/* 退化版（拿不到 WebGL）：一張縮圖用對比/亮度爬升模擬顯影。沒有顆粒與漣漪，
-   但畫面不會開天窗，題字與進入鈕照常可用。 */
-.intro-fallback { position: absolute; inset: 0; display: grid; place-items: center; }
+/* 文字的底襯。上緣要夠柔、不能出現一條看得見的界線，所以中段多插一個節點。 */
+.intro-modal::after { content: ""; position: absolute; inset: 0; z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent 38%,
+              rgba(8,9,13,.35) 62%, rgba(8,9,13,.82) 84%, rgba(8,9,13,.96) 100%); }
+
+/* 退化版（拿不到 WebGL）：每欄一個直條，內容重複兩份、用 transform 平移 -50%
+   無縫循環。--dur/--delay 由 darkroom.js 逐欄設，跟著色器那組流速對齊。 */
+.intro-fallback { position: absolute; inset: 0; overflow: hidden;
+  display: flex; align-items: stretch; }
 .intro-fallback[hidden] { display: none; }
-.intro-fb-img { width: min(46vmin, 380px); aspect-ratio: 1/1; object-fit: cover;
-  border-radius: 14px; box-shadow: 0 30px 80px -20px #000;
-  animation: introDevelop 7.5s var(--ease-out) infinite; }
-@keyframes introDevelop {
-  0%   { filter: brightness(2.6) contrast(.12) sepia(.5); opacity: .25; }
-  55%  { filter: brightness(1.15) contrast(.8) sepia(.12); opacity: 1; }
-  85%, 100% { filter: none; opacity: 1; }
-}
-@media (prefers-reduced-motion: reduce) { .intro-fb-img { animation: none; } }
+.intro-fb-col { flex: 1 1 0; overflow: hidden; }
+.intro-fb-run { display: block; animation: introFall var(--dur, 24s) linear infinite;
+  animation-delay: var(--delay, 0s); will-change: transform; }
+.intro-fb-run img { width: 100%; aspect-ratio: 1/1; object-fit: cover; display: block;
+  padding: 2px; }
+@keyframes introFall { from { transform: translateY(-50%); } to { transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .intro-fb-run { animation: none; } }
 
-/* 題字疊在相紙上方偏下的位置，不擋住顯影中的畫面中心 */
-.intro-copy { position: absolute; left: 50%; bottom: 12.5vh; transform: translateX(-50%);
-  z-index: 2; text-align: center; pointer-events: none; padding: 0 24px; }
+/* 題字靠左下、數字靠右下：非對稱的編輯式配置 */
+.intro-copy { position: absolute; left: 7vw; bottom: 9vh; z-index: 2;
+  pointer-events: none; max-width: min(60vw, 460px); }
 .intro-copy > * { pointer-events: auto; }
-.intro-copy h2 { margin: 0 0 9px; font-size: 30px; letter-spacing: 7px; font-weight: 600;
-  color: var(--ink); text-shadow: 0 2px 22px rgba(0,0,0,.85); }
-.intro-lede { margin: 0 0 20px; font-size: 12.5px; color: var(--dim);
-  text-shadow: 0 1px 12px rgba(0,0,0,.9); }
-/* 提示語跟著安全燈的顏色——它講的是「這裡可以動手」，值得被看見 */
-.intro-hint { color: var(--amber); }
-.intro-enter-btn { padding: 12px 30px; border-radius: 999px; corner-shape: round;
-  font-size: 14px; font-weight: 600; border: 0; color: #241a08;
-  background: linear-gradient(180deg, #eaad57, var(--amber-d));
-  box-shadow: 0 10px 30px -10px rgba(234,173,87,.55); }
-.intro-enter-btn:hover { filter: brightness(1.06); }
+.intro-copy h2 { margin: 0 0 10px; font-size: clamp(28px, 4.6vw, 46px);
+  letter-spacing: .22em; font-weight: 500; color: var(--ink);
+  text-shadow: 0 2px 24px rgba(0,0,0,.75); }
+.intro-lede { margin: 0 0 26px; font-size: 13px; letter-spacing: .06em; color: var(--dim);
+  text-shadow: 0 1px 14px rgba(0,0,0,.85); }
+/* 幽靈鈕：一條琥珀髮絲線，跟鏡框是同一種筆畫，不引入第三種材質 */
+.intro-enter-btn { padding: 11px 30px; border-radius: 999px; corner-shape: round;
+  font-size: 13px; font-weight: 500; letter-spacing: .18em; background: transparent;
+  border: 1px solid color-mix(in srgb, var(--amber) 55%, transparent); color: var(--amber);
+  transition: background var(--d-micro) var(--ease-out), border-color var(--d-micro) var(--ease-out); }
+.intro-enter-btn:hover { background: color-mix(in srgb, var(--amber) 12%, transparent);
+  border-color: var(--amber); }
 
-/* 底片邊緣印字：小、等寬、字距拉開，貼在畫面最下緣——底片邊上的片名與幀號就是
-   長這樣。左邊是正在顯影的詞庫，右邊是真實的總數與已顯影數。 */
-.intro-edge { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
-  display: flex; justify-content: space-between; align-items: baseline; gap: 16px;
-  padding: 0 20px 14px; pointer-events: none;
-  font-family: var(--mono); font-size: 10px; letter-spacing: 2px;
-  color: color-mix(in srgb, var(--amber) 55%, transparent); }
-.intro-sheet-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%; }
-.intro-sheet-name:not(:empty)::before { content: "▸ "; }
-.intro-meta { flex: none; font-variant-numeric: tabular-nums; }
+/* 右下角的真數字：等寬、tabular-nums，不是裝飾性的 01/02/03 */
+.intro-meta { position: absolute; right: 7vw; bottom: 9vh; z-index: 2; pointer-events: none;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .2em;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--amber) 45%, transparent); }
 
 @media (max-width: 640px) {
-  .intro-copy { bottom: 15vh; }
-  .intro-copy h2 { font-size: 22px; letter-spacing: 4px; }
-  .intro-edge { font-size: 9px; letter-spacing: 1px; }
+  .intro-copy { left: 7vw; right: 7vw; bottom: 13vh; max-width: none; }
+  .intro-copy h2 { letter-spacing: .16em; }
+  .intro-meta { right: 7vw; bottom: 7vh; font-size: 9px; letter-spacing: .12em; }
 }

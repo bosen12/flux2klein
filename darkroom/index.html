@@ -385,29 +385,23 @@
     <div class="tarot-hint" id="tarot-hint">點任一張看大圖與提示詞；R 重抽一批、Esc 關閉</div>
   </div>
 </div>
-<!-- 進暗房的進場畫面：兩種樣式可選（右上角 ⚙ 切換，記在 localStorage）——
-     「跑馬燈」是四行縮圖橫向跑馬燈（方向左右交錯）；「無限畫布」參考
-     github.com/edoardolunardi/infinite-canvas 的概念（不可互動、不拖曳，改成
-     整片縮圖網格自己緩慢漂移，走一段不規則路徑，感覺像自己在動）。兩種都只用
-     CSS animation，不用 3D/矩陣運算、不用 JS 逐幀算——單純、好驗證。中間疊題字
-     ＋「進入暗房」鈕，每次載入頁面都會播，見 darkroom.js maybeStartIntro()。 -->
+<!-- 進暗房的進場畫面「印樣瀑布」：整片詞庫的接觸印樣鋪滿畫面、滿版不減光，而且
+     一直往下流，每一欄各有自己的速度。每次載入頁面都會播，見 darkroom.js 的
+     maybeStartIntro()。 -->
 <div class="intro-modal" id="intro-modal">
-  <!-- 整個場景在這張 canvas 的片段著色器裡算完（相紙、顯影前緣、顆粒、漣漪折射、
-       安全燈、暗角），見 darkroom.js 的「顯影盤」一節。#intro-fallback 是拿不到
-       WebGL 時的退化版本。 -->
+  <!-- 整個場景在這張 canvas 的片段著色器裡算完（印樣 atlas、逐欄捲動、暗角），
+       見 darkroom.js 的「印樣瀑布」一節。#intro-fallback 是拿不到 WebGL 時的
+       退化版本（CSS transform 的欄式瀑布）。 -->
   <canvas class="intro-gl" id="intro-gl" aria-hidden="true"></canvas>
   <div class="intro-fallback" id="intro-fallback" hidden aria-hidden="true"></div>
+  <!-- 刻意不置中：題字靠左下、數字靠右下，取非對稱的編輯式配置 -->
   <div class="intro-copy">
     <h2>詞庫暗房</h2>
-    <p class="intro-lede">影像正在顯影——<span class="intro-hint">揮動游標攪動顯影液</span></p>
-    <button type="button" class="intro-enter-btn" id="intro-enter-btn">進入暗房 →</button>
+    <p class="intro-lede">整座詞庫，正在流過</p>
+    <button type="button" class="intro-enter-btn" id="intro-enter-btn">進入</button>
   </div>
-  <!-- 邊角資料排成底片邊緣印字的樣子：左邊是正在顯影的那個詞庫，右邊是真實的
-       總數與覆蓋數（不是裝飾性編號，是這個工具本來就在追蹤的數字）。 -->
-  <div class="intro-edge">
-    <span class="intro-sheet-name" id="intro-sheet-name"></span>
-    <span class="intro-meta" id="intro-meta"></span>
-  </div>
+  <!-- 右下角是真實的總數與覆蓋數（不是裝飾性編號，是這個工具本來就在追蹤的數字） -->
+  <div class="intro-meta" id="intro-meta"></div>
 </div>
 <script src="/darkroom.js" defer></script>
 </body>

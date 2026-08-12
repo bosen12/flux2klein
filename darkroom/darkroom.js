@@ -3330,52 +3330,33 @@ function hideBoot() {
   setTimeout(() => b.remove(), 600);
 }
 /* ---------------------------------------------------------------------------
-   進場畫面「顯影盤」
+   進場畫面「印樣瀑布」
    ---------------------------------------------------------------------------
-   一張相紙躺在顯影液裡，影像從銀鹽顆粒中長出來——**暗部先出、亮部最後**，而且
-   是不規則的塊狀推進，這是真實顯影的物理順序，不是淡入。游標是攪動：漣漪從指
-   標散開、把底下的相紙折射得晃動，掃過的地方顯影得更快。一張顯影完就被夾出
-   安全燈範圍，新的空白相紙落進盤裡，換下一個詞庫。
-
-   為什麼是這個而不是「卡片在 3D 空間飄」：暗房只有一件真正的魔術，就是顯影。
-   卡片飄浮是任何網站都能套的 WebGL 樣板；「影像從無到有長出來」則是這個工具
-   的本體，而且它需要逐像素、隨時間演進的運算——正好是大家不覺得網頁做得到的
-   那一類效果。
+   整片詞庫的接觸印樣鋪滿畫面，滿版、不減光，而且**一直在往下流**——每一欄各有
+   自己的速度與起始相位，所以看起來是好幾道各流各的水，不是一張大圖在平移。
 
    實作是**單一全螢幕片段著色器**，原生 WebGL、不依賴任何函式庫（也就不用動
-   STATIC_FILES、不用重啟伺服器）。整個場景在 shader 裡算完：相紙的方框、顯影
-   前緣、顆粒、漣漪折射、安全燈、暗角。相紙的圓角刻意用超橢圓，跟面板其他地方
-   的 corner-shape: squircle 是同一種形狀語言。
+   STATIC_FILES、不用重啟伺服器）。64 張縮圖畫進一張 atlas canvas 上傳成單一材質，
+   全畫面一次 draw call；捲動只是著色器裡的 uv 運算，沒有任何圖層在搬移。
 
-   退化路徑：WebGL 拿不到 → DOM 版（一張縮圖 + CSS 顯影動畫）；系統要求減少動
-   態 → 直接顯示已顯影的靜態畫面、不跑迴圈。
+   **不用 mipmap，改成「顯示多大就送多大」**：atlas 的格子邊長依實際會顯示的畫布
+   像素挑 THUMB_SIZES 的級距（見 introCellSize），讓縮小倍率待在 1.5 以下。這條是
+   CLAUDE.md 記過的坑——會動的畫面上縮小取樣就是閃爍與摩爾紋的來源。反過來說也
+   不能用 mipmap 解決：atlas 的 uv 在每個格子邊界都是不連續的，GPU 依導數挑 mip
+   會在每一條格線上挑到最低階，變成一圈糊掉的邊。
+
+   退化路徑：WebGL 拿不到 → DOM 版（CSS transform 的欄式瀑布）；系統要求減少動態
+   → 走退化版、靜止不動。
    --------------------------------------------------------------------------- */
-const INTRO_SHEET_SECONDS = 7.5;    // 一張相紙從空白到完全顯影的秒數（不攪動的話）
-const INTRO_HOLD_SECONDS  = 1.8;    // 顯影完停留多久才夾走
-const INTRO_AGITATORS     = 8;      // 同時追蹤幾個攪動點（= shader 裡的陣列長度）
-// 漣漪的壽命，以及「多久生一個」。兩者必須綁在一起：生成間隔 = 壽命 / 槽數，這樣
-// 連續揮動時剛好把槽填滿、而最舊的那個正好壽終正寢，**永遠不需要擠掉還活著的漣漪**。
-// 第一版是「指標每移動一段距離就生一個」，於是橫掃一次會在零點幾秒內生四十幾個、
-// 把 8 個槽輪番洗掉五輪——每個漣漪都在還沒擴散開之前就被丟掉，看起來就是水波不順。
-const INTRO_RIPPLE_LIFE = 1.5;                                  // 秒
-const INTRO_RIPPLE_GAP  = INTRO_RIPPLE_LIFE / INTRO_AGITATORS;  // 秒
+const INTRO_COLS = 8, INTRO_ROWS = 8;   // atlas 的格數；縱向 8 格 = 一欄要跑很久才重複
+// 每欄的流速（格/秒）區間。下限不能太低，否則看起來是「畫面在飄」而不是「在流」。
+const INTRO_FLOW_MIN = 0.30, INTRO_FLOW_VAR = 0.22;
 
-let introGL = null;         // { gl, prog, loc, tex, canvas } 或 null（退化模式）
+let introGL = null;         // { gl, prog, loc, tex, canvas, … } 或 null（退化模式）
 let introRAF = null;
 let introT0 = 0;
 let introPool = [];         // 候選詞庫（有圖的）
-let introPhase = 'develop'; // develop → hold → lift → settle
-let introPhaseT0 = 0;
-let introDevelop = 0;       // 0..1 顯影進度
-let introSheetY = 0;        // 相紙在盤裡的垂直位移（夾走／落下用）
-// 固定 8 個槽，t < 0 = 空槽。不用陣列 push/shift——那會讓「還活著的漣漪被擠掉」。
-const introAgit = Array.from({ length: INTRO_AGITATORS }, () => ({ x: 0, y: 0, t: -1 }));
-let introPointer = { x: 0, y: 0, moved: false };
-let introLastSpawn = -1e9;
-// 畫布矩形快取。**不可以在 pointermove 裡呼叫 getBoundingClientRect()**——指標事件
-// 一秒上百次，每次「讀幾何」都會逼瀏覽器同步重算版面（CLAUDE.md 記過的坑，格線的
-// 聚光效果就是為此改成 rAF 節流的）。這裡的畫布是滿版的，只有 resize 需要重量。
-let introRect = null;
+let introAtlas = null;      // { canvas, ctx, cell, dirty, any }
 
 const INTRO_VERT = `
 attribute vec2 aPos;
@@ -3392,104 +3373,35 @@ uniform vec2  uRes;
 uniform float uTime;
 uniform sampler2D uTex;
 uniform float uHasTex;
-uniform float uDevelop;       // 0..1 顯影基準進度
-uniform float uSheetY;        // 相紙垂直位移（0 = 在盤裡）
-uniform vec3  uAgit[${INTRO_AGITATORS}];   // xy = 位置，z = 經過的秒數（<0 = 空槽）
-uniform vec3  uPaper;
-uniform vec3  uAmber;
-uniform vec3  uFluid;
 
-float hash21(vec2 p) {
-  p = fract(p * vec2(123.34, 456.21));
-  p += dot(p, p + 45.32);
-  return fract(p.x * p.y);
-}
-float vnoise(vec2 p) {
-  vec2 i = floor(p), f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
-  float a = hash21(i), b = hash21(i + vec2(1.0, 0.0));
-  float c = hash21(i + vec2(0.0, 1.0)), d = hash21(i + vec2(1.0, 1.0));
-  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-}
-// 八度數用巨集決定：顯影前緣的塊狀需要細節（3 層），液面的緩慢起伏 2 層就夠。
-// 每一層是 4 次 hash，全畫面 92 萬像素下每省一層就是省 370 萬次雜湊。
-float fbm3(vec2 p) {
-  float s = 0.0, a = 0.5;
-  for (int i = 0; i < 3; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; }
-  return s;
-}
-float fbm2(vec2 p) {
-  return 0.5 * vnoise(p) + 0.25 * vnoise(p * 2.03);
-}
+const float COLS = ${INTRO_COLS}.0;
+const float ROWS = ${INTRO_ROWS}.0;
+
+float hash11(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 
 void main() {
   float aspect = uRes.x / uRes.y;
   vec2 p = (vUv - 0.5) * vec2(aspect, 1.0);
+  float cw = aspect / COLS;                   // 一格的邊長（場景單位）。格子是正方形
 
-  // ── 攪動：漣漪高度、梯度（折射用）、以及顯影加速量 ──
-  float rip = 0.0;
-  vec2  ripG = vec2(0.0);
-  float boost = 0.0;
-  for (int i = 0; i < ${INTRO_AGITATORS}; i++) {
-    vec3 a = uAgit[i];
-    if (a.z < 0.0) continue;
-    vec2 d = p - a.xy;
-    float r = length(d) + 1e-4;
-    float decay = exp(-r * 6.5) * exp(-a.z * 2.0);
-    float ph = r * 44.0 - a.z * 9.5;
-    rip  += decay * sin(ph);
-    ripG += (d / r) * decay * cos(ph) * 44.0;
-    // 攪動過的地方顯影得快一點，衰減比漣漪慢很多（顯影是不可逆的）
-    boost += exp(-r * 4.2) * exp(-a.z * 0.30);
-  }
+  float cf = (p.x + aspect * 0.5) / cw;
+  float ci = floor(cf);
+  float fx = cf - ci;
 
-  // ── 相紙：略微傾斜的方框，圓角用超橢圓（跟面板 corner-shape: squircle 同一種形狀）──
-  float ang = -0.035;
-  mat2 rot = mat2(cos(ang), -sin(ang), sin(ang), cos(ang));
-  vec2 hf = vec2(0.30 * aspect, 0.30);   // 不能叫 half，那是 GLSL 保留字
-  vec2 sp = rot * (p - vec2(0.0, -0.02 + uSheetY));
-  vec2 q = abs(sp) / hf;
-  // q^8 用連乘算，比兩次 pow() 便宜；外層那個 pow 保留是因為要拿到平滑的邊緣值
-  vec2 q2 = q * q; vec2 q4 = q2 * q2; vec2 q8 = q4 * q4;
-  float k = pow(q8.x + q8.y, 0.125);
-  float inSheet = 1.0 - smoothstep(0.985, 1.005, k);
-  vec2 sUv = sp / hf * 0.5 + 0.5;
-  sUv.y = 1.0 - sUv.y;
+  // 每欄自己的流速與起始相位：整片等速下滑會讀成「一張大圖在平移」，錯開才有瀑布
+  float sp = ${INTRO_FLOW_MIN.toFixed(2)} + ${INTRO_FLOW_VAR.toFixed(2)} * hash11(ci + 0.5);
+  float rf = (0.5 - p.y) / cw - uTime * sp + hash11(ci + 11.7) * ROWS;
+  float ri = floor(rf);
+  float fy = rf - ri;
 
-  // ── 顯影：暗部先出、亮部最後，前緣用低頻雜訊打散成塊狀 ──
-  vec2 refr = ripG * 0.0018;
-  vec3 img = uHasTex > 0.5 ? texture2D(uTex, clamp(sUv + refr, 0.001, 0.999)).rgb : vec3(0.5);
-  float lum = dot(img, vec3(0.299, 0.587, 0.114));
-  // 相紙外的像素用不到顯影前緣，別白算——這兩個 fbm 是整支著色器最貴的部分
-  float blotch = inSheet > 0.0 ? (fbm3(sUv * 3.1) * 0.62 + fbm3(sUv * 8.5) * 0.20) : 0.0;
-  float front = uDevelop * 2.05 + boost * 0.42;
-  float e = clamp(front - lum * 0.95 - blotch * 0.85, 0.0, 1.0);
-  e = smoothstep(0.0, 0.55, e);
+  // mod 把格號捲回 atlas 範圍。uv 在格子邊界是不連續的——LINEAR 取樣不在意（只有
+  // mipmap 會依導數挑階），所以這裡刻意沒有 mipmap，見上方 darkroom.js 的說明。
+  vec2 uv = (vec2(mod(ci, COLS), mod(ri, ROWS)) + vec2(fx, fy)) / vec2(COLS, ROWS);
+  vec3 col = uHasTex > 0.5 ? texture2D(uTex, uv).rgb : vec3(0.031, 0.035, 0.051);
 
-  // 銀鹽顆粒：每秒跳 14 次（像真的底片顆粒，不是每幀亂跳）
-  float grain = hash21(sUv * uRes * 0.55 + floor(uTime * 14.0) * 17.3);
-  vec3 paper = uPaper * (0.90 + 0.10 * grain);
-  vec3 sheet = mix(paper, img, e);
-  sheet = mix(sheet, sheet * (0.86 + 0.28 * grain), (1.0 - e) * 0.55);
-
-  // ── 安全燈：左上方一盞，唯一光源 ──
-  vec2 lampP = vec2(-0.52 * aspect, 0.40);
-  float lamp = exp(-length(p - lampP) * 1.05);
-
-  // ── 顯影液：暗、只有安全燈的反光跟漣漪的高光 ──
-  vec3 fluid = uFluid * (0.42 + 0.58 * lamp);
-  fluid += uAmber * max(rip, 0.0) * 0.42 * (0.25 + lamp);
-  fluid *= 0.86 + 0.14 * fbm2(p * 3.0 + uTime * 0.05);
-
-  // 相紙在液面下的投影
-  float shadow = 1.0 - 0.45 * (1.0 - smoothstep(0.98, 1.28, k));
-  fluid *= shadow;
-
-  vec3 col = mix(fluid, sheet, inSheet);
-  col *= mix(vec3(1.0), uAmber * 1.55, 0.26 * lamp);   // 安全燈染色
-  col += uAmber * 0.02 * lamp;
-  col *= 1.0 - 0.58 * pow(clamp(length(p) * 0.82, 0.0, 1.0), 2.1);   // 暗角
-  col += (hash21(vUv * uRes + uTime) - 0.5) * 0.012;   // 整體微粒，把畫面黏在一起
+  // 只有很輕的暗角：印樣本身是滿版不減光的，這裡單純把視線收回來、順便讓四角的
+  // 題字與數字讀得到。真正的文字底襯交給 CSS 的漸層 scrim。
+  col *= 1.0 - 0.30 * pow(clamp(length(p) * 0.80, 0.0, 1.0), 2.2);
 
   gl_FragColor = vec4(col, 1.0);
 }`;
@@ -3533,24 +3445,18 @@ function introInitGL() {
 
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
-  // NPOT 縮圖也能用：CLAMP_TO_EDGE + LINEAR，不產 mipmap
+  // atlas 可能是 NPOT（1536²）：CLAMP_TO_EDGE + LINEAR、不產 mipmap 才合法，
+  // 而且不產 mipmap 本來就是這個著色器要的（uv 在格線上不連續，見上方說明）。
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 1, 1, 0, gl.RGB, gl.UNSIGNED_BYTE, new Uint8Array([40, 42, 54]));
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 1, 1, 0, gl.RGB, gl.UNSIGNED_BYTE, new Uint8Array([8, 9, 13]));
 
   const loc = {};
-  for (const n of ['uRes','uTime','uTex','uHasTex','uDevelop','uSheetY','uPaper','uAmber','uFluid'])
-    loc[n] = gl.getUniformLocation(prog, n);
-  loc.uAgit = [];
-  for (let i = 0; i < INTRO_AGITATORS; i++) loc.uAgit.push(gl.getUniformLocation(prog, `uAgit[${i}]`));
-
+  for (const n of ['uRes','uTime','uTex','uHasTex']) loc[n] = gl.getUniformLocation(prog, n);
   gl.uniform1i(loc.uTex, 0);
-  gl.uniform3f(loc.uPaper, 0.847, 0.824, 0.769);   // #d8d2c4 安全燈下的相紙
-  gl.uniform3f(loc.uAmber, 0.918, 0.678, 0.341);   // #eaad57 = 品牌安全燈
-  gl.uniform3f(loc.uFluid, 0.106, 0.114, 0.149);   // #1b1d26 顯影液
-  return { gl, prog, loc, tex, canvas, hasTex: 0 };
+  return { gl, prog, loc, tex, canvas, hasTex: 0, maxTex: gl.getParameter(gl.MAX_TEXTURE_SIZE) };
 }
 
 function introResize() {
@@ -3565,139 +3471,119 @@ function introResize() {
   // 尺寸一起提早 return，新 program 的 uRes 會停在 0，著色器裡 aspect = 0/0 = NaN，
   // 畫面整片全黑。只有真正會改變畫布緩衝區的那兩行需要判斷尺寸。
   gl.uniform2f(loc.uRes, w, h);
-  introRect = canvas.getBoundingClientRect();   // 指標事件要用的快取，只在這裡更新
   if (canvas.width === w && canvas.height === h) return;
   canvas.width = w; canvas.height = h;
   gl.viewport(0, 0, w, h);
 }
 
-// 換一張相紙：抽一個有圖的詞庫，載進材質。載入失敗就換下一個，不會卡住流程。
-function introLoadSheet() {
-  if (!introGL || !introPool.length) return;
-  const it = introPool[Math.floor(Math.random() * introPool.length)];
-  const img = new Image();
-  img.decoding = 'async';
-  img.onload = () => {
-    if (!introGL) return;
-    const { gl, tex } = introGL;
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, img);
-    introGL.hasTex = 1;
-    const nameEl = $('intro-sheet-name');
-    if (nameEl) nameEl.textContent = it.display_name || it.name;
-  };
-  img.onerror = () => { if (introGL) introGL.hasTex = 0; };
-  img.src = thumbURL(it, 512);
+// 一格要送多大的縮圖：依「這一格實際會佔幾個畫布像素」挑 THUMB_SIZES 的級距，
+// 取「大於等於它的最小級距」——寧可放大一點點糊，也不要縮小造成閃爍與摩爾紋。
+// 上限壓在 256（8 格 = 2048² 材質，再上去記憶體不划算，而放大的糊不會閃）。
+function introCellSize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const want = (window.innerWidth * dpr) / INTRO_COLS;
+  for (const s of [128, 192, 256]) if (s >= want) return s;
+  return 256;
 }
 
-// 螢幕座標 → 著色器用的長寬比校正座標。用快取的矩形，不現量。
-function introToScene(x, y) {
-  if (!introRect || !introRect.width) return null;
-  const aspect = introRect.width / introRect.height;
-  return {
-    x: ((x - introRect.left) / introRect.width - 0.5) * aspect,
-    y: -((y - introRect.top) / introRect.height - 0.5),
-  };
+// 建立印樣 atlas：每格畫一張縮圖，四邊各內縮 2px 露出底色＝格線。接觸印樣本來
+// 就長這樣，而且這條縫也順便蓋掉格子邊界上的取樣溢出。
+function introBuildAtlas() {
+  const cell = introCellSize();
+  const canvas = document.createElement('canvas');
+  canvas.width = INTRO_COLS * cell; canvas.height = INTRO_ROWS * cell;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#08090d';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  return { canvas, ctx, cell, dirty: true, any: false };
 }
-// 生一個漣漪：挑「最老的槽」覆寫。因為生成節奏 = 壽命 / 槽數，穩定揮動時被挑中的
-// 那個必定已經衰減到看不見了，不會有還亮著的漣漪突然消失。
-function introSpawnRipple(sx, sy, age) {
-  let slot = introAgit[0];
-  for (const a of introAgit) if (a.t > slot.t) slot = a;
-  slot.x = sx; slot.y = sy; slot.t = age || 0;
+
+// 逐格載入縮圖。每到一張就標記 dirty，由幀迴圈**一幀最多重傳一次**材質——
+// 64 張各自觸發一次 texImage2D 會在網路密集回來時連續丟出幾十次十幾 MB 的上傳。
+function introLoadCells() {
+  if (!introAtlas || !introPool.length) return;
+  const cell = introAtlas.cell;
+  for (let i = 0; i < INTRO_COLS * INTRO_ROWS; i++) {
+    const it = introPool[i % introPool.length];
+    if (!it) continue;
+    const img = new Image();
+    img.decoding = 'async';
+    img.fetchPriority = 'low';
+    img.onload = () => {
+      if (!introAtlas) return;
+      const cx = (i % INTRO_COLS) * cell, cy = Math.floor(i / INTRO_COLS) * cell;
+      const s = Math.min(img.width, img.height);      // cover 裁切自己算，drawImage 不做
+      introAtlas.ctx.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s,
+                               cx + 2, cy + 2, cell - 4, cell - 4);
+      introAtlas.dirty = true; introAtlas.any = true;
+    };
+    // 這裡要的是「正好 cell 像素」的來源，不隨 DPR 再放大，所以不走 thumbURL(it, px)
+    img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}&w=${cell}`;
+  }
 }
 
 function introFrame(now) {
   if (!introGL || !$('intro-modal').classList.contains('open')) { introRAF = null; return; }
   const { gl, loc } = introGL;
   if (!introT0) introT0 = now;
-  const t = (now - introT0) / 1000;
-  const dt = Math.min(0.05, (now - (introFrame._last || now)) / 1000);
-  introFrame._last = now;
   introResize();
 
-  // 攪動點老化：超過壽命就標成空槽（t < 0），不從陣列移除——槽位固定對應 shader 的
-  // uAgit[i]，移除會讓所有漣漪換位置。
-  for (const a of introAgit) {
-    if (a.t < 0) continue;
-    a.t += dt;
-    if (a.t > INTRO_RIPPLE_LIFE) a.t = -1;
-  }
-  // 生成節奏跟指標事件的頻率脫鉤：只看時間，不看事件來了幾次。指標停下來就不再生，
-  // 既有的自然衰減完；重新開始動則立刻補一個（不用等滿一個間隔），手感不會遲鈍。
-  const sceneP = introToScene(introPointer.x, introPointer.y);
-  if (sceneP && introPointer.moved) {
-    const idle = (now - introLastSpawn) / 1000;
-    if (idle >= INTRO_RIPPLE_GAP) {
-      introSpawnRipple(sceneP.x, sceneP.y, 0);
-      introLastSpawn = now;
-    }
-    introPointer.moved = false;
+  // 材質重傳：一幀最多一次
+  if (introAtlas && introAtlas.dirty) {
+    gl.bindTexture(gl.TEXTURE_2D, introGL.tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, introAtlas.canvas);
+    introGL.hasTex = introAtlas.any ? 1 : 0;
+    introAtlas.dirty = false;
   }
 
-  // 顯影流程：顯影 → 停留 → 夾走 → 新相紙落下
-  const phaseT = (now - introPhaseT0) / 1000;
-  if (introPhase === 'develop') {
-    // 攪動會加速顯影——真實暗房也是這樣，而且這是「互動有回饋」的來源
-    const agitation = introAgit.reduce((s, a) => s + (a.t < 0 ? 0 : Math.exp(-a.t * 0.8)), 0);
-    introDevelop += dt / INTRO_SHEET_SECONDS * (1 + Math.min(agitation, 4) * 0.22);
-    if (introDevelop >= 1) { introDevelop = 1; introPhase = 'hold'; introPhaseT0 = now; }
-  } else if (introPhase === 'hold') {
-    if (phaseT > INTRO_HOLD_SECONDS) { introPhase = 'lift'; introPhaseT0 = now; }
-  } else if (introPhase === 'lift') {
-    const k = Math.min(1, phaseT / 0.9);
-    introSheetY = k * k * 1.35;                       // 加速夾出安全燈範圍
-    if (k >= 1) { introLoadSheet(); introDevelop = 0; introPhase = 'settle'; introPhaseT0 = now; }
-  } else {
-    // 新相紙從上方（也就是上一張被夾走的方向）緩降落定——沿用 lift 結束時的
-    // +1.35 往回收，中間沒有跳變，讀起來是「同一雙手把下一張放進盤裡」。
-    const k = Math.min(1, phaseT / 0.8);
-    introSheetY = 1.35 * Math.pow(1 - k, 3);
-    if (k >= 1) { introSheetY = 0; introPhase = 'develop'; introPhaseT0 = now; }
-  }
-
-  gl.uniform1f(loc.uTime, t);
-  gl.uniform1f(loc.uDevelop, introDevelop);
-  gl.uniform1f(loc.uSheetY, introSheetY);
+  gl.uniform1f(loc.uTime, (now - introT0) / 1000);
   gl.uniform1f(loc.uHasTex, introGL.hasTex);
-  for (let i = 0; i < INTRO_AGITATORS; i++) {
-    const a = introAgit[i];
-    gl.uniform3f(loc.uAgit[i], a.x, a.y, a.t);
-  }
   gl.drawArrays(gl.TRIANGLES, 0, 6);
   introRAF = requestAnimationFrame(introFrame);
 }
 
-// 退化模式：拿不到 WebGL 時用 DOM＋CSS 做一個簡化版的顯影（對比/亮度爬升），
-// 沒有漣漪與顆粒，但畫面不會開天窗，題字與進入鈕照常可用。
+// 退化模式：拿不到 WebGL（或系統要求減少動態）時用 DOM 做同一件事——每欄一個
+// 直條，內容重複兩份、用 CSS transform 平移 -50% 無縫循環。沒有 shader，但「印樣
+// 一直往下流」這件事還在，題字與進入鈕照常可用。
 function introFallback() {
   const box = $('intro-fallback');
   if (!box || !introPool.length) return;
   box.hidden = false;
-  const it = introPool[Math.floor(Math.random() * introPool.length)];
-  const img = new Image();
-  img.className = 'intro-fb-img';
-  img.alt = '';
-  img.src = thumbURL(it, 512);
   box.innerHTML = '';
-  box.appendChild(img);
-  const nameEl = $('intro-sheet-name');
-  if (nameEl) nameEl.textContent = it.display_name || it.name;
+  const cell = introCellSize();
+  for (let c = 0; c < INTRO_COLS; c++) {
+    const colEl = document.createElement('div');
+    colEl.className = 'intro-fb-col';
+    // 速度換算成「跑完 ROWS 格要幾秒」，跟著色器那組流速對齊，欄與欄之間錯開
+    const sp = INTRO_FLOW_MIN + INTRO_FLOW_VAR * ((c * 7 % 5) / 5);
+    colEl.style.setProperty('--dur', (INTRO_ROWS / sp).toFixed(1) + 's');
+    colEl.style.setProperty('--delay', (-((c * 3.7) % INTRO_ROWS) / sp).toFixed(1) + 's');
+    const inner = document.createElement('div');
+    inner.className = 'intro-fb-run';
+    for (let k = 0; k < INTRO_ROWS * 2; k++) {      // 兩份，平移 -50% 才接得上
+      const it = introPool[(c * INTRO_ROWS + (k % INTRO_ROWS)) % introPool.length];
+      const img = new Image();
+      img.alt = ''; img.decoding = 'async'; img.fetchPriority = 'low';
+      img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}&w=${cell}`;
+      inner.appendChild(img);
+    }
+    colEl.appendChild(inner);
+    box.appendChild(colEl);
+  }
 }
 
 function maybeStartIntro() {
   if (!ALL.length) return;
   introPool = ALL.filter(x => x.has_image);
-  if (introPool.length > 400) {   // 只從前面抽樣就夠，不必為了隨機掃全庫
+  if (introPool.length > 400) {   // 只抽樣就夠，不必為了隨機掃全庫
     const s = [];
-    for (let i = 0; i < 200; i++) s.push(introPool[Math.floor(Math.random() * introPool.length)]);
+    for (let i = 0; i < 160; i++) s.push(introPool[Math.floor(Math.random() * introPool.length)]);
     introPool = s;
   }
   // 邊角資料：用真實數字，不是裝飾性的編號
   const total = ALL.length, have = ALL.filter(x => x.has_image).length;
   const meta = $('intro-meta');
-  // 全部都有圖時「已顯影 27,951 / 27,951」是廢話，換一句真正有資訊的
   if (meta) meta.textContent = have >= total
     ? `${total.toLocaleString('en-US')} 幀 · 全數顯影`
     : `${total.toLocaleString('en-US')} 幀 · 已顯影 ${have.toLocaleString('en-US')}`;
@@ -3705,12 +3591,10 @@ function maybeStartIntro() {
   $('intro-modal').classList.add('open');
   introGL = REDUCE_MOTION ? null : introInitGL();
   if (!introGL) { introFallback(); return; }
+  introAtlas = introBuildAtlas();
   introResize();
-  introLoadSheet();
-  introPhase = 'develop'; introPhaseT0 = performance.now();
-  introDevelop = 0; introSheetY = 0; introT0 = 0; introFrame._last = 0;
-  for (const a of introAgit) a.t = -1;
-  introLastSpawn = -1e9; introPointer.moved = false;
+  introLoadCells();
+  introT0 = 0;
   introRAF = requestAnimationFrame(introFrame);
 }
 
@@ -3728,6 +3612,7 @@ function closeIntro() {
       if (lose) lose.loseContext();
       introGL = null;
     }
+    introAtlas = null;
     const fb = $('intro-fallback'); if (fb) { fb.innerHTML = ''; fb.hidden = true; }
   };
   if (REDUCE_MOTION || document.visibilityState !== 'visible' || !modal.animate) { finish(); return; }
@@ -3739,27 +3624,11 @@ function closeIntro() {
 }
 
 $('intro-enter-btn').addEventListener('click', closeIntro);
-// pointermove 只記座標——真正的生成在幀迴圈裡依時間節奏做。這樣既不會被事件頻率
-// 綁架（見 INTRO_RIPPLE_GAP 的說明），也不用在事件裡讀任何幾何。
-$('intro-modal').addEventListener('pointermove', (e) => {
-  if (!introGL) return;
-  introPointer.x = e.clientX; introPointer.y = e.clientY; introPointer.moved = true;
-}, { passive: true });
-// 點一下＝用力攪一次：同一點連下三個相位錯開的漣漪，散得比滑過去明顯。這是明確的
-// 使用者動作，可以直接插隊生成、不受節奏限制。
-$('intro-modal').addEventListener('pointerdown', (e) => {
-  if (!introGL) return;
-  const p = introToScene(e.clientX, e.clientY);
-  if (!p) return;
-  for (let i = 0; i < 3; i++) introSpawnRipple(p.x, p.y, i * 0.10);
-  introLastSpawn = performance.now();
-}, { passive: true });
 window.addEventListener('resize', introResize);
 window.addEventListener('keydown', (e) => {
   if (!$('intro-modal').classList.contains('open')) return;
   if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); closeIntro(); }
 });
-
 
 // 18+ 年齡確認擋在 boot 沖洗動畫之前：sessionStorage 記錄「這次瀏覽階段已確認」，
 // 分頁/瀏覽器關掉才重問，一般重整與硬重整都不會清掉這個記錄。boot 本身初始
