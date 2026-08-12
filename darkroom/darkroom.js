@@ -3682,12 +3682,29 @@ function maybeStartIntro() {
     for (let i = 0; i < 160; i++) s.push(introPool[Math.floor(Math.random() * introPool.length)]);
     introPool = s;
   }
-  // 邊角資料：用真實數字，不是裝飾性的編號
-  const total = ALL.length, have = ALL.filter(x => x.has_image).length;
-  const meta = $('intro-meta');
-  if (meta) meta.textContent = have >= total
-    ? `${total.toLocaleString('en-US')} 幀 · 全數顯影`
-    : `${total.toLocaleString('en-US')} 幀 · 已顯影 ${have.toLocaleString('en-US')}`;
+  // 卡片上的數字全部是真的，不是裝飾性編號——這個工具本來就在追蹤這三個。
+  const total = ALL.length;
+  const have = ALL.filter(x => x.has_image).length;
+  const folders = new Set(ALL.map(x => x.folder)).size;
+  const stats = $('intro-stats');
+  if (stats) {
+    const n = (v) => v.toLocaleString('en-US');
+    // 全都有圖時「27,951 / 27,951」是廢話，改成百分比才有資訊
+    const cover = have >= total ? '100%' : n(have);
+    stats.innerHTML = '';
+    for (const [v, k] of [[n(total), '詞庫'], [n(folders), '資料夾'], [cover, '已顯影']]) {
+      const box = document.createElement('div');
+      box.className = 'stat';
+      const nv = document.createElement('span'); nv.className = 'stat-n'; nv.textContent = v;
+      const kv = document.createElement('span'); kv.className = 'stat-k'; kv.textContent = k;
+      box.append(nv, kv);
+      stats.appendChild(box);
+    }
+  }
+  // 目前操作的詞庫資料夾。跟頂欄用同一個來源（setDataset 已經截好尾兩段），
+  // 兩個 bat 開同一個 port 但指不同 special_dir，這行是進門前就能分辨的依據。
+  const kicker = $('intro-kicker');
+  if (kicker) kicker.textContent = ($('dataset') && $('dataset').textContent) || '';
 
   $('intro-modal').classList.add('open');
   introGL = REDUCE_MOTION ? null : introInitGL();

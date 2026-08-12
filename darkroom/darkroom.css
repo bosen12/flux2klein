@@ -1345,11 +1345,17 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 
 .intro-gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 
-/* 玻璃卡身後的 scrim：中央壓得多一點，讓卡片有對比可站。z-index 保持在卡片
-   （z-index 2）之下，backdrop-filter 才吃得到它。 */
+/* 玻璃卡身後的 scrim。壓得重是**為了消閃爍**，不只是為了對比：`backdrop-filter`
+   的模糊在 Chrome 是「降取樣→模糊→升取樣」，而身後的印樣一直在動，降取樣的格點
+   每一幀取到的來源像素都不同——模糊出來的那片色塊就會忽明忽暗。畫布本身其實很穩
+   （實測每幀平均亮度變化只有 0.1%），所以那個閃是模糊那一關生出來的，改內容沒用。
+   能做的是把「送進模糊的東西」壓暗：亮度變化的**絕對值**跟著等比例縮小，閃爍幅度
+   也跟著縮小。這條跟下面把卡片材質加厚是同一件事的兩半，兩邊都要留著。
+   z-index 保持在卡片（z-index 2）之下，backdrop-filter 才吃得到它。 */
 .intro-modal::after { content: ""; position: absolute; inset: 0; z-index: 1;
   pointer-events: none;
-  background: radial-gradient(60% 50% at 50% 50%, rgba(8,9,13,.55), rgba(8,9,13,.22) 70%, transparent 100%); }
+  background: radial-gradient(46% 40% at 50% 50%,
+              rgba(8,9,13,.88), rgba(8,9,13,.62) 55%, rgba(8,9,13,.18) 85%, transparent 100%); }
 
 /* 退化版（拿不到 WebGL）：每欄一個直條，內容重複兩份、用 transform 平移 -50%
    無縫循環。--dur/--delay 由 darkroom.js 逐欄設，跟著色器那組流速對齊。 */
@@ -1370,15 +1376,20 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
    圓角刻意開大（36px）：squircle 在相同半徑下切掉的角比正圓少，要夠大才讀得出
    是蘋果那種連續曲率的弧，而不是「有點圓的方框」。 */
 .intro-copy { position: absolute; left: 50%; top: 50%; translate: -50% -50%; z-index: 2;
-  width: min(86vw, 420px); padding: 44px 40px 34px; text-align: center;
+  width: min(88vw, 400px); padding: 34px 36px 30px; text-align: center;
   border-radius: 36px;
-  background: linear-gradient(150deg, rgba(255,255,255,.13), rgba(255,255,255,.05) 46%,
-              rgba(255,255,255,.085));
-  backdrop-filter: blur(30px) saturate(165%);
-  -webkit-backdrop-filter: blur(30px) saturate(165%);
+  /* 上層是玻璃的受光漸層，底層是**不透明的材質本體**。材質厚（.76）是刻意的：
+     身後那片會動的東西只貢獻約兩成，`backdrop-filter` 降取樣造成的閃爍幅度也就
+     跟著只剩兩成（詳見上面 scrim 那段）。想要更透就要接受更明顯的閃。
+     模糊半徑也從 30px 收到 22px——半徑越大 Chrome 降取樣越兇，閃得越明顯。 */
+  background: linear-gradient(160deg, rgba(255,255,255,.10), rgba(255,255,255,.02) 46%,
+              rgba(255,255,255,.06)),
+              rgba(12,13,19,.76);
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
   box-shadow: 0 40px 90px -34px rgba(0,0,0,.92),
-              inset 0 1px 0 rgba(255,255,255,.22),
-              inset 0 -18px 34px -26px rgba(255,255,255,.30); }
+              inset 0 1px 0 rgba(255,255,255,.20),
+              inset 0 -18px 34px -26px rgba(255,255,255,.26); }
 /* 玻璃的厚度感：一條從左上亮到右下再回亮的高光邊。用 padding + mask 做出「只有
    邊框」的漸層——border-image 吃不到 border-radius，直接畫在背景上會蓋住內容。 */
 .intro-copy::before { content: ""; position: absolute; inset: 0; border-radius: inherit;
@@ -1389,13 +1400,34 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
   -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   mask-composite: exclude; }
-.intro-copy h2 { margin: 0 0 12px; font-size: clamp(26px, 5.4vw, 34px);
-  letter-spacing: .24em; text-indent: .24em;   /* 字距是加在右邊的，補回來才真的置中 */
+/* 卡片內容由上到下是四層：在哪／是什麼／有多少／怎麼進去。字距是加在每個字的
+   右邊的，所以凡是有 letter-spacing 的置中文字都要補一個等值的 text-indent，
+   否則整行會左偏半個字距。 */
+.intro-kicker { margin: 0 0 16px; font-family: var(--mono); font-size: 9.5px;
+  letter-spacing: .2em; text-indent: .2em;
+  color: color-mix(in srgb, var(--amber) 60%, transparent);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.intro-kicker:not(:empty)::before { content: "▸ "; }
+.intro-copy h2 { margin: 0 0 10px; font-size: clamp(26px, 5.4vw, 33px);
+  letter-spacing: .24em; text-indent: .24em;
   font-weight: 500; color: var(--ink); text-shadow: 0 2px 20px rgba(0,0,0,.6); }
-.intro-lede { margin: 0 0 28px; font-size: 12.5px; letter-spacing: .1em; text-indent: .1em;
+/* 這一行講的是「進去以後可以做什麼」，就是工具本身的三個模式，不是氣氛文案 */
+.intro-lede { margin: 0 0 24px; font-size: 12px; letter-spacing: .14em; text-indent: .14em;
   color: var(--dim); }
+
+/* 三個真數字。數字大、標籤小而等寬，中間用髮絲線隔開——讀起來像儀表板的讀數，
+   不是一句話。分隔線只加在第二個之後，避免最左邊多一條。 */
+.intro-stats { display: flex; justify-content: center; align-items: stretch;
+  margin: 0 0 26px; }
+.stat { display: flex; flex-direction: column; gap: 6px; padding: 0 18px; min-width: 74px; }
+.stat + .stat { border-left: 1px solid rgba(255,255,255,.10); }
+.stat-n { font-size: 18px; font-weight: 500; color: var(--ink);
+  font-variant-numeric: tabular-nums; }
+.stat-k { font-family: var(--mono); font-size: 9px; letter-spacing: .16em; text-indent: .16em;
+  color: color-mix(in srgb, var(--amber) 50%, transparent); }
+
 /* 幽靈鈕：一條琥珀髮絲線，跟玻璃的高光邊是同一種筆畫，不引入第三種材質 */
-.intro-enter-btn { padding: 11px 34px; border-radius: 999px; corner-shape: round;
+.intro-enter-btn { padding: 11px 32px; border-radius: 999px; corner-shape: round;
   font-size: 13px; font-weight: 500; letter-spacing: .18em; text-indent: .18em;
   background: rgba(255,255,255,.06);
   border: 1px solid color-mix(in srgb, var(--amber) 55%, transparent); color: var(--amber);
@@ -1403,17 +1435,14 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 .intro-enter-btn:hover { background: color-mix(in srgb, var(--amber) 16%, transparent);
   border-color: var(--amber); }
 
-/* 真數字：等寬、tabular-nums，不是裝飾性的 01/02/03 */
-.intro-meta { margin-top: 24px; font-family: var(--mono); font-size: 9.5px;
-  letter-spacing: .2em; text-indent: .2em; font-variant-numeric: tabular-nums;
-  color: color-mix(in srgb, var(--amber) 45%, transparent); }
-
 @media (max-width: 640px) {
-  .intro-copy { padding: 36px 26px 28px; border-radius: 30px; }
+  .intro-copy { padding: 30px 20px 26px; border-radius: 30px; }
   .intro-copy h2 { letter-spacing: .16em; text-indent: .16em; }
+  .stat { padding: 0 12px; min-width: 62px; }
+  .stat-n { font-size: 16px; }
 }
 /* backdrop-filter 拿不到時（舊瀏覽器）玻璃會變成幾乎全透明的白框，文字讀不到。
    退回實心暗底，形狀與邊框維持不變。 */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .intro-copy { background: rgba(14,15,21,.86); }
+  .intro-copy { background: rgba(12,13,19,.94); }
 }

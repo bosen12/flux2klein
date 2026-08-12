@@ -396,12 +396,15 @@
   <div class="intro-fallback" id="intro-fallback" hidden aria-hidden="true"></div>
   <!-- 題字卡：置中的 liquid glass 浮空視窗（背景模糊＋高光邊＋蘋果連續曲率圓角，
        圓角形狀由 darkroom.css 開頭的 corner-shape: squircle 全域規則自動給）。
-       .intro-meta 是真實的詞庫總數與覆蓋數，不是裝飾性編號。 -->
+       內容由上到下是「在哪／是什麼／有多少／怎麼進去」四層：#intro-kicker 是目前
+       操作的詞庫資料夾（兩個 bat 開同一個 port 但指不同 special_dir，這行是用來
+       分辨的），標題下面是這個工具的三個模式，再來是三個真數字。 -->
   <div class="intro-copy">
+    <p class="intro-kicker" id="intro-kicker"></p>
     <h2>詞庫暗房</h2>
-    <p class="intro-lede">整座詞庫，正在流過</p>
-    <button type="button" class="intro-enter-btn" id="intro-enter-btn">進入</button>
-    <div class="intro-meta" id="intro-meta"></div>
+    <p class="intro-lede">瀏覽 · 打標 · 生圖</p>
+    <div class="intro-stats" id="intro-stats"></div>
+    <button type="button" class="intro-enter-btn" id="intro-enter-btn">進入暗房</button>
   </div>
 </div>
 <script src="/darkroom.js" defer></script>
