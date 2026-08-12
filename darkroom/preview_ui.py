@@ -306,7 +306,7 @@ LORA_FOLDERS = ["style", "Character", "HENTAI", "illus"]
 # 抽卡都要知道確切的 LoRA 檔名。想抽「不套 LoRA」要明確傳 `"loras": []`——不給
 # loras 這個欄位才會落到這個預設值。
 AGENT_DRAW_DEFAULT_LORAS = [
-    {"folder": "style", "file": "ATRex_style-12V2Rev.safetensors", "strength": 0.8},
+    {"folder": "style", "file": "antechinusStyle_illusXL_Incrs_v1.safetensors", "strength": 0.8},
 ]
 LORA_PREVIEW_EXTS = (".preview.png", ".preview.jpeg", ".preview.jpg", ".preview.webp",
                      ".preview.mp4", ".preview.webm",
