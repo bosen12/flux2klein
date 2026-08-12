@@ -10,10 +10,14 @@
 
 ## 範圍
 
-checkpoint 選擇作用在**整個生成管線**，不只是「生圖模式」：手動生圖、塔羅抽卡、
-`/api/agent-draw`、瀏覽模式的「重新生成」單張縮圖，全部共用同一份
-`STATE["template"]` 與 `prepare_workflow()`。checkpoint 是這個工具唯一的「目前用
-哪顆底模」概念，改成套用在共用函式本身，而不是分別在各個呼叫點各自處理一次。
+**只有生圖模式**（手動生圖、塔羅抽卡、`/api/agent-draw`——這三個都走
+`_gen_one_worker()`）會用選定的 checkpoint。**瀏覽模式的「重新生成」單張縮圖
+（`do_generate()`）不受影響，一律維持 workflow.json 原本內建的底模**——那是詞庫
+預覽圖，要跟既有的縮圖風格一致，不該因為使用者在生圖模式試了別顆底模就跟著變。
+
+這跟前一版草稿的判斷不同：前一版認為兩條路徑共用 `prepare_workflow()` 所以該一併
+套用，但「共用同一個函式」不代表「該有同一種行為」——瀏覽模式跟生圖模式的目的不同
+（前者是詞庫的標準預覽、後者是使用者主動在試效果），使用者確認要分開。
 
 **不在範圍內**：`darkroom/lora-manager/`（那是獨立工具，checkpoint 路徑另外用
 `CHECKPOINT_ROOT` 環境變數同步，見 `2026-08-12` 那筆修復，跟這次是兩件事）。
@@ -78,20 +82,23 @@ body `{"file": "xxx.safetensors"}`。**驗證**：檔名必須存在於剛掃到
 不存在**（被刪了、改名了），記警告、`STATE["checkpoint"]` 設為 `None`——`None` 代表
 「不覆寫，沿用 workflow.json 原本內建的底模」，不會讓生成失敗或啟動掛掉。
 
-### 套用點：`prepare_workflow()`
+### 套用點：只在 `_gen_one_worker()` 裡，`prepare_workflow()` 呼叫之後
 
 ```python
+wf = prepare_workflow(STATE["template"], positive=positive, negative=negative,
+                      seed=seed, filename_prefix=prefix, steps=STATE["steps"])
 if STATE.get("checkpoint"):
     ckpt_node = find_node(wf, "CheckpointLoaderSimple")
     if ckpt_node:
         wf[ckpt_node]["inputs"]["ckpt_name"] = STATE["checkpoint"]
 ```
 
-放在 `prepare_workflow()` 內部、`deepcopy(template)` 之後——這樣 `do_generate()`
-（瀏覽模式重新生成）與 `_gen_one_worker()`（生圖模式／塔羅／agent-draw）都自動吃到，
-不用在兩個呼叫點各自重複邏輯。`STATE["checkpoint"]` 讀不到全域 `STATE`（`prepare_
-workflow` 目前定義在 `generate_special_previews.py`，`STATE` 是 `preview_ui.py`
-的模組層字典）——這是實作時要處理的介面問題，見下方「已知的技術細節」。
+**不改 `prepare_workflow()` 本身、不動 `do_generate()`**——直接在 `_gen_one_worker()`
+裡、`prepare_workflow()` 回傳之後就地覆寫 `ckpt_name`，這樣瀏覽模式的呼叫點完全碰不到
+這段邏輯，不需要靠參數區分「這次要不要套用」。`find_node()` 已經是
+`generate_special_previews.py` 現有的 helper（`prepare_workflow()` 內部也在用），
+`_gen_one_worker()` 所在的 `preview_ui.py` 本來就 import 了這個模組，直接呼叫即可，
+沒有新的跨模組依賴問題。
 
 ## 前端
 
@@ -102,23 +109,6 @@ workflow` 目前定義在 `generate_special_previews.py`，`STATE` 是 `preview_
 - 選擇變更立刻打 `POST /api/checkpoint`，成功後 toast 提示；不用另外的「儲存」按鈕
 - 不需要重啟、不需要重整頁面——下一次生成就會用新選的底模
 
-## 已知的技術細節（實作時要注意）
-
-`prepare_workflow()` 目前定義在 `generate_special_previews.py`，是純函式（不碰
-`preview_ui.py` 的模組層 `STATE`）。要讓它讀到 `STATE["checkpoint"]`，有兩條路：
-
-1. `prepare_workflow()` 加一個新參數 `checkpoint_override: str | None = None`，
-   兩個呼叫點（`do_generate()`、`_gen_one_worker()`）各自傳入
-   `STATE.get("checkpoint")`——維持 `prepare_workflow()` 是純函式，不引入跨模組的
-   隱性依賴。**這是建議做法**，理由：`generate_special_previews.py` 也被
-   `multi_gpu_batch.py` 這類獨立工具 import 使用，不該讓它意外依賴
-   `preview_ui.py` 的全域狀態。
-2. `prepare_workflow()` 直接 `from preview_ui import STATE` 讀——不建議，會製造
-   循環 import 風險（`preview_ui.py` 本來就 import `generate_special_previews`）。
-
-採用方案 1。兩個呼叫點都要記得傳這個新參數，漏了其中一個就會有「重新生成用舊底模、
-生圖模式用新底模」這種不一致，是這次實作最容易漏掉的地方。
-
 ## 驗收標準
 
 1. `GET /api/checkpoints` 回傳正確的 7 個檔名 + 目前選的那個
@@ -128,9 +118,10 @@ workflow` 目前定義在 `generate_special_previews.py`，`STATE` 是 `preview_
    相關、`comfy_endpoints` 等）完全不受影響
 4. 重啟 `preview_ui.py` 後，`STATE["checkpoint"]` 讀到上次存的值，不是每次都退回
    預設
-5. 選了新 checkpoint 之後，`do_generate()`（重新生成單張縮圖）與
-   `_gen_one_worker()`（生圖模式）兩條路徑生成出來的 workflow JSON，
-   `CheckpointLoaderSimple.inputs.ckpt_name` 都是新選的那個——不能只有其中一條
-   路徑生效
+5. **選了新 checkpoint 之後，生圖模式（手動生圖／塔羅抽卡／`/api/agent-draw`）生
+   出來的 workflow JSON，`CheckpointLoaderSimple.inputs.ckpt_name` 是新選的那個；
+   瀏覽模式「重新生成」單張縮圖生出來的 workflow JSON，`ckpt_name` 維持
+   workflow.json 原本內建的值，完全不受這個設定影響**——這條要兩個方向都測，只驗
+   生圖模式套用了、沒驗瀏覽模式沒被動到，等於沒測到這次範圍縮小的重點。
 6. 設定檔裡存的 `checkpoint` 對應的檔案如果被刪掉，啟動要印警告、不能讓
    `preview_ui.py` 整個掛掉
