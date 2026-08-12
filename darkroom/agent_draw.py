@@ -305,13 +305,14 @@ def _resolve_dm_channel(bot_token: str, user_id: str) -> str:
         raise DarkroomError(f"開 DM 頻道失敗，Discord 回傳 {e.code}：{detail}") from e
 
 
-def send_discord_embeds_dm(embeds_with_files: list[tuple[dict, str, bytes]], *,
-                            bot_token: str, user_id: str) -> None:
-    """把 build_discord_embeds() 的結果送成 DM。超過 10 個 embed 自動分成多則訊息
-    （Discord 平台上限），每則各自帶自己的圖片附件。"""
+def _post_embeds_to_channel(channel_id: str, embeds_with_files: list[tuple[dict, str, bytes]], *,
+                             bot_token: str) -> None:
+    """實際發送：把 embeds_with_files 依 10 個一批送到**已經知道 id** 的頻道。
+    抽出來獨立成一個函式，是因為串流模式（見 draw_and_stream_to_discord）每張圖
+    生完就要立刻送一次——如果每次都重新呼叫 _resolve_dm_channel()，n 張圖就是 n 次
+    多餘的「開頻道」API 呼叫；頻道 id 一個批次只需要解析一次，其餘張數直接重用。"""
     if not embeds_with_files:
         return
-    channel_id = _resolve_dm_channel(bot_token, user_id)
     chunks = [embeds_with_files[i:i + DISCORD_MAX_EMBEDS_PER_MSG]
               for i in range(0, len(embeds_with_files), DISCORD_MAX_EMBEDS_PER_MSG)]
     for chunk in chunks:
@@ -334,6 +335,89 @@ def send_discord_embeds_dm(embeds_with_files: list[tuple[dict, str, bytes]], *,
             raise DarkroomError(f"Discord 回傳 {e.code}：{detail}") from e
 
 
+def send_discord_embeds_dm(embeds_with_files: list[tuple[dict, str, bytes]], *,
+                            bot_token: str, user_id: str) -> None:
+    """把 build_discord_embeds() 的結果一次送成 DM（全部生完才送，見
+    draw_and_stream_to_discord 的「生一張送一張」版本）。超過 10 個 embed 自動分成
+    多則訊息（Discord 平台上限），每則各自帶自己的圖片附件。"""
+    if not embeds_with_files:
+        return
+    channel_id = _resolve_dm_channel(bot_token, user_id)
+    _post_embeds_to_channel(channel_id, embeds_with_files, bot_token=bot_token)
+
+
+def draw_and_stream_to_discord(n: int, *, base_url: str = DEFAULT_BASE_URL,
+                                folder: str | None = None, rarity: str | None = None,
+                                loras: list[tuple[str, float]] | None = None,
+                                no_lora: bool = False, trigger: str = "",
+                                out_dir: str | Path = "agent_draws", seed: int | None = None,
+                                bot_token: str, user_id: str,
+                                timeout: float = POLL_TIMEOUT_S,
+                                on_update=None) -> tuple[list[dict], list[tuple[str, float]]]:
+    """跟 draw_and_generate() 做同一件事（抽 n 張→送生成→等完成→存檔），差別是
+    **每張圖一生完就立刻送出 Discord embed**，不等其他張——用來抽多張時使用者不用
+    盯著看整批跑完，看到一張是一張。
+
+    回傳 (results, loras_used)，格式跟 draw_and_generate() 一致，方便 main() 共用
+    同一段「算 ok/fail、印摘要」的邏輯。
+    """
+    submitted, loras_used = submit_draw(n, base_url=base_url, folder=folder, rarity=rarity,
+                                         loras=loras, no_lora=no_lora, trigger=trigger, seed=seed)
+    id_to_meta = {it["id"]: it for it in submitted}
+
+    out_dir = Path(out_dir).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # 頻道只解析一次，每張圖各自送一則訊息時重複使用（見 _post_embeds_to_channel
+    # 的說明——n 次個別發送不該變成 n 次「開頻道」呼叫）。
+    channel_id = _resolve_dm_channel(bot_token, user_id)
+
+    pending = set(id_to_meta)
+    results: list[dict] = []
+    t0 = time.monotonic()
+    while pending:
+        if time.monotonic() - t0 > timeout:
+            for gid in pending:
+                it = id_to_meta[gid]
+                results.append({"rel": it["rel"], "name": it["name"], "id": gid,
+                                 "status": "error", "error": "逾時（agent_draw.py 端）"})
+            break
+        status_map = _http_json("GET", f"{base_url}/api/gen-status?ids={','.join(pending)}")
+        if on_update:
+            on_update(status_map)
+        for gid in list(pending):
+            st = status_map.get(gid, {})
+            status = st.get("status")
+            if status not in ("done", "error"):
+                continue
+            pending.discard(gid)
+            it = id_to_meta[gid]
+            if status == "done":
+                data = fetch_result_bytes(gid, base_url=base_url)
+                safe_name = "".join(c if c.isalnum() or c in "-_." else "_" for c in it["name"])[:80]
+                out_path = out_dir / f"{safe_name}.{gid}.webp"
+                out_path.write_bytes(data)
+                r = {"rel": it["rel"], "name": it["name"], "id": gid, "status": "done",
+                     "out_path": str(out_path)}
+                results.append(r)
+                # 這一張立刻送，不等其他張——這是這個函式跟 draw_and_generate() 的
+                # 唯一差別。single-item embed 也走 build_discord_embeds()，跟批次
+                # 送出用同一段組 embed 的邏輯，標題／欄位格式不會因為串流模式而不同。
+                try:
+                    _post_embeds_to_channel(channel_id, build_discord_embeds([r], loras_used),
+                                             bot_token=bot_token)
+                    print(f"  [已送出] {it['name']}", file=sys.stderr)
+                except DarkroomError as e:
+                    print(f"  [送出失敗] {it['name']}：{e}", file=sys.stderr)
+            else:
+                results.append({"rel": it["rel"], "name": it["name"], "id": gid,
+                                 "status": st.get("status", "error"), "error": st.get("err", "")})
+                print(f"  [failed  ] {it['name']}", file=sys.stderr)
+        if pending:
+            time.sleep(POLL_INTERVAL_S)
+    return results, loras_used
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--n", type=int, default=1, help="抽幾張")
@@ -352,28 +436,17 @@ def main() -> int:
                      help="stdout 改印一個 JSON 物件（{\"ok\":[...], \"fail\":[...]}），"
                           "給會解析工具輸出的呼叫端（例如 LLM agent）用，比逐行文字穩")
     ap.add_argument("--discord-dm", action="store_true",
-                     help="抽完直接用真正的 Discord embed 送 DM（title=系列＋詞庫名稱、"
-                          "LoRA 欄位、圖片）。需要 preview_config.json 設好 "
-                          "discord_bot_token 與 discord_dm_user_id，見 AGENT_DRAW.md")
+                     help="每張圖一生完就立刻送真正的 Discord embed 到 DM（title=系列＋"
+                          "詞庫名稱、LoRA 欄位、圖片），不等其他張——抽多張時看到一張是一張。"
+                          "需要 preview_config.json 設好 discord_bot_token 與 "
+                          "discord_dm_user_id，見 AGENT_DRAW.md")
     args = ap.parse_args()
 
     loras = [_parse_lora_arg(s) for s in args.lora] or None
-    try:
-        results, loras_used = draw_and_generate(
-            args.n, base_url=args.base_url, folder=args.folder, rarity=args.rarity,
-            loras=loras, no_lora=args.no_lora, trigger=args.trigger, out_dir=args.out, seed=args.seed,
-        )
-    except DarkroomError as e:
-        if args.json:
-            print(json.dumps({"error": str(e)}, ensure_ascii=False))
-        else:
-            print(f"錯誤：{e}", file=sys.stderr)
-        return 1
 
-    ok = [r for r in results if r["status"] == "done"]
-    fail = [r for r in results if r["status"] != "done"]
-
+    bot_token = user_id = None
     if args.discord_dm:
+        # 先檢查設定，不要等抽完卡才發現少填——那樣等於白跑一輪生成。
         cfg = _load_darkroom_config()
         bot_token = cfg.get("discord_bot_token")
         user_id = cfg.get("discord_dm_user_id")
@@ -385,13 +458,32 @@ def main() -> int:
             else:
                 print(f"錯誤：{msg}", file=sys.stderr)
             return 1
-        try:
-            embeds = build_discord_embeds(ok, loras_used)
-            send_discord_embeds_dm(embeds, bot_token=bot_token, user_id=str(user_id))
-            print(f"已送出 {len(embeds)} 張到 Discord DM", file=sys.stderr)
-        except DarkroomError as e:
-            print(f"Discord 送出失敗：{e}", file=sys.stderr)
-            return 1
+
+    try:
+        if args.discord_dm:
+            # 串流版：每張圖一生完就立刻送，不等其他張（見 draw_and_stream_to_discord）。
+            results, loras_used = draw_and_stream_to_discord(
+                args.n, base_url=args.base_url, folder=args.folder, rarity=args.rarity,
+                loras=loras, no_lora=args.no_lora, trigger=args.trigger, out_dir=args.out,
+                seed=args.seed, bot_token=bot_token, user_id=str(user_id),
+            )
+        else:
+            results, loras_used = draw_and_generate(
+                args.n, base_url=args.base_url, folder=args.folder, rarity=args.rarity,
+                loras=loras, no_lora=args.no_lora, trigger=args.trigger, out_dir=args.out, seed=args.seed,
+            )
+    except DarkroomError as e:
+        if args.json:
+            print(json.dumps({"error": str(e)}, ensure_ascii=False))
+        else:
+            print(f"錯誤：{e}", file=sys.stderr)
+        return 1
+
+    ok = [r for r in results if r["status"] == "done"]
+    fail = [r for r in results if r["status"] != "done"]
+
+    if args.discord_dm:
+        print(f"已送出 {len(ok)}/{len(results)} 張到 Discord DM", file=sys.stderr)
 
     if args.json:
         # 只留呼叫端真正用得到的欄位：done 的要 out_path（絕對路徑，可直接餵給
