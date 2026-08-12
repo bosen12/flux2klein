@@ -376,6 +376,20 @@ Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188
 | `logo_options.html` | logo 設計選項比較頁 |
 | `logo.png` | logo 原始圖檔 |
 
+### `discord-bot/`（暗房 Discord 互動機器人，獨立工具）
+
+獨立常駐的 Discord 機器人，讓使用者直接在 Discord 用 slash command（`/intro`／
+`/lora`／`/chkp`／`/gacha`）操作暗房，不透過 AI agent 中介。跟 `darkroom/preview_ui.py`
+完全分開的行程，只透過 HTTP 打它現有的 API，不 import `darkroom/` 底下任何檔案。
+詳見 [discord-bot/README.md](discord-bot/README.md)。
+
+| 檔案 | 用途 |
+|------|------|
+| `bot.py` | 主程式：slash command 定義與 `/gacha` 的逐張輪詢送圖邏輯 |
+| `darkroom_client.py` | 打暗房 API 的 async 小工具（用 aiohttp，不阻塞 bot 的事件迴圈） |
+| `config.example.json` | 設定範本（複製成同目錄的 `config.json`，已 gitignore） |
+| `requirements.txt` | `discord.py`／`aiohttp` |
+
 ---
 
 ## 需要的 ComfyUI 節點 / 模型

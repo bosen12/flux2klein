@@ -48,3 +48,6 @@ favorites.json
 
 # agent_draw.py 的預設輸出資料夾——生成結果，不是原始碼
 darkroom/agent_draws/
+
+# Discord 互動機器人的本機設定（含 bot token）
+discord-bot/config.json

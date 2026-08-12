@@ -1,0 +1,7 @@
+{
+  "bot_token": "",
+  "guild_id": "",
+  "darkroom_base_url": "http://127.0.0.1:7860",
+  "gacha_output_channel_id": "",
+  "selected_lora": null
+}
