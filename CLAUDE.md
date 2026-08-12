@@ -119,6 +119,8 @@ API 格式的範本在啟動時一次 fetch 進 `state.zTemplates`，送出前 d
 
 **模型檔名會在 ComfyUI 那端被改掉。** 提交被拒時如果看到 `value_not_in_list`，錯誤訊息裡會列出目前實際可用的檔名，對照後改引擎設定檔即可。例如 `qwen3vl_4b_fp8_mixed` 曾被改名為 `qwen3vl_4b_fp8_scaled`。
 
+**checkpoint／LoRA 只要放在 `models/checkpoints`（或 `loras`）底下的子資料夾，ComfyUI 認的名字就一定要帶資料夾前綴，純檔名送出整批 400 Bad Request。** 暗房的 checkpoint 選擇器（`apply_checkpoint_override()`）第一版只送純檔名，實測切到 `illurtrious/` 資料夾裡任一非預設的 checkpoint 就整批失敗。用 `GET /object_info/CheckpointLoaderSimple` 直接查 ComfyUI 回報的合法 `ckpt_name` 清單，確認清單裡是 `"illurtrious\prefectIllustriousXL_v8.safetensors"` 這種帶資料夾的相對路徑，純檔名根本不在清單裡——跟 `_convert_loras()` 處理 LoRA 子資料夾早就記過的坑（見上面「新增 LoRA 選擇器」附近的 `_convert_loras` 說明）是同一類問題，這次是在新功能裡又踩了一次。**判斷方法**：懷疑「切了模型就 400」時，直接打 `GET http://<comfy>/object_info/<LoaderNodeType>`，看 `input.required.<欄位名>[0]` 那個陣列裡實際列出來的字串長什麼樣，不要假設「檔名資料夾平放就好」——這個端點永遠是最新、最準的合法值來源，比對照面板介面顯示的檔名更可靠（面板通常只顯示 basename，藏起了實際要送的相對路徑）。**這次連帶發現一個外部檔案裡的既有問題**：瀏覽模式「重新生成」用的外部 workflow.json（`ANIMESTYLE (1).json`，在 git repo 外面，是使用者自己的 ComfyUI 匯出檔）裡的 `ckpt_name` 也是裸檔名，同樣不在 ComfyUI 的合法清單裡——這代表瀏覽模式的重新生成目前可能也是壞的，只是還沒被觸發；因為那個檔案不在版控範圍內，屬於使用者自己維護，沒有主動去改，只在查出根因時一併告知。
+
 **瀏覽器快取。** `index.html` 裡的 `?v=` 原本是寫死的 `?v=1`，等於沒有 cache busting，改過 JS 後瀏覽器仍可能跑舊版——同一個模型檔名錯誤因此重現了兩次。現在 `serve.py` 會在送出 `index.html` 時把 `?v=1` 換成前端檔案 mtime 的雜湊，改任何一支檔案網址就會變。**新增前端檔案時記得加進 `VERSIONED_ASSETS`。**
 
 **放大分支不該強制走二次採樣。** SeedVR2 與 SD 放大的圖片輸入原本硬接在 hires 的 VAEDecode 上，等於開放大就一定會多跑一輪採樣。現在改為 hires 關閉時動態改接 base 的 VAEDecode。
