@@ -3809,6 +3809,10 @@ const INTRO_FADE_NEAR = 420, INTRO_FADE_FAR = 2200;
 // 之間淡出，CLOSE_END 以內（幾乎貼到鏡頭）完全透明——卡片會在明顯變大之
 // 前就先淡出，不會撐到誇張的大小。
 const INTRO_FADE_CLOSE_END = 60, INTRO_FADE_CLOSE_START = 220;
+// 淡出尾巴的截斷點（見 updateIntroDepthFade）。低於這個透明度的卡片在深色底上
+// 幾乎看不見，卻正好落在 8-bit 精度與量化誤差最糟的區間，是「快消失前在閃」的來源。
+// 減掉再正規化＝提早乾淨收掉，而不是無限逼近 0。
+const INTRO_FADE_CUT = 0.04;
 
 // ── 遠處卡片的摩爾紋／閃爍（縮小取樣走樣）─────────────────────────
 // 使用者回報「卡片往遠處消失時會有類似摩爾紋的東西，看起來很像在閃」。這不是
@@ -3866,8 +3870,18 @@ function updateIntroDepthFade() {
       : Math.max(0, 1 - (dist - INTRO_FADE_NEAR) / (INTRO_FADE_FAR - INTRO_FADE_NEAR));
     const closeFade = dist >= INTRO_FADE_CLOSE_START ? 1
       : Math.max(0, (dist - INTRO_FADE_CLOSE_END) / (INTRO_FADE_CLOSE_START - INTRO_FADE_CLOSE_END));
-    const fade = Math.min(farFade, closeFade);
-    rec.el.style.opacity = (fade * fade).toFixed(2);
+    // 淡出的最後一段是整個效果最脆弱的地方，兩個問題疊在一起：
+    //   ① `.toFixed(2)` 把透明度切成 0.01 一階。在 opacity 0.03 時一階是 17% 的
+    //      相對亮度跳動、0.0126 時是 40%——肉眼看到的就是「快消失前在閃」。
+    //   ② 曲線是平方的，接近 0 時斜率也趨近 0，卡片會**卡在 opacity < 0.06 這個
+    //      區間佔掉 24.5% 的淡出距離**；而那個區間在 8-bit 色彩下本來就只有幾階
+    //      可用，瀏覽器得靠抖色（dither）表現，內容一動抖色圖樣就跟著爬。
+    // 修法：精度提高到 0.001（誤差降一個數量級），並把尾巴減掉再正規化——曲線
+    // 前段的「先快後慢」保持不變，但會以非零的斜率乾淨地收到 0，不再有尾巴賴在
+    // 那個表現不出來的區間裡。
+    const raw = fade * fade;
+    const op = raw <= INTRO_FADE_CUT ? 0 : (raw - INTRO_FADE_CUT) / (1 - INTRO_FADE_CUT);
+    rec.el.style.opacity = op.toFixed(3);
     // 進場淡入跑完就拿掉 .fading：之後每一幀的景深透明度是直接寫值，不再每幀
     // 取消/重啟一個 0.5 秒的過渡（見 darkroom.css .intro-canvas-card.fading）。
     if (!rec.settled && now >= rec.revealAt + 520) {
