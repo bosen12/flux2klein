@@ -44,6 +44,15 @@ function indexAll() {
 // 滾動數字：見 darkroom.css .count-num（CSS counter 補間，這裡只需要設 --n）。
 const setCount = (el, value) => { if (el) el.style.setProperty('--n', String(value)); };
 
+// 縮圖網址。displayPx 給了就依「實際顯示尺寸 × devicePixelRatio」跟後端要對應級距的
+// 縮圖（見 preview_ui.py 的 THUMB_SIZES）——不給就是後端預設的 360px，格線／塔羅／
+// LoRA 面板都走這條，行為不變。
+function thumbURL(it, displayPx) {
+  const u = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
+  if (!displayPx) return u;
+  return u + '&w=' + Math.round(displayPx * (window.devicePixelRatio || 1));
+}
+
 // 顯示目前操作的詞庫資料夾（兩個 bat 不同 special_dir 都開 7860，避免搞混改到別份）。
 // 顯示路徑尾兩段就足以分辨（…/projects/special_prompts vs …/animebot/special_prompts）。
 function setDataset(dir) {
@@ -3320,833 +3329,395 @@ function hideBoot() {
   b.classList.add('hide');
   setTimeout(() => b.remove(), 600);
 }
-
 /* ---------------------------------------------------------------------------
-   進暗房的進場畫面：兩種樣式，右上角 ⚙ 切換、記在 localStorage（下次載入沿用
-   上次選的）：
-   - 'marquee'（預設）：四行縮圖橫向跑馬燈填滿整個高度，方向左右交錯，中間兩
-     行大而亮、外側兩行小而暗——靠尺寸/透明度差製造淺焦距的縱深感，不用模糊
-     濾鏡。
-   - 'canvas'：參考 github.com/edoardolunardi/infinite-canvas 的概念（整片縮圖
-     網格），但那專案本身可拖曳/縮放是用 React Three Fiber 做的 3D 場景，這裡
-     不需要互動，改成純 CSS 讓整片網格自己緩慢漂移過幾個不規則中間點——效果
-     像自己在動，不用 JS 逐幀算、不用矩陣運算。
-   中間疊題字＋「進入暗房」鈕。**每次載入頁面都會播**（不用旗標記「看過了」，
-   使用者要每次重整都看得到）。
+   進場畫面「顯影盤」
+   ---------------------------------------------------------------------------
+   一張相紙躺在顯影液裡，影像從銀鹽顆粒中長出來——**暗部先出、亮部最後**，而且
+   是不規則的塊狀推進，這是真實顯影的物理順序，不是淡入。游標是攪動：漣漪從指
+   標散開、把底下的相紙折射得晃動，掃過的地方顯影得更快。一張顯影完就被夾出
+   安全燈範圍，新的空白相紙落進盤裡，換下一個詞庫。
+
+   為什麼是這個而不是「卡片在 3D 空間飄」：暗房只有一件真正的魔術，就是顯影。
+   卡片飄浮是任何網站都能套的 WebGL 樣板；「影像從無到有長出來」則是這個工具
+   的本體，而且它需要逐像素、隨時間演進的運算——正好是大家不覺得網頁做得到的
+   那一類效果。
+
+   實作是**單一全螢幕片段著色器**，原生 WebGL、不依賴任何函式庫（也就不用動
+   STATIC_FILES、不用重啟伺服器）。整個場景在 shader 裡算完：相紙的方框、顯影
+   前緣、顆粒、漣漪折射、安全燈、暗角。相紙的圓角刻意用超橢圓，跟面板其他地方
+   的 corner-shape: squircle 是同一種形狀語言。
+
+   退化路徑：WebGL 拿不到 → DOM 版（一張縮圖 + CSS 顯影動畫）；系統要求減少動
+   態 → 直接顯示已顯影的靜態畫面、不跑迴圈。
    --------------------------------------------------------------------------- */
-const INTRO_STYLE_KEY = 'yz-intro-style';
-function getIntroStyle() {
-  const v = localStorage.getItem(INTRO_STYLE_KEY);
-  return v === 'canvas' ? 'canvas' : 'marquee';
-}
+const INTRO_SHEET_SECONDS = 7.5;    // 一張相紙從空白到完全顯影的秒數（不攪動的話）
+const INTRO_HOLD_SECONDS  = 1.8;    // 顯影完停留多久才夾走
+const INTRO_AGITATORS     = 8;      // 同時追蹤幾個攪動點（= shader 裡的陣列長度）
 
-// ---- marquee 樣式 ----
-// 手機/弱網路裝置抽樣少一點、行數少一點——桌機 4 行 18 張、手機 2 行 10 張，
-// 首次載入時對 /api/thumb 的併發請求數跟著砍半以上，見 web-interface-guidelines
-// 的效能檢查（大量非關鍵圖片不該無差別跟桌機吃一樣的量）。
-const INTRO_ROWS_DESKTOP = [
-  { dir: 'left', durS: 62, size: 'edge' },
-  { dir: 'right', durS: 40, size: 'mid' },
-  { dir: 'left', durS: 44, size: 'mid' },
-  { dir: 'right', durS: 66, size: 'edge' },
-];
-const INTRO_ROWS_MOBILE = [
-  { dir: 'left', durS: 46, size: 'mid' },
-  { dir: 'right', durS: 58, size: 'mid' },
-];
-const INTRO_IMG_SIZE = { edge: 108, mid: 168 };   // 對照 darkroom.css 的 .intro-row.edge/.mid img 尺寸，寫進 width/height 屬性避免版面跳動（CLS）
-const INTRO_IMG_SIZE_MOBILE = { edge: 68, mid: 100 };
-
-// ── 縮圖要「顯示多大就要多大」──────────────────────────────────
-// 使用者回報兩種進場動畫都會「整張圖忽明忽暗、紋理在跳、像摩爾紋」。根因不是
-// 動畫本身，是**縮小取樣走樣**：`/api/thumb` 預設回 360px（當初是照「格子 180px
-// @2x DPR」訂的），但進場畫面把它顯示成 108～130px，在 1x DPR 的螢幕上等於縮小
-// 2.8～3.3 倍。走樣在**靜止**畫面幾乎看不出來（只是有點銳利過頭），所以同樣被
-// 縮小 1.96 倍的格線縮圖從來沒人抱怨；可是只要內容在動（3D 漂移、橫向捲動），
-// 每一幀取樣到的來源像素子集都不一樣，細節就逐幀跳動＝閃，整塊的平均亮度跟著
-// 抖＝忽明忽暗，規律紋理互相干涉＝摩爾紋。
-//
-// 治本就是讓縮放比例接近 1：依實際顯示尺寸（× devicePixelRatio）跟後端要對應
-// 級距的縮圖（見 preview_ui.py 的 THUMB_SIZES）。順帶好處是進場要載 81 張圖，
-// 128px 的 webp 只有 360px 的約 1/8 像素量，載入與解碼都明顯更省。
-function thumbURL(it, displayPx) {
-  const u = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}`;
-  if (!displayPx) return u;
-  return u + '&w=' + Math.round(displayPx * (window.devicePixelRatio || 1));
-}
-function buildIntroRow(items, durS, px) {
-  const track = document.createElement('div'); track.className = 'intro-track';
-  track.style.setProperty('--intro-dur', durS + 's');
-  // 內容重複兩份首尾接龍，animation 只需要跑 translateX(-50%) 就能無縫循環，
-  // 不用另外算「捲到底了要不要重置位置」這種容易出錯的邏輯。第一份是畫面一
-  // 開始就看得到的內容，eager 載入；第二份接在後面、要捲很久才會進到可視
-  // 範圍，維持 lazy——不要無差別把「馬上看得到的」也標成 lazy 拖到它的載入
-  // 時機。兩份都是裝飾用縮圖，fetchpriority 一律 low，不跟任何關鍵請求搶頻寬。
-  for (let rep = 0; rep < 2; rep++) {
-    for (const it of items) {
-      const img = document.createElement('img');
-      img.loading = rep === 0 ? 'eager' : 'lazy';
-      img.decoding = 'async';
-      img.fetchPriority = 'low';
-      img.draggable = false;
-      img.alt = ''; img.width = px; img.height = px;
-      img.src = thumbURL(it, px);   // 顯示多大就要多大，見 thumbURL 的說明
-      track.appendChild(img);
-    }
-  }
-  return track;
-}
-function renderIntroMarquee() {
-  const mobile = isMobile();
-  const rowsCfg = mobile ? INTRO_ROWS_MOBILE : INTRO_ROWS_DESKTOP;
-  const sizeMap = mobile ? INTRO_IMG_SIZE_MOBILE : INTRO_IMG_SIZE;
-  const perRow = mobile ? 10 : 18;
-  const picks = sampleN(ALL, Math.min(perRow * rowsCfg.length, ALL.length));
-  const rowsBox = $('intro-rows');
-  rowsBox.innerHTML = '';
-  rowsCfg.forEach((cfg, i) => {
-    const items = picks.slice(i * perRow, (i + 1) * perRow);
-    if (!items.length) return;
-    const row = document.createElement('div'); row.className = `intro-row ${cfg.dir} ${cfg.size}`;
-    row.appendChild(buildIntroRow(items, cfg.durS, sizeMap[cfg.size]));
-    rowsBox.appendChild(row);
-  });
-}
-
-// ---- canvas（無限畫布）樣式：區塊制、有真正景深、無限漫遊 ----
-// 讀過參考範例（github.com/edoardolunardi/infinite-canvas）的
-// src/infinite-canvas/constants.ts／utils.ts 之後照它的實際結構做：
-//   - 世界依 CHUNK_SIZE 切成立方格，每個區塊的座標(cx,cy,cz)雜湊成種子，
-//     用種子決定這格放哪幾張卡、放在格內哪個位置——同一個區塊不管什麼時候
-//     再訪都長一樣（決定性亂數），這才是「無限」的關鍵：不是預先鋪好一大片
-//     卡片，是相機（這裡是拖曳/滾輪控制的 pan）移到哪，即時算那附近幾個
-//     區塊要出現什麼。
-//   - 只有目前「相機」附近 RENDER_DIST 範圍內的區塊會真的建 DOM，離開範圍
-//     就整批移除——這是 updateIntroChunks() 在做的事，DOM 節點數量有上限
-//     （(2*RENDER_DIST+1)^3 個區塊 × ITEMS_PER_CHUNK 張卡），不會漫遊越久
-//     DOM 越腫。
-//   - 卡片本身固定尺寸（跟暗房既有的塔羅抽卡卡片同一種「縮圖＋名稱」組合），
-//     screen 上看起來大小不一是真正的 CSS 3D perspective 透視換算出來的
-//     （近大遠小），不是手動把每張卡拉伸——這也是照參考範例的邏輯：它的
-//     圖片本尊也是正方形、大小差異很小，視覺上的大小差距是相機透視投影
-//     算出來的，不是內容本身形狀不同。
-function randRange(a, b) { return a + Math.random() * (b - a); }
-function clampNum(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-// 簡單的字串雜湊＋seeded PRNG（mulberry32），只為了讓「同一個區塊座標永遠
-// 算出同一批卡片」，不需要真的密碼學等級的亂數品質。
-function hashStr(s) {
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return h >>> 0;
-}
-function mulberry32(seed) {
-  let t = seed >>> 0;
-  return function () {
-    t += 0x6D2B79F5;
-    let x = Math.imul(t ^ (t >>> 15), 1 | t);
-    x ^= x + Math.imul(x ^ (x >>> 7), 61 | x);
-    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-// 使用者回報畫面太擠——原程式雖然 CHUNK_SIZE=110、每區塊 5 張，但它是用真的
-// 3D 相機（FOV 60°）繪製，只有落在視錐範圍內的才看得到，視覺上遠比「27 個
-// 區塊全部同時存在」稀疏；CSS 3D 這裡沒有視錐剔除，所有區塊的卡片都在畫面
-// 附近，所以直接把區塊放大、每區塊卡片數砍半，湊出接近 demo 那種大量留白的
-// 疏密感（27 區塊 × 2 張＝54 張，不是 135 張）。
-const INTRO_CHUNK_SIZE = 620;     // 一個區塊立方體的邊長（CSS px／世界單位）
-const INTRO_RENDER_DIST = 1;      // 區塊 Chebyshev 半徑，1 = 3×3×3 = 27 個區塊同時存在
-// 曾經照 demo 的做法加了一圈真正渲染的緩衝區塊（CHUNK_FADE_MARGIN=1，
-// 27→125 個區塊、81→375 張卡）。使用者回報「被你改了之後更卡了」——這個
-// 判斷錯在：我只用 performance.now() 量 JS 運算耗時（確認每次都在 1ms 內），
-// 但真正的成本是瀏覽器的繪製/合成負擔（375 個都有 box-shadow、都各自因為
-// 3D transform 被拉成獨立合成層的元素），JS 計時量不到、只有使用者實際感
-// 受得到。改回 0（維持 27 個區塊、81 張卡），不再多渲染那圈緩衝——demo
-// 用 WebGL/three.js 畫幾何體的成本跟我們在 DOM／CSS 世界疊 375 個帶陰影
-// 的元素完全不是同一個量級，不該照搬同一個數字。
-const INTRO_FADE_MARGIN = 0;
-const INTRO_TOTAL_DIST = INTRO_RENDER_DIST + INTRO_FADE_MARGIN;   // 真正建立區塊的半徑（含緩衝圈）
-// 使用者回報「左邊明顯很空」——27 個區塊 × 2 張只有 54 張卡，且卡片位置在
-// 區塊內是均勻亂數，量少時單看某個瞬間的畫面很容易某一側剛好沒分到卡片
-// （純統計上的空洞，不是 bug，但看起來像沒畫對）。稍微加回一點密度到 3
-// 張/區塊（81 張），減少視覺上明顯的空白區塊，還沒到使用者先前抱怨「135
-// 張太擠」的量級。
-const INTRO_ITEMS_PER_CHUNK = 3;  // 每個區塊放幾張卡
-const INTRO_LAYER_STEP_MS = 45;   // 分層淡入/淡出：每往外一層區塊，延遲多久才開始動，見 updateIntroChunks()
-const introCanvasPan = { x: 0, y: 0, z: 0 };   // 「相機」目前的平移量
-let introPool = [];               // 這次進場抽樣好的候選詞庫（區塊內選哪張卡從這裡挑，決定性）
-let introChunks = new Map();      // chunkKey -> DOM 元素陣列，目前實際存在的區塊
-let introLastCenterKey = null;    // 節流用：相機還在同一個中心區塊裡就不用重算
-let introPrefetchGen = 0;         // 候選池暖機請求的世代編號，見 renderIntroCanvas()
-let introPrefetchedChunks = new Set();   // 已經暖機過縮圖的區塊 key，見 prefetchAheadChunks()，避免重複暖機同一區塊
-// 縮圖載入排隊時鐘：全域共用一條時間軸，不管哪一次 updateIntroChunks() 呼叫
-// 排進來的載入工作，都照同一個節奏依序觸發，避免連續好幾次區塊更新（例如
-// 快速拖曳連續跨過好幾個邊界）各自獨立錯開時反而疊加成同一瞬間的請求洪
-// 峰。沒有新工作排進來時，下一次呼叫會自動從「現在」重新起算
-// （Math.max(now, introNextLoadAt)），不會累積出離譜的延遲。
-// 使用者問「照片能不能貼上去更快」——真正的卡頓成因（區塊座標偏移、孤兒請
-// 求）修掉之後，原本 30ms/500ms 這組保守值可以收緊，讓看得到的卡片更快輪
-// 到自己：改成 12ms 一個、最多排到 260ms 後。
-let introNextLoadAt = 0;
-function introScheduleLoad(fn) {
-  const now = performance.now();
-  const at = Math.max(now, introNextLoadAt);
-  introNextLoadAt = at + 12;
-  const delay = Math.min(at - now, 260);
-  if (delay > 0) setTimeout(fn, delay); else fn();
-}
-
-function introChunkKey(cx, cy, cz) { return cx + ',' + cy + ',' + cz; }
-// 一個區塊裡的卡片：位置在區塊立方體範圍內用種子決定（不是每次重新隨機），
-// pickSeed 用來決定「這個位置放哪一張詞庫縮圖」，同樣是決定性的。
-function genChunkCards(cx, cy, cz) {
-  const rng = mulberry32(hashStr(introChunkKey(cx, cy, cz)));
-  const cards = [];
-  for (let i = 0; i < INTRO_ITEMS_PER_CHUNK; i++) {
-    cards.push({
-      x: cx * INTRO_CHUNK_SIZE + rng() * INTRO_CHUNK_SIZE,
-      y: cy * INTRO_CHUNK_SIZE + rng() * INTRO_CHUNK_SIZE,
-      z: cz * INTRO_CHUNK_SIZE + rng() * INTRO_CHUNK_SIZE,
-      pickSeed: rng(),
-    });
-  }
-  return cards;
-}
-// 讀了 scene.tsx（實際的相機控制器）才發現：跟原程式差最多的不是視覺，是
-// 「手感」——原程式不是滑鼠拖多少畫面就跟著平移多少，是一整套帶慣性的物理
-// 系統：拖曳只改「目標速度」，真正的速度用 lerp 逐幀追上目標速度、放開後
-// 目標速度用指數衰減慢慢歸零（= 慣性滑行），滾輪同理累加後逐幀消化；就算
-// 完全沒拖曳，滑鼠位置本身也會讓畫面有一圈很輕的環境漂移（drift）。這些全部
-// 照搬過來，係數依我們的世界尺度（CHUNK_SIZE=380 對照三.js 的 110）重新換算，
-// 不是照抄三.js 那組給小單位世界用的數字。
-// 使用者把「永久慣性」講清楚了：一開始給的只是隨機的初始慣性，之後的動態
-// 要真的反映使用者施的力（拖曳左右、滾輪縮放），不是套一個跟輸入無關的獨立
-// 漂移公式。所以這裡不做「目標速度逐幀衰減回 0」那種有摩擦力的模型，改成
-// 真正的牛頓慣性：targetVel 只會被拖曳/滾輪的力改變（累加），本身完全不衰
-// 減——鏡頭會永遠照最後一次受力的方向與大小持續漂移，直到使用者施加新的力
-// 才會改變，不會自己慢慢停下來。INTRO_MAX_VEL 純粹是安全上限（terminal
-// velocity），不是摩擦力。
-// 使用者回報「預設慣性太快、施力感知太靈敏」——這套物理現在不會衰減（永久
-// 慣性），代表任何一次拖曳/滾輪的貢獻都會永遠留著，舊的係數（拖曳 0.12／
-// 滾輪 0.16／上限 26）是照「還會衰減」的手感調的，衰減拿掉後同樣的輸入會
-// 變成「永遠都那麼快」，感覺自然靈敏到不合理。全部往下調一個量級。
-// 使用者後續補充「慣性改成慢一點，我施力照常，但最後慣性大小固定，不要太
-// 快」——拖曳/滾輪的靈敏度（INTRO_VEL_LERP 以及下面拖曳/滾輪的係數）不用
-// 再動，是最終「永遠會漂移的速度上限」要再壓低，這樣不管使用者怎麼用力
-// 甩，最後穩定漂移的速度都不會超過這個更慢的上限。使用者又回饋「速度再
-// 低」，6 還是太快，再往下壓到 3；接著直接指定「速度改成1」，又再指定
-// 「速度調2」。
-const INTRO_VEL_LERP = 0.16, INTRO_MAX_VEL = 2;
-const INTRO_DRIFT_AMOUNT = 22, INTRO_DRIFT_LERP = 0.12;
-// 開場鏡頭：先貼近一點（Z 正值＝離相機比較近），給一個隨機大小、方向固定
-// 往後（負值）的初始速度，外加 x/y 也給一點隨機初速（不是死板只退後）——這
-// 就是使用者說的「一開始那只是初始慣性而已，隨機給」，數值不用刻意調成某個
-// 精確的模擬結果，因為後面不會衰減、永遠不會定格，多一點隨機性反而更自然。
-const INTRO_ENTRANCE_Z = 780;
-const INTRO_ENTRANCE_VEL_Z = [0.6, 2];  // 往後的初速範圍（負值），[最小,最大]，跟 INTRO_MAX_VEL 同量級
-const INTRO_ENTRANCE_VEL_XY = 0.5;      // x/y 初速的隨機範圍是 ±這個值
-const introVel = { x: 0, y: 0, z: 0 };
-const introTargetVel = { x: 0, y: 0, z: 0 };
-const introDrift = { x: 0, y: 0 };
-const introMouseN = { x: 0, y: 0 };   // 滑鼠位置正規化到 -1..1，只用來算環境漂移
-let introScrollAccum = 0;
+let introGL = null;         // { gl, prog, loc, tex, canvas } 或 null（退化模式）
 let introRAF = null;
+let introT0 = 0;
+let introPool = [];         // 候選詞庫（有圖的）
+let introPhase = 'develop'; // develop → hold → lift → settle
+let introPhaseT0 = 0;
+let introDevelop = 0;       // 0..1 顯影進度
+let introSheetY = 0;        // 相紙在盤裡的垂直位移（夾走／落下用）
+const introAgit = [];       // 攪動點：{ x, y, t }（x/y 是長寬比校正後的座標）
+let introPointer = { x: 0, y: 0, inside: false };
 
-function applyIntroCanvasTransform() {
-  let tx = introCanvasPan.x + introDrift.x, ty = introCanvasPan.y + introDrift.y, tz = introCanvasPan.z;
-  // INTRO_DEBUG.snap：見下方除錯開關那段（問題確認後連同整段移除）
-  if (typeof INTRO_DEBUG !== 'undefined' && INTRO_DEBUG.snap) {
-    const d = window.devicePixelRatio || 1;
-    tx = Math.round(tx * d) / d; ty = Math.round(ty * d) / d; tz = Math.round(tz * d) / d;
-  }
-  $('intro-canvas-grid').style.transform = `translate3d(${tx.toFixed(1)}px, ${ty.toFixed(1)}px, ${tz.toFixed(1)}px)`;
-  updateIntroChunks();
-  updateIntroDepthFade();
-}
-// 往目前移動方向預測「下一個中心區塊」，把那一整塊（跟真正渲染範圍一樣大
-// 的 3×3×3）裡還沒暖機過的區塊，用低優先度先跟伺服器要一輪縮圖（只暖機
-// 圖片，不建 DOM 卡片，見上面 updateIntroChunks() 呼叫這裡的說明）。靜止
-// 或速度趨近 0 時不用猜方向。
-function prefetchAheadChunks(cx0, cy0, cz0) {
-  const VEL_EPS = 0.05;   // 太小的速度不用猜方向，避免抖動時亂預測
-  const dx = Math.abs(introVel.x) > VEL_EPS ? Math.sign(introVel.x) : 0;
-  const dy = Math.abs(introVel.y) > VEL_EPS ? Math.sign(introVel.y) : 0;
-  const dz = Math.abs(introVel.z) > VEL_EPS ? Math.sign(introVel.z) : 0;
-  if (!dx && !dy && !dz) return;
-  const pcx0 = cx0 + dx, pcy0 = cy0 + dy, pcz0 = cz0 + dz;
-  for (let ddx = -INTRO_TOTAL_DIST; ddx <= INTRO_TOTAL_DIST; ddx++) {
-    for (let ddy = -INTRO_TOTAL_DIST; ddy <= INTRO_TOTAL_DIST; ddy++) {
-      for (let ddz = -INTRO_TOTAL_DIST; ddz <= INTRO_TOTAL_DIST; ddz++) {
-        const cx = pcx0 + ddx, cy = pcy0 + ddy, cz = pcz0 + ddz;
-        const key = introChunkKey(cx, cy, cz);
-        if (introChunks.has(key) || introPrefetchedChunks.has(key)) continue;
-        introPrefetchedChunks.add(key);
-        genChunkCards(cx, cy, cz).forEach(c => {
-          const it = introPool[Math.floor(c.pickSeed * introPool.length) % introPool.length];
-          const pre = new Image();
-          pre.decoding = 'async'; pre.fetchPriority = 'low';
-          // 必須跟真正要用的網址完全一致（含 &w=），不然暖到的是另一份快取、白暖
-          pre.src = thumbURL(it, (isMobile() ? 100 : 130) * INTRO_SUPERSAMPLE);
-        });
-      }
-    }
-  }
-}
-// 依目前相機位置算出「應該存在」的區塊集合，跟目前實際存在的區塊（introChunks）
-// 做差集：多的移除、少的新增。只有相機跨過區塊邊界（中心區塊變了）才會真的
-// 重算，單純在同一區塊裡小幅移動不會每幀都觸發，避免 DOM 抖動。
-function updateIntroChunks() {
-  // 用 Math.floor 不是 Math.round：genChunkCards() 把區塊 cx 定義成
-  // [cx*SIZE, (cx+1)*SIZE) 這個半開區間（從 cx*SIZE 開始往正方向延伸，不是
-  // 以 cx*SIZE 為中心），「相機在哪個區塊裡」正確算法就是 floor(camPos/SIZE)。
-  // 用 round 等於誤把區塊當成「以 cx*SIZE 為中心」，會在區塊中點（而不是真
-  // 正的區塊邊界）提早切換 cx0，導致算出來的中心區塊系統性地偏向正方向半個
-  // 區塊寬——使用者回報「左側還是很容易沒有圖片」正是這個系統性偏移，不是
-  // 統計運氣：不管相機在哪，範圍永遠往正方向多蓋一點、負方向少蓋一點。
-  const camX = -introCanvasPan.x, camY = -introCanvasPan.y, camZ = -introCanvasPan.z;
-  const cx0 = Math.floor(camX / INTRO_CHUNK_SIZE);
-  const cy0 = Math.floor(camY / INTRO_CHUNK_SIZE);
-  const cz0 = Math.floor(camZ / INTRO_CHUNK_SIZE);
-  const centerKey = introChunkKey(cx0, cy0, cz0);
-  if (centerKey === introLastCenterKey) return;
-  introLastCenterKey = centerKey;
-  // 半徑用 INTRO_TOTAL_DIST（= RENDER_DIST + FADE_MARGIN），照 demo 的做法
-  // 真正渲染的範圍比「看起來看得到」的範圍多一圈緩衝，見上面 INTRO_FADE_MARGIN
-  // 的說明。
-  const wanted = new Map();   // key -> {cx,cy,cz,dist}
-  for (let dx = -INTRO_TOTAL_DIST; dx <= INTRO_TOTAL_DIST; dx++) {
-    for (let dy = -INTRO_TOTAL_DIST; dy <= INTRO_TOTAL_DIST; dy++) {
-      for (let dz = -INTRO_TOTAL_DIST; dz <= INTRO_TOTAL_DIST; dz++) {
-        const cx = cx0 + dx, cy = cy0 + dy, cz = cz0 + dz;
-        wanted.set(introChunkKey(cx, cy, cz), { cx, cy, cz, dist: Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz)) });
-      }
-    }
-  }
-  // 使用者問「可以提前載入嗎，例如讓虛擬畫布更大」——直接加大 RENDER_DIST
-  // 會讓實際渲染的區塊數立方成長（1→2 就是 27→125 個區塊），DOM／記憶體／
-  // 縮圖請求量跟著爆增，跟這幾輪一直在收斂的效能方向相反。改成「渲染範圍
-  // 不變，但縮圖預先在往前一步的方向暖機」：往目前移動方向（用 introVel
-  // 的正負號）預測下一步相機大概會落在哪個區塊，把那個預測位置為中心的
-  // 3×3×3（跟現在渲染的一樣大）裡、還沒真的渲染也還沒暖機過的區塊，低優
-  // 先度先把縮圖跟伺服器要一輪（只暖機圖片，不建 DOM 卡片）。這樣相機真的
-  // 移動到那裡、要建立真正的卡片時，縮圖大機率已經在瀏覽器/伺服器快取
-  // 裡，達到「提前載入」的效果，但不會讓可視範圍或 DOM 數量變大。
-  prefetchAheadChunks(cx0, cy0, cz0);
-  // 移除超出範圍的區塊——不是直接 remove()，卡片會在畫面上憑空消失（使用者
-  // 回報「左右移動圖片會突然消失」正是這裡）。先淡出（靠 CSS 的 opacity
-  // transition）再移除，逾時值要比 CSS 的淡出時長長一點當保險（分頁在背景
-  // 時 transitionend 不一定會結算，這個坑 CLAUDE.md 記過）。同時要立刻從
-  // introChunks 移掉，這樣 updateIntroDepthFade() 才不會在淡出過程中又把
-  // opacity 蓋回去。
-  // 使用者回報「圖片應該要分層載入和消失，不要一次消失或載入好幾層」——相
-  // 機跨過一個區塊邊界時，垂直於移動方向的那整面區塊牆（RENDER_DIST=1 時
-  // 最多 3×3＝9 個區塊）過去是同一個 tick 內全部一起淡出/淡入，看起來像
-  // 一整片瞬間消失或冒出來，不是「一層一層」。改成依跟相機的距離排序，錯
-  // 開每個區塊真正開始淡出/淡入的時間點（不影響 introScheduleLoad 那條縮
-  // 圖網路請求自己的節奏，那是另一件事）。
-  // 使用者回報「有時候會閃爍、破圖」——根因是這裡原本在排定分層淡出的當
-  // 下就立刻 introChunks.delete(key)，但真正的淡出（opacity=0）被
-  // fadeDelay 延後最多 400ms 才執行。這段延遲空窗期內，如果相機又移回來
-  // （現在速度上限只有 1，常常在邊界附近徘徊，很容易來回），
-  // updateIntroChunks() 會因為 introChunks 已經不認得這個 key，誤判成
-  // 「這裡需要新卡片」，在同一個位置重新建立一整組全新的 DOM 卡片——舊的
-  // 那組還在淡出、新的這組又冒出來，兩組疊在一起就是「閃爍／看起來像破
-  // 圖」的成因。修法是把 introChunks.delete(key) 一起延後到真正執行淡出
-  // 的那個 setTimeout 裡，而且執行前重新檢查一次「現在」（不是排定當下）
-  // 這個區塊是不是還在範圍外——如果相機已經移回來了，直接取消這次淡出，
-  // 讓卡片留著，不會被誤刪也不會被誤判成需要重建。
-  const outgoing = [];
-  for (const [key, entry] of introChunks) {
-    if (!wanted.has(key)) outgoing.push([key, entry]);
-  }
-  outgoing
-    .map(([key, entry]) => {
-      const first = entry[0];
-      const dist = first ? Math.hypot(first.x - camX, first.y - camY, first.z - camZ) : 0;
-      return { key, entry, dist };
-    })
-    .sort((a, b) => b.dist - a.dist)   // 離相機越遠的越先淡出，由外而內
-    .forEach(({ key, entry }, i) => {
-      const fadeDelay = Math.min(i * INTRO_LAYER_STEP_MS, 400);
-      setTimeout(() => {
-        const [ccx, ccy, ccz] = key.split(',').map(Number);
-        const curCx0 = Math.floor(-introCanvasPan.x / INTRO_CHUNK_SIZE);
-        const curCy0 = Math.floor(-introCanvasPan.y / INTRO_CHUNK_SIZE);
-        const curCz0 = Math.floor(-introCanvasPan.z / INTRO_CHUNK_SIZE);
-        const stillOut = Math.max(Math.abs(ccx - curCx0), Math.abs(ccy - curCy0), Math.abs(ccz - curCz0)) > INTRO_TOTAL_DIST;
-        if (!stillOut) return;   // 相機移回來了，取消這次淡出，卡片留著繼續用
-        // cancelled=true：卡片可能還在 introScheduleLoad 的排隊佇列裡、還
-        // 沒真的發出縮圖請求。不標記的話，就算畫面上已經看不到這張卡，佇
-        // 列輪到它時還是會照樣 fetch＋decode，白白佔用全域載入節奏跟伺服
-        // 器縮圖產生的併發額度（server 端只有 2 個併發生成名額），排擠真
-        // 正看得到的卡片，這是「有時會卡」的另一個成因。
-        entry.forEach(c => {
-          c.cancelled = true;
-          // 淡出要走過渡，所以先把 .fading 加回來（進場結束時被拿掉了，見 updateIntroDepthFade）
-          c.el.classList.add('fading');
-          c.el.style.opacity = '0';
-          setTimeout(() => c.el.remove(), 560);
-        });
-        introChunks.delete(key);
-      }, fadeDelay);
-    });
-  if (!introPool.length) return;
-  // 使用者回報「左右移動時圖片載入比較慢，導致空間空」——原本整張卡片（含
-  // 卡框、名稱標籤）都要等縮圖真的解碼完成才顯示，等於移動快一點時，前方
-  // 還沒載完縮圖的區域看起來就是純粹的空白。改成卡框跟景深淡出立刻照常出
-  // 現（下面 freshCards 收集，強制 reflow 後跟其他卡片一起套用真正的透明
-  // 度），縮圖本身另外用 CSS class（.on）淡入，圖還沒到之前那個位置看到的
-  // 是「正在顯影中的卡框＋名稱」而不是空洞，圖載完再疊上去。
-  // 新增的區塊一樣依跟相機的距離排序、錯開每個區塊的淡入起點（見上面移除
-  // 那段同樣的「分層」理由）：離相機越近的區塊先顯影，越遠的越晚，一整面
-  // 區塊牆不會同一瞬間全部冒出來。
-  const grid = $('intro-canvas-grid');
-  const newChunkList = [];
-  wanted.forEach((info, key) => { if (!introChunks.has(key)) newChunkList.push(info); });
-  newChunkList
-    .map(info => {
-      const centerX = (info.cx + 0.5) * INTRO_CHUNK_SIZE, centerY = (info.cy + 0.5) * INTRO_CHUNK_SIZE, centerZ = (info.cz + 0.5) * INTRO_CHUNK_SIZE;
-      return { ...info, dist: Math.hypot(centerX - camX, centerY - camY, centerZ - camZ) };
-    })
-    .sort((a, b) => a.dist - b.dist)
-    .forEach(({ cx, cy, cz }, layerIdx) => {
-    const key = introChunkKey(cx, cy, cz);
-    // +16（約一影格）確保「就算是最近那層」也不會跟卡片剛建立時的
-    // opacity:0 落在同一個同步 tick 裡結算——不然沒有中間插入一次繪製，
-    // CSS transition 就不會觸發（起訖值同一 tick 內改完，瀏覽器只畫得到
-    // 最終值）。下面因此不再需要 void grid.offsetHeight 強制同步 reflow
-    // 那招。
-    const revealAt = performance.now() + Math.min(16 + layerIdx * INTRO_LAYER_STEP_MS, 400);
-    const cardPx = isMobile() ? 100 : 130;
-    // 超取樣倍率，必須跟 darkroom.css .intro-canvas-card 的 --ss 一致（見那裡的說明）：
-    // 卡片用 SS 倍尺寸繪製、再由 transform 的 scale(1/SS) 縮回來，合成器因此拿到
-    // SS 倍解析度的貼圖，次像素位移造成的抖動被平均掉。
-    const SS = INTRO_SUPERSAMPLE;
-    const boxPx = cardPx * SS;
-    const entry = genChunkCards(cx, cy, cz).map(c => {
-      const it = introPool[Math.floor(c.pickSeed * introPool.length) % introPool.length];
-      const card = document.createElement('div'); card.className = 'intro-canvas-card fading';
-      card.style.width = boxPx + 'px'; card.style.margin = `-${boxPx / 2}px 0 0 -${boxPx / 2}px`;
-      // scale 寫在最後＝先在元素自己的座標系縮小（繞中心，跟 margin 的置中錨點重合），
-      // 再做 3D 位移，視覺結果與原本 130px 的卡片完全相同。
-      card.style.transform = `translate3d(${c.x.toFixed(0)}px, ${c.y.toFixed(0)}px, ${c.z.toFixed(0)}px) scale(${1 / SS})`;
-      card.style.opacity = '0';
-      const img = document.createElement('img');
-      // fetchPriority 這裡故意用 high，跟馬燈樣式的縮圖（那邊是背景裝飾，
-      // 用 low 對）不一樣——無限畫布開著的時候這些卡片就是使用者正在看的
-      // 唯一內容，值得優先搶頻寬，讓照片更快貼上去。
-      img.loading = 'lazy'; img.decoding = 'async'; img.fetchPriority = 'high'; img.alt = '';
-      img.draggable = false;
-      img.width = boxPx; img.height = boxPx;
-      const name = document.createElement('div'); name.className = 'intro-canvas-name';
-      name.textContent = it.display_name || it.name;
-      card.append(img, name);
-      grid.appendChild(card);
-      // blur：目前套用的低通半徑，用來判斷「跨級距才寫 style」（見 updateIntroDepthFade）
-      const rec = { el: card, x: c.x, y: c.y, z: c.z, cancelled: false, revealAt, blur: 0, settled: false };
-      // introScheduleLoad 是全域的排隊時鐘（見上方定義），不是每次
-      // updateIntroChunks() 各自從 0 開始算——使用者回報「有時會卡」，原本
-      // loadIdx 只在單次呼叫內錯開，連續好幾次呼叫（例如快速拖曳連續跨過
-      // 好幾個區塊邊界）各自的錯開會疊在同一個時間點，還是會擠爆；改成共
-      // 用佇列後，不管哪一批發出的請求都照同一個全域節奏排隊，不會疊加。
-      // 縮圖也要跟著要 SS 倍解析度——卡片實際是用 boxPx 繪製的，只送 cardPx 那麼大的
-      // 圖等於照片本身沒有足夠像素可以超取樣，文字邊框會變好、照片卻不會。
-      const src = thumbURL(it, boxPx);
-      const startLoad = () => {
-        if (rec.cancelled) return;   // 排隊等待期間卡片已經被移除，不用再發這個請求
-        let retried = false;
-        const tryLoad = () => {
-          if (rec.cancelled) return;   // 重試等待的 400ms 內也可能被移除
-          img.src = src;
-          const onOk = () => { img.classList.add('on'); };
-          const onFail = () => {
-            // 使用者回報「有時會破圖」——網路/伺服器縮圖生成偶爾抖動失敗，
-            // 先重試一次；還是失敗就放著不管，img 的 opacity 預設是 0（只
-            // 有成功才加 .on class），瀏覽器的破圖圖示本來就渲染在一個
-            // opacity:0 的元素裡，永遠不會被看到，不用額外把整張卡藏起來
-            // ——卡框跟名稱繼續顯示，比整張消失更好。
-            if (!retried) { retried = true; setTimeout(tryLoad, 400); }
-          };
-          if (img.decode) img.decode().then(onOk).catch(onFail);
-          else { img.addEventListener('load', onOk, { once: true }); img.addEventListener('error', onFail, { once: true }); }
-        };
-        tryLoad();
-      };
-      introScheduleLoad(startLoad);
-      return rec;
-    });
-    introChunks.set(key, entry);
-  });
-  // 不用強制 reflow（曾經寫過 void grid.offsetHeight）——revealAt 保證每張
-  // 新卡片至少要等下一次 updateIntroDepthFade()（下一個動畫影格）才會套用
-  // 真正的透明度，天然跨過一次繪製，CSS transition 吃得到 0→目標值的變化。
-  // 強制 reflow 會同步 flush 整份文件的版面配置，是實測會造成「頓頓」的
-  // 主要成本之一，跨區塊時常發生（每次都要付一次），拿掉後應該順很多。
-  updateIntroDepthFade();
-}
-// 淡出：改成純粹依「卡片跟相機的真實 3D 距離」算連續透明度（Euclidean
-// 距離，不是只看 Z 軸），使用者回報「透明度做得不太好，應該要漸變」——原本
-// 是兩套機制疊乘（Z 軸景深 depthFade × 區塊網格的離散 gridOpacity 0.5/1），
-// gridOpacity 那個二分法在相機跨過區塊邊界的瞬間會造成一階不連續（雖然有
-// CSS transition 墊底，但起訖值本身就是跳的，看起來仍然像「一格一格」淡
-// 出而不是真正漸層）。改成單一個以距離為輸入的連續函式：NEAR 以內全不透
-// 明，NEAR～FAR 之間線性淡出、平方讓靠邊緣淡得快一點模擬鏡頭景深，FAR 以
-// 外全透明，不管卡片在哪個軸的哪個方向偏移都是同一條曲線，沒有任何離散
-// 分界。
-// 使用者要「前後範圍加深、透明度變化優化」——NEAR/FAR 的間距越寬，同一段
-// 位移對應的透明度變化就越平緩，卡片從剛出現到完全清楚（或反過來）的過程
-// 拉得更長，比較不會有「才剛看到就已經全清楚／才剛開始淡就整個消失」的
-// 突兀感。FAR 原本 1500，比 27 區塊組成的立方體最遠角落距離（約 1610，
-// CHUNK_SIZE=620、RENDER_DIST=1）還短，代表角落區塊其實已經完全淡到 0，
-// 現在拉到 2200，連最遠角落都還留一點點若隱若現，景深的漸層感更完整。
-const INTRO_FADE_NEAR = 420, INTRO_FADE_FAR = 2200;
-// 使用者回報「圖片不要太大才消失」——卡片離鏡頭太近時該提早淡出。原本只
-// 有「太遠」會淡出（NEAR～FAR），太近完全沒有機制處理：卡片就在世界裡跟
-// 相機一起存在，距離可以趨近 0（相機幾乎穿過它），CSS perspective 的近大
-// 遠小效果會讓它在螢幕上變得非常巨大、幾乎塞滿畫面，才在快穿過的瞬間消
-// 失，觀感上就是「越來越大、大到誇張才不見」。加一段對稱的「太近淡出」：
-// CLOSE_START 以外正常（跟 FAR 那段共用 1 的區間），CLOSE_START～CLOSE_END
-// 之間淡出，CLOSE_END 以內（幾乎貼到鏡頭）完全透明——卡片會在明顯變大之
-// 前就先淡出，不會撐到誇張的大小。
-const INTRO_FADE_CLOSE_END = 60, INTRO_FADE_CLOSE_START = 220;
-// 淡出尾巴的截斷點（見 updateIntroDepthFade）。低於這個透明度的卡片在深色底上
-// 幾乎看不見，卻正好落在 8-bit 精度與量化誤差最糟的區間，是「快消失前在閃」的來源。
-// 減掉再正規化＝提早乾淨收掉，而不是無限逼近 0。
-const INTRO_FADE_CUT = 0.04;
+const INTRO_VERT = `
+attribute vec2 aPos;
+varying vec2 vUv;
+void main() {
+  vUv = aPos * 0.5 + 0.5;
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}`;
 
-// ── 遠處卡片的摩爾紋／閃爍（縮小取樣走樣）─────────────────────────
-// 使用者回報「卡片往遠處消失時會有類似摩爾紋的東西，看起來很像在閃」。這不是
-// 動畫邏輯的問題，是 GPU 縮小取樣的走樣（minification aliasing）：
-//
-// 卡片是一個 130px 的 CSS 盒子，瀏覽器先把它「點陣化」成一張 130px 的貼圖，
-// 之後每一幀由 GPU 依 3D 變換把那張貼圖縮小畫到畫面上。實測（perspective
-// 1400px）卡片退到最遠時螢幕上只剩約 50px，等於縮小 2.6 倍。GPU 用的是雙線性
-// 取樣、**沒有 mipmap**：縮小超過 2 倍時，每個螢幕像素涵蓋的 7 個貼圖像素裡只
-// 有 4 個被取樣，而鏡頭一直在漂移，每一幀「取到哪 4 個」都不一樣——照片裡的高
-// 頻細節因此每幀跳動（看起來在沸騰／閃），規律紋理則互相干涉成摩爾紋。
-//
-// 正解就是補上 mipmap 少掉的那一步：**依縮小倍率做低通濾波**。縮小 m 倍時用
-// σ≈m/2 的模糊把高頻先濾掉，取樣就不會走樣。`filter: blur()` 作用在元素自己的
-// 座標系（會再被 3D 變換縮小），所以這裡直接用「m/2 區域像素」當半徑。
-//
-// 成本控制：模糊是逐元素的繪製成本，這個元件同時可能有 81 張卡（而且它對效能
-// 一向敏感，見 README 那段「多渲染一圈緩衝區塊實測更卡」）。所以
-//   ① 只有縮小超過門檻的遠卡才加，近處的卡完全不碰、維持全銳利；
-//   ② 半徑量化成 0.25px 級距並記在 rec.blur 上，**只有跨過級距才寫 style**，
-//      不是每幀都寫（每幀都寫 filter 會逼瀏覽器不斷重繪）；
-//   ③ 會被模糊到的卡本來就很小（50～80px），模糊面積小、成本低。
-// 附帶好處：遠處變朦朧本來就是真實的大氣透視，景深感比原本只靠透明度更好。
-// 超取樣倍率。**必須跟 darkroom.css .intro-canvas-card 的 --ss 一致**，兩邊都改才有效。
-// 2 = 貼圖解析度兩倍、記憶體四倍（81 張卡約 5MB → 22MB）。
-const INTRO_SUPERSAMPLE = 2;
-const INTRO_PERSPECTIVE = 1400;    // = darkroom.css .intro-canvas 的 perspective，兩邊要一致
-// 門檻取 1.25：走樣大約從縮小 1.3 倍開始看得出來。斜率 0.75 是「理論值的六成」
-// ——理論上縮小 m 倍要用 σ≈m/2 才完全不走樣（m=2.57 時 1.28px），但那樣遠處會糊
-// 成一團；取六成剛好把跳動壓下去又保留一點細節，看得出還是一張照片。
-const INTRO_BLUR_FROM = 1.25;      // 縮小超過這個倍率才開始補模糊（以下維持全銳利）
-const INTRO_BLUR_SLOPE = 0.75;
-const INTRO_BLUR_MAX = 2.2;        // 區域像素上限，再高只會糊成一團看不出是什麼
-function introBlurFor(zRelCamera) {
-  // 透視縮放：z 越負（越遠）scale 越小，縮小倍率 = 1/scale
-  const denom = INTRO_PERSPECTIVE - zRelCamera;
-  if (denom <= 1) return 0;                       // 已經穿過鏡頭平面，交給 CLOSE 段淡出處理
-  const minify = denom / INTRO_PERSPECTIVE;
-  if (minify <= INTRO_BLUR_FROM) return 0;
-  const r = (minify - INTRO_BLUR_FROM) * INTRO_BLUR_SLOPE;   // 低通強度隨縮小倍率線性增加
-  return Math.min(INTRO_BLUR_MAX, Math.round(r * 4) / 4);   // 量化成 0.25px 級距
+const INTRO_FRAG = `
+precision highp float;
+varying vec2 vUv;
+uniform vec2  uRes;
+uniform float uTime;
+uniform sampler2D uTex;
+uniform float uHasTex;
+uniform float uDevelop;       // 0..1 顯影基準進度
+uniform float uSheetY;        // 相紙垂直位移（0 = 在盤裡）
+uniform vec3  uAgit[${INTRO_AGITATORS}];   // xy = 位置，z = 經過的秒數（<0 = 空槽）
+uniform vec3  uPaper;
+uniform vec3  uAmber;
+uniform vec3  uFluid;
+
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hash21(i), b = hash21(i + vec2(1.0, 0.0));
+  float c = hash21(i + vec2(0.0, 1.0)), d = hash21(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; }
+  return s;
 }
 
-function updateIntroDepthFade() {
-  // 不再等縮圖 ready 才淡入——卡框本身（--sunk 底色＋名稱）不需要等圖片，
-  // 縮圖是否顯示交給 img.on class（見 updateIntroChunks 的 onOk），兩者分開
-  // 淡入，卡框可以立刻出現。
-  if (typeof INTRO_DEBUG !== 'undefined' && INTRO_DEBUG.noFade) return;   // 除錯開關，見下方
-  const camX = -introCanvasPan.x, camY = -introCanvasPan.y, camZ = -introCanvasPan.z;
-  const now = performance.now();
-  introChunks.forEach(entry => entry.forEach((rec) => {
-    if (rec.revealAt && now < rec.revealAt) return;   // 分層淡入還沒輪到它，維持目前（初始 opacity:0）
-    const dist = Math.hypot(rec.x - camX, rec.y - camY, rec.z - camZ);
-    const farFade = dist <= INTRO_FADE_NEAR ? 1
-      : Math.max(0, 1 - (dist - INTRO_FADE_NEAR) / (INTRO_FADE_FAR - INTRO_FADE_NEAR));
-    const closeFade = dist >= INTRO_FADE_CLOSE_START ? 1
-      : Math.max(0, (dist - INTRO_FADE_CLOSE_END) / (INTRO_FADE_CLOSE_START - INTRO_FADE_CLOSE_END));
-    // 淡出的最後一段是整個效果最脆弱的地方，兩個問題疊在一起：
-    //   ① `.toFixed(2)` 把透明度切成 0.01 一階。在 opacity 0.03 時一階是 17% 的
-    //      相對亮度跳動、0.0126 時是 40%——肉眼看到的就是「快消失前在閃」。
-    //   ② 曲線是平方的，接近 0 時斜率也趨近 0，卡片會**卡在 opacity < 0.06 這個
-    //      區間佔掉 24.5% 的淡出距離**；而那個區間在 8-bit 色彩下本來就只有幾階
-    //      可用，瀏覽器得靠抖色（dither）表現，內容一動抖色圖樣就跟著爬。
-    // 修法：精度提高到 0.001（誤差降一個數量級），並把尾巴減掉再正規化——曲線
-    // 前段的「先快後慢」保持不變，但會以非零的斜率乾淨地收到 0，不再有尾巴賴在
-    // 那個表現不出來的區間裡。
-    const fade = Math.min(farFade, closeFade);
-    const raw = fade * fade;
-    const op = raw <= INTRO_FADE_CUT ? 0 : (raw - INTRO_FADE_CUT) / (1 - INTRO_FADE_CUT);
-    rec.el.style.opacity = op.toFixed(3);
-    // 進場淡入跑完就拿掉 .fading：之後每一幀的景深透明度是直接寫值，不再每幀
-    // 取消/重啟一個 0.5 秒的過渡（見 darkroom.css .intro-canvas-card.fading）。
-    if (!rec.settled && now >= rec.revealAt + 520) {
-      rec.settled = true;
-      rec.el.classList.remove('fading');
-    }
-    // 低通濾波，補上 GPU 縮小取樣缺少的 mipmap（見上方 introBlurFor 的說明）。
-    // 只在跨過 0.25px 級距時才寫 style，不是每幀都寫。
-    // × SS：blur() 作用在元素自己的座標系，而超取樣之後那個座標系是 SS 倍密的
-    // （1 個元素像素 = 1/SS 個螢幕像素），不乘回去等於低通強度只剩一半。
-    const blur = introBlurFor(rec.z + introCanvasPan.z) * INTRO_SUPERSAMPLE;
-    if (blur !== rec.blur) {
-      rec.blur = blur;
-      rec.el.style.filter = blur ? `blur(${blur}px)` : '';
-    }
-  }));
+void main() {
+  float aspect = uRes.x / uRes.y;
+  vec2 p = (vUv - 0.5) * vec2(aspect, 1.0);
+
+  // ── 攪動：漣漪高度、梯度（折射用）、以及顯影加速量 ──
+  float rip = 0.0;
+  vec2  ripG = vec2(0.0);
+  float boost = 0.0;
+  for (int i = 0; i < ${INTRO_AGITATORS}; i++) {
+    vec3 a = uAgit[i];
+    if (a.z < 0.0) continue;
+    vec2 d = p - a.xy;
+    float r = length(d) + 1e-4;
+    float decay = exp(-r * 6.5) * exp(-a.z * 2.0);
+    float ph = r * 44.0 - a.z * 9.5;
+    rip  += decay * sin(ph);
+    ripG += (d / r) * decay * cos(ph) * 44.0;
+    // 攪動過的地方顯影得快一點，衰減比漣漪慢很多（顯影是不可逆的）
+    boost += exp(-r * 4.2) * exp(-a.z * 0.30);
+  }
+
+  // ── 相紙：略微傾斜的方框，圓角用超橢圓（跟面板 corner-shape: squircle 同一種形狀）──
+  float ang = -0.035;
+  mat2 rot = mat2(cos(ang), -sin(ang), sin(ang), cos(ang));
+  vec2 hf = vec2(0.30 * aspect, 0.30);   // 不能叫 half，那是 GLSL 保留字
+  vec2 sp = rot * (p - vec2(0.0, -0.02 + uSheetY));
+  vec2 q = abs(sp) / hf;
+  float k = pow(pow(q.x, 8.0) + pow(q.y, 8.0), 0.125);
+  float inSheet = 1.0 - smoothstep(0.985, 1.005, k);
+  vec2 sUv = sp / hf * 0.5 + 0.5;
+  sUv.y = 1.0 - sUv.y;
+
+  // ── 顯影：暗部先出、亮部最後，前緣用低頻雜訊打散成塊狀 ──
+  vec2 refr = ripG * 0.0018;
+  vec3 img = uHasTex > 0.5 ? texture2D(uTex, clamp(sUv + refr, 0.001, 0.999)).rgb : vec3(0.5);
+  float lum = dot(img, vec3(0.299, 0.587, 0.114));
+  float blotch = fbm(sUv * 3.1) * 0.62 + fbm(sUv * 8.5) * 0.20;
+  float front = uDevelop * 2.05 + boost * 0.42;
+  float e = clamp(front - lum * 0.95 - blotch * 0.85, 0.0, 1.0);
+  e = smoothstep(0.0, 0.55, e);
+
+  // 銀鹽顆粒：每秒跳 14 次（像真的底片顆粒，不是每幀亂跳）
+  float grain = hash21(sUv * uRes * 0.55 + floor(uTime * 14.0) * 17.3);
+  vec3 paper = uPaper * (0.90 + 0.10 * grain);
+  vec3 sheet = mix(paper, img, e);
+  sheet = mix(sheet, sheet * (0.86 + 0.28 * grain), (1.0 - e) * 0.55);
+
+  // ── 安全燈：左上方一盞，唯一光源 ──
+  vec2 lampP = vec2(-0.52 * aspect, 0.40);
+  float lamp = exp(-length(p - lampP) * 1.05);
+
+  // ── 顯影液：暗、只有安全燈的反光跟漣漪的高光 ──
+  vec3 fluid = uFluid * (0.42 + 0.58 * lamp);
+  fluid += uAmber * max(rip, 0.0) * 0.42 * (0.25 + lamp);
+  fluid *= 0.86 + 0.14 * fbm(p * 3.0 + uTime * 0.05);
+
+  // 相紙在液面下的投影
+  float shadow = 1.0 - 0.45 * (1.0 - smoothstep(0.98, 1.28, k));
+  fluid *= shadow;
+
+  vec3 col = mix(fluid, sheet, inSheet);
+  col *= mix(vec3(1.0), uAmber * 1.55, 0.26 * lamp);   // 安全燈染色
+  col += uAmber * 0.02 * lamp;
+  col *= 1.0 - 0.58 * pow(clamp(length(p) * 0.82, 0.0, 1.0), 2.1);   // 暗角
+  col += (hash21(vUv * uRes + uTime) - 0.5) * 0.012;   // 整體微粒，把畫面黏在一起
+
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+function introCompile(gl, type, src) {
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+    console.warn('[intro] shader 編譯失敗：', gl.getShaderInfoLog(sh));
+    gl.deleteShader(sh);
+    return null;
+  }
+  return sh;
 }
-function renderIntroCanvas() {
-  // cancelled=true 同上一段的說明：重新渲染（例如切換樣式又切回來）不能讓
-  // 舊一批還在 introScheduleLoad 佇列裡等的卡片繼續發縮圖請求。
-  introChunks.forEach(entry => entry.forEach(c => { c.cancelled = true; c.el.remove(); }));
-  introChunks = new Map();
-  introLastCenterKey = null;
-  introPrefetchedChunks = new Set();
-  introCanvasPan.x = 0; introCanvasPan.y = 0;
-  introVel.x = introVel.y = introVel.z = 0;
-  introDrift.x = introDrift.y = 0;
-  introScrollAccum = 0;
-  // reduced-motion 使用者沒有持續的 rAF 迴圈（見 startIntroFrameLoop），開場
-  // 後退這段本身就是裝飾性動態，不是功能，直接跳過、鏡頭定在預設位置、初速
-  // 歸零（不會有殘留速度讓畫面在他們沒操作時也動）。
-  if (REDUCE_MOTION) {
-    introCanvasPan.z = 0;
-    introTargetVel.x = introTargetVel.y = introTargetVel.z = 0;
+
+function introInitGL() {
+  const canvas = $('intro-gl');
+  if (!canvas) return null;
+  const gl = canvas.getContext('webgl', { antialias: false, alpha: false, powerPreference: 'low-power' })
+          || canvas.getContext('experimental-webgl');
+  if (!gl) return null;
+  const vs = introCompile(gl, gl.VERTEX_SHADER, INTRO_VERT);
+  const fs = introCompile(gl, gl.FRAGMENT_SHADER, INTRO_FRAG);
+  if (!vs || !fs) return null;
+  const prog = gl.createProgram();
+  gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+    console.warn('[intro] program link 失敗：', gl.getProgramInfoLog(prog));
+    return null;
+  }
+  gl.useProgram(prog);
+
+  // 全螢幕兩個三角形
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+  const aPos = gl.getAttribLocation(prog, 'aPos');
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  // NPOT 縮圖也能用：CLAMP_TO_EDGE + LINEAR，不產 mipmap
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 1, 1, 0, gl.RGB, gl.UNSIGNED_BYTE, new Uint8Array([40, 42, 54]));
+
+  const loc = {};
+  for (const n of ['uRes','uTime','uTex','uHasTex','uDevelop','uSheetY','uPaper','uAmber','uFluid'])
+    loc[n] = gl.getUniformLocation(prog, n);
+  loc.uAgit = [];
+  for (let i = 0; i < INTRO_AGITATORS; i++) loc.uAgit.push(gl.getUniformLocation(prog, `uAgit[${i}]`));
+
+  gl.uniform1i(loc.uTex, 0);
+  gl.uniform3f(loc.uPaper, 0.847, 0.824, 0.769);   // #d8d2c4 安全燈下的相紙
+  gl.uniform3f(loc.uAmber, 0.918, 0.678, 0.341);   // #eaad57 = 品牌安全燈
+  gl.uniform3f(loc.uFluid, 0.106, 0.114, 0.149);   // #1b1d26 顯影液
+  return { gl, prog, loc, tex, canvas, hasTex: 0 };
+}
+
+function introResize() {
+  if (!introGL) return;
+  const { gl, canvas, loc } = introGL;
+  // DPR 夾在 1.5：整片著色器的成本跟像素數成正比，2x 螢幕上翻四倍不值得
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const w = Math.max(1, Math.round(canvas.clientWidth * dpr));
+  const h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+  // uRes 每次都要寫：它是**程式**的 uniform，而畫布尺寸是**元素**的屬性。兩者
+  // 生命週期不同——重開進場（畫布已經是對的尺寸、但 program 是新建的）時，若跟著
+  // 尺寸一起提早 return，新 program 的 uRes 會停在 0，著色器裡 aspect = 0/0 = NaN，
+  // 畫面整片全黑。只有真正會改變畫布緩衝區的那兩行需要判斷尺寸。
+  gl.uniform2f(loc.uRes, w, h);
+  if (canvas.width === w && canvas.height === h) return;
+  canvas.width = w; canvas.height = h;
+  gl.viewport(0, 0, w, h);
+}
+
+// 換一張相紙：抽一個有圖的詞庫，載進材質。載入失敗就換下一個，不會卡住流程。
+function introLoadSheet() {
+  if (!introGL || !introPool.length) return;
+  const it = introPool[Math.floor(Math.random() * introPool.length)];
+  const img = new Image();
+  img.decoding = 'async';
+  img.onload = () => {
+    if (!introGL) return;
+    const { gl, tex } = introGL;
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, img);
+    introGL.hasTex = 1;
+    const nameEl = $('intro-sheet-name');
+    if (nameEl) nameEl.textContent = it.display_name || it.name;
+  };
+  img.onerror = () => { if (introGL) introGL.hasTex = 0; };
+  img.src = thumbURL(it, 512);
+}
+
+function introPushAgit(x, y) {
+  const rect = introGL ? introGL.canvas.getBoundingClientRect() : null;
+  if (!rect || !rect.width) return;
+  const aspect = rect.width / rect.height;
+  const px = ((x - rect.left) / rect.width - 0.5) * aspect;
+  const py = -((y - rect.top) / rect.height - 0.5);
+  const last = introAgit[introAgit.length - 1];
+  // 節流：指標移動很密，太近的點不另外開一個漣漪源，否則八個槽瞬間被同一個位置吃光
+  if (last && Math.hypot(px - last.x, py - last.y) < 0.045) return;
+  introAgit.push({ x: px, y: py, t: 0 });
+  if (introAgit.length > INTRO_AGITATORS) introAgit.shift();
+}
+
+function introFrame(now) {
+  if (!introGL || !$('intro-modal').classList.contains('open')) { introRAF = null; return; }
+  const { gl, loc } = introGL;
+  if (!introT0) introT0 = now;
+  const t = (now - introT0) / 1000;
+  const dt = Math.min(0.05, (now - (introFrame._last || now)) / 1000);
+  introFrame._last = now;
+  introResize();
+
+  // 攪動點老化
+  for (const a of introAgit) a.t += dt;
+  while (introAgit.length && introAgit[0].t > 3.2) introAgit.shift();
+
+  // 顯影流程：顯影 → 停留 → 夾走 → 新相紙落下
+  const phaseT = (now - introPhaseT0) / 1000;
+  if (introPhase === 'develop') {
+    // 攪動會加速顯影——真實暗房也是這樣，而且這是「互動有回饋」的來源
+    const agitation = introAgit.reduce((s, a) => s + Math.exp(-a.t * 0.8), 0);
+    introDevelop += dt / INTRO_SHEET_SECONDS * (1 + Math.min(agitation, 4) * 0.22);
+    if (introDevelop >= 1) { introDevelop = 1; introPhase = 'hold'; introPhaseT0 = now; }
+  } else if (introPhase === 'hold') {
+    if (phaseT > INTRO_HOLD_SECONDS) { introPhase = 'lift'; introPhaseT0 = now; }
+  } else if (introPhase === 'lift') {
+    const k = Math.min(1, phaseT / 0.9);
+    introSheetY = k * k * 1.35;                       // 加速夾出安全燈範圍
+    if (k >= 1) { introLoadSheet(); introDevelop = 0; introPhase = 'settle'; introPhaseT0 = now; }
   } else {
-    introCanvasPan.z = INTRO_ENTRANCE_Z;
-    const [vzMin, vzMax] = INTRO_ENTRANCE_VEL_Z;
-    introTargetVel.z = -(vzMin + Math.random() * (vzMax - vzMin));
-    introTargetVel.x = (Math.random() * 2 - 1) * INTRO_ENTRANCE_VEL_XY;
-    introTargetVel.y = (Math.random() * 2 - 1) * INTRO_ENTRANCE_VEL_XY;
+    // 新相紙從上方（也就是上一張被夾走的方向）緩降落定——沿用 lift 結束時的
+    // +1.35 往回收，中間沒有跳變，讀起來是「同一雙手把下一張放進盤裡」。
+    const k = Math.min(1, phaseT / 0.8);
+    introSheetY = 1.35 * Math.pow(1 - k, 3);
+    if (k >= 1) { introSheetY = 0; introPhase = 'develop'; introPhaseT0 = now; }
   }
-  // 候選池抽樣一次就好（不是每個區塊各自抽），區塊內用種子決定的 pickSeed 從
-  // 這個池子裡挑——同一個區塊永遠挑到同一張，跟池子本身用哪批詞庫無關，這樣
-  // 才符合「同一個位置再訪要長一樣」的決定性規則。
-  introPool = sampleN(ALL, Math.min(90, ALL.length));
-  // 使用者問「照片能不能貼上去更快」——與其等卡片真的建出來才發縮圖請求，
-  // 不如趁一開始就把整個候選池低優先度、慢慢地暖機一輪：瀏覽器快取＋伺服
-  // 器的縮圖磁碟快取都會先鋪好，之後卡片真的出現在畫面上、用同一個 URL
-  // 要縮圖時大機率直接命中快取（近乎瞬間），不用等 PIL 現場產生。用
-  // introPrefetchGen 這個世代編號擋掉重新渲染（切樣式又切回來）之後舊一輪
-  // 還沒發完的暖機請求，跟 cancelled 是同一個道理但不用逐張卡片管理。
-  const gen = ++introPrefetchGen;
-  introPool.forEach((it, i) => {
-    setTimeout(() => {
-      if (gen !== introPrefetchGen) return;
-      const pre = new Image();
-      pre.decoding = 'async'; pre.fetchPriority = 'low';
-      pre.src = thumbURL(it, (isMobile() ? 100 : 130) * INTRO_SUPERSAMPLE);   // 同上：要跟卡片真正要的網址一致
-    }, i * 70);
-  });
-  applyIntroCanvasTransform();
-  startIntroFrameLoop();
-}
-// 帶「永久慣性」的物理迴圈：targetVel 只由拖曳/滾輪的力累加改變，本身完全
-// 不衰減——這一幀跟上一幀之間如果沒有新的輸入，targetVel 維持原樣，畫面就
-// 會照原速度一直漂移下去，不會自己慢慢停下來（使用者要求的重點）。velocity
-// 用 lerp 逐幀追上 targetVel，只是讓「輸入」跟「反映在畫面上」之間有一點點
-// 平滑，不是拿來製造摩擦力。滑鼠沒有按下拖曳時，游標位置本身也會讓畫面有一
-// 圈很輕的環境漂移（跟永久慣性是兩回事，這個會在鏡頭有實際 targetVel 時被
-// 蓋過去，只在幾乎靜止時比較看得出來）。reduced-motion 使用者不跑這個持續
-// 迴圈（見 startIntroFrameLoop）。
-function introFrameStep() {
-  if (getIntroStyle() !== 'canvas' || !$('intro-modal').classList.contains('open')) { introRAF = null; return; }
-  // INTRO_DEBUG.freeze：完全不更新位置，畫面靜止（見下方除錯開關那段）
-  if (typeof INTRO_DEBUG !== 'undefined' && INTRO_DEBUG.freeze) { introRAF = requestAnimationFrame(introFrameStep); return; }
-  if (!introDragging && !isMobile()) {
-    introDrift.x += (introMouseN.x * INTRO_DRIFT_AMOUNT - introDrift.x) * INTRO_DRIFT_LERP;
-    introDrift.y += (introMouseN.y * INTRO_DRIFT_AMOUNT - introDrift.y) * INTRO_DRIFT_LERP;
-  }
-  introTargetVel.z += introScrollAccum;
-  introScrollAccum *= 0.8;
-  introTargetVel.x = clampNum(introTargetVel.x, -INTRO_MAX_VEL, INTRO_MAX_VEL);
-  introTargetVel.y = clampNum(introTargetVel.y, -INTRO_MAX_VEL, INTRO_MAX_VEL);
-  introTargetVel.z = clampNum(introTargetVel.z, -INTRO_MAX_VEL, INTRO_MAX_VEL);
-  introVel.x += (introTargetVel.x - introVel.x) * INTRO_VEL_LERP;
-  introVel.y += (introTargetVel.y - introVel.y) * INTRO_VEL_LERP;
-  introVel.z += (introTargetVel.z - introVel.z) * INTRO_VEL_LERP;
-  introCanvasPan.x += introVel.x;
-  introCanvasPan.y += introVel.y;
-  introCanvasPan.z += introVel.z;
-  applyIntroCanvasTransform();
-  introRAF = requestAnimationFrame(introFrameStep);
-}
-function startIntroFrameLoop() {
-  if (introRAF || REDUCE_MOTION) return;
-  introRAF = requestAnimationFrame(introFrameStep);
-}
-// 拖曳／滾輪／滑鼠移動：全部只餵「目標速度」或「環境漂移用的滑鼠位置」進去，
-// 真正的位置更新統一在 introFrameStep() 那個持續迴圈裡發生（見上）。只在
-// canvas 樣式開著時才生效（getIntroStyle() 判斷），marquee 樣式不受影響。
-let introDragging = false, introLastX = 0, introLastY = 0;
-function onIntroPointerDown(e) {
-  if (getIntroStyle() !== 'canvas') return;
-  introDragging = true; introLastX = e.clientX; introLastY = e.clientY;
-}
-function onIntroPointerMove(e) {
-  // 掛在 window 上是因為拖曳中滑鼠移出 .intro-canvas 範圍也要繼續追蹤，但
-  // 這代表沒開 intro 或不是 canvas 樣式時也會每次滑鼠移動都算一次正規化座標
-  // ——整個網站到處都在做這個無意義的計算，先擋掉。
-  if (!$('intro-modal').classList.contains('open') || getIntroStyle() !== 'canvas') return;
-  introMouseN.x = (e.clientX / window.innerWidth) * 2 - 1;
-  introMouseN.y = (e.clientY / window.innerHeight) * 2 - 1;
-  if (!introDragging) return;
-  const dx = e.clientX - introLastX, dy = e.clientY - introLastY;
-  introLastX = e.clientX; introLastY = e.clientY;
-  // reduced-motion 使用者的持續物理迴圈（introFrameStep）沒有在跑，慣性/漂移
-  // 這些「裝飾性」動態拿掉沒關係，但拖曳本身是功能不是裝飾——直接改 pan 並
-  // 立刻套用，不能因為迴圈沒開就讓拖曳整個沒反應。
-  if (REDUCE_MOTION) {
-    introCanvasPan.x += dx; introCanvasPan.y += dy;
-    applyIntroCanvasTransform();
-    return;
-  }
-  // 係數（0.035／0.05）比拿掉衰減之前小很多——現在每一點貢獻都是永久的，
-  // 舊係數配上不衰減會讓一次普通拖曳就沖到頂速，感覺「施力感知太靈敏」。
-  introTargetVel.x += dx * 0.035;
-  introTargetVel.y += dy * 0.035;
-}
-function onIntroPointerUp() { introDragging = false; }
-function onIntroWheel(e) {
-  if (getIntroStyle() !== 'canvas') return;
-  e.preventDefault();
-  if (REDUCE_MOTION) {
-    introCanvasPan.z = clampNum(introCanvasPan.z - e.deltaY * 0.6, -2900, 1150);
-    applyIntroCanvasTransform();
-    return;
-  }
-  introScrollAccum += e.deltaY * 0.05;
-}
-$('intro-canvas').addEventListener('pointerdown', onIntroPointerDown);
-window.addEventListener('pointermove', onIntroPointerMove);
-window.addEventListener('pointerup', onIntroPointerUp);
-$('intro-canvas').addEventListener('wheel', onIntroWheel, { passive: false });
 
-function renderIntro(style) {
-  if (style === 'canvas') { renderIntroCanvas(); $('intro-rows').hidden = true; $('intro-canvas').hidden = false; }
-  else { renderIntroMarquee(); $('intro-canvas').hidden = true; $('intro-rows').hidden = false; }
+  gl.uniform1f(loc.uTime, t);
+  gl.uniform1f(loc.uDevelop, introDevelop);
+  gl.uniform1f(loc.uSheetY, introSheetY);
+  gl.uniform1f(loc.uHasTex, introGL.hasTex);
+  for (let i = 0; i < INTRO_AGITATORS; i++) {
+    const a = introAgit[i];
+    if (a) gl.uniform3f(loc.uAgit[i], a.x, a.y, a.t);
+    else gl.uniform3f(loc.uAgit[i], 0, 0, -1);
+  }
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+  introRAF = requestAnimationFrame(introFrame);
 }
+
+// 退化模式：拿不到 WebGL 時用 DOM＋CSS 做一個簡化版的顯影（對比/亮度爬升），
+// 沒有漣漪與顆粒，但畫面不會開天窗，題字與進入鈕照常可用。
+function introFallback() {
+  const box = $('intro-fallback');
+  if (!box || !introPool.length) return;
+  box.hidden = false;
+  const it = introPool[Math.floor(Math.random() * introPool.length)];
+  const img = new Image();
+  img.className = 'intro-fb-img';
+  img.alt = '';
+  img.src = thumbURL(it, 512);
+  box.innerHTML = '';
+  box.appendChild(img);
+  const nameEl = $('intro-sheet-name');
+  if (nameEl) nameEl.textContent = it.display_name || it.name;
+}
+
 function maybeStartIntro() {
   if (!ALL.length) return;
-  const style = getIntroStyle();
-  setIntroStyleMenuState(style);
-  renderIntro(style);
+  introPool = ALL.filter(x => x.has_image);
+  if (introPool.length > 400) {   // 只從前面抽樣就夠，不必為了隨機掃全庫
+    const s = [];
+    for (let i = 0; i < 200; i++) s.push(introPool[Math.floor(Math.random() * introPool.length)]);
+    introPool = s;
+  }
+  // 邊角資料：用真實數字，不是裝飾性的編號
+  const total = ALL.length, have = ALL.filter(x => x.has_image).length;
+  const meta = $('intro-meta');
+  // 全部都有圖時「已顯影 27,951 / 27,951」是廢話，換一句真正有資訊的
+  if (meta) meta.textContent = have >= total
+    ? `${total.toLocaleString('en-US')} 幀 · 全數顯影`
+    : `${total.toLocaleString('en-US')} 幀 · 已顯影 ${have.toLocaleString('en-US')}`;
+
   $('intro-modal').classList.add('open');
+  introGL = REDUCE_MOTION ? null : introInitGL();
+  if (!introGL) { introFallback(); return; }
+  introResize();
+  introLoadSheet();
+  introPhase = 'develop'; introPhaseT0 = performance.now();
+  introDevelop = 0; introSheetY = 0; introT0 = 0; introFrame._last = 0;
+  introAgit.length = 0;
+  introRAF = requestAnimationFrame(introFrame);
 }
-function setIntroStyleMenuState(style) {
-  document.querySelectorAll('#intro-style-menu button').forEach(b => b.classList.toggle('on', b.dataset.style === style));
-}
+
 function closeIntro() {
   const modal = $('intro-modal');
   if (!modal.classList.contains('open')) return;
-  $('intro-style-menu').hidden = true;
-  $('intro-style-btn').setAttribute('aria-expanded', 'false');
   if (introRAF) { cancelAnimationFrame(introRAF); introRAF = null; }
-  // cancelled=true：關閉時可能還有卡片在 introScheduleLoad 佇列裡排隊，不
-  // 標記的話使用者關掉暗房進場動畫後，背景還會繼續發一批沒人看得到的縮圖
-  // 請求，白白佔用伺服器縮圖產生的併發額度。
-  introChunks.forEach(entry => entry.forEach(c => { c.cancelled = true; }));
-  introChunks = new Map();   // DOM 隨 innerHTML='' 一起清掉，這裡同步清空記錄，避免下次打開誤判「區塊還在」
-  const finish = () => { modal.classList.remove('open'); $('intro-rows').innerHTML = ''; $('intro-canvas-grid').innerHTML = ''; };
+  const finish = () => {
+    modal.classList.remove('open');
+    // 釋放 GL 資源——進場只播一次，留著等於白佔一張材質與一個 context
+    if (introGL) {
+      const { gl, tex, prog } = introGL;
+      gl.deleteTexture(tex); gl.deleteProgram(prog);
+      const lose = gl.getExtension('WEBGL_lose_context');
+      if (lose) lose.loseContext();
+      introGL = null;
+    }
+    const fb = $('intro-fallback'); if (fb) { fb.innerHTML = ''; fb.hidden = true; }
+  };
   if (REDUCE_MOTION || document.visibilityState !== 'visible' || !modal.animate) { finish(); return; }
-  const anim = modal.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: 'cubic-bezier(.4,0,1,1)' });
+  const anim = modal.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 220, easing: 'cubic-bezier(.4,0,1,1)' });
   let done = false;
   const settle = () => { if (done) return; done = true; finish(); };
   anim.finished.then(settle).catch(settle);
-  setTimeout(settle, 260);   // 分頁在背景時 finished 不結算的保險（CLAUDE.md 記過的老坑）
+  setTimeout(settle, 300);   // 分頁在背景時 finished 不結算的保險（CLAUDE.md 記過的老坑）
 }
+
 $('intro-enter-btn').addEventListener('click', closeIntro);
-$('intro-style-btn').addEventListener('click', (e) => {
-  e.stopPropagation();
-  const menu = $('intro-style-menu');
-  const willOpen = menu.hidden;
-  menu.hidden = !willOpen;
-  $('intro-style-btn').setAttribute('aria-expanded', String(willOpen));
-});
-$('intro-style-menu').addEventListener('click', (e) => {
-  const btn = e.target.closest('button[data-style]'); if (!btn) return;
-  const style = btn.dataset.style;
-  localStorage.setItem(INTRO_STYLE_KEY, style);
-  setIntroStyleMenuState(style);
-  renderIntro(style);   // 立刻換畫面預覽，不用等下次重整
-  $('intro-style-menu').hidden = true;
-  $('intro-style-btn').setAttribute('aria-expanded', 'false');
-});
-document.addEventListener('click', (e) => {
-  if (!$('intro-style-menu') || $('intro-style-menu').hidden) return;
-  if ($('intro-style-switch').contains(e.target)) return;
-  $('intro-style-menu').hidden = true;
-  $('intro-style-btn').setAttribute('aria-expanded', 'false');
-});
-// ══════════════════════════════════════════════════════════════════
-// 臨時除錯開關：定位「進場動畫在閃」用的二分工具。**問題確認後整段移除**
-// （搜 INTRO_DEBUG 就找得到全部相關程式碼：這一段、applyIntroCanvasTransform
-// 裡的 snap、introFrameStep 的 freeze、updateIntroDepthFade 的 noFade，
-// 以及 darkroom.css 結尾的 .dbg-* 規則）。
-//
-// 為什麼需要它：閃爍是視覺現象，而我（AI）看不到畫面，靠推理已經連續猜錯四次。
-// 與其繼續猜，不如把每個嫌疑做成可以單獨關掉的開關，由使用者按一按回報「哪個
-// 關掉就不閃了」——一次就能定位，不用再來回。
-//
-// 進場畫面開著時按數字鍵切換，右下角會顯示目前狀態：
-//   1 凍結全部動態      ← 最重要的一個：凍住之後還閃，就完全不是「移動」造成的
-//   2 位置對齊整數像素   ← 次像素重新取樣的直接反證
-//   3 關掉 will-change   ← 強制瀏覽器重繪而不是重新取樣貼圖
-//   4 關掉暗角/遮罩      ← 大面積漸層疊在會動的內容上
-//   5 關掉卡片邊框與陰影 ← 1px 髮絲線是次像素取樣最容易看出來的東西
-//   6 隱藏照片只留卡框   ← 還閃就跟圖片內容完全無關
-//   7 關掉景深透明度     ← 半透明重疊造成的干涉
-//   0 全部復原
-const INTRO_DEBUG = { freeze: 0, snap: 0, noWC: 0, noVig: 0, flat: 0, noPhoto: 0, noFade: 0 };
-const INTRO_DEBUG_KEYS = {
-  '1': ['freeze', '凍結全部動態'],
-  '2': ['snap',   '位置對齊整數像素'],
-  '3': ['noWC',   '關掉 will-change'],
-  '4': ['noVig',  '關掉暗角/遮罩'],
-  '5': ['flat',   '關掉卡片邊框與陰影'],
-  '6': ['noPhoto','隱藏照片只留卡框'],
-  '7': ['noFade', '關掉景深透明度'],
-};
-function introDebugApply() {
-  const m = $('intro-modal');
-  m.classList.toggle('dbg-nowc', !!INTRO_DEBUG.noWC);
-  m.classList.toggle('dbg-novig', !!INTRO_DEBUG.noVig);
-  m.classList.toggle('dbg-flat', !!INTRO_DEBUG.flat);
-  m.classList.toggle('dbg-nophoto', !!INTRO_DEBUG.noPhoto);
-  // 馬燈的捲動是 CSS animation，凍結要用 play-state
-  document.querySelectorAll('.intro-track').forEach(t => {
-    t.style.animationPlayState = INTRO_DEBUG.freeze ? 'paused' : '';
-  });
-  if (INTRO_DEBUG.noFade) {
-    document.querySelectorAll('.intro-canvas-card').forEach(c => { c.style.opacity = '1'; c.style.filter = ''; });
+$('intro-modal').addEventListener('pointermove', (e) => {
+  if (!introGL) return;
+  introPointer.x = e.clientX; introPointer.y = e.clientY;
+  introPushAgit(e.clientX, e.clientY);
+}, { passive: true });
+// 點一下＝用力攪一次：同一個位置連下三個相位錯開的漣漪源，散得比滑過去明顯
+$('intro-modal').addEventListener('pointerdown', (e) => {
+  if (!introGL) return;
+  for (let i = 0; i < 3; i++) {
+    introPushAgit(e.clientX + (i - 1) * 6, e.clientY + (i - 1) * 4);
+    const a = introAgit[introAgit.length - 1]; if (a) a.t = i * 0.06;
   }
-  applyIntroCanvasTransform();
-  let box = $('intro-debug-hud');
-  if (!box) {
-    box = document.createElement('div'); box.id = 'intro-debug-hud';
-    $('intro-modal').appendChild(box);
-  }
-  box.innerHTML = Object.entries(INTRO_DEBUG_KEYS)
-    .map(([k, [prop, label]]) => `<div class="${INTRO_DEBUG[prop] ? 'on' : ''}">${k} · ${label}${INTRO_DEBUG[prop] ? ' ✓' : ''}</div>`)
-    .join('') + '<div class="hint">0 全部復原</div>';
-}
+}, { passive: true });
+window.addEventListener('resize', introResize);
 window.addEventListener('keydown', (e) => {
   if (!$('intro-modal').classList.contains('open')) return;
-  if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); closeIntro(); return; }
-  if (e.key === '0') {
-    for (const k of Object.keys(INTRO_DEBUG)) INTRO_DEBUG[k] = 0;
-    introDebugApply(); return;
-  }
-  const hit = INTRO_DEBUG_KEYS[e.key];
-  if (!hit) return;
-  INTRO_DEBUG[hit[0]] = INTRO_DEBUG[hit[0]] ? 0 : 1;
-  introDebugApply();
+  if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); closeIntro(); }
 });
+
 
 // 18+ 年齡確認擋在 boot 沖洗動畫之前：sessionStorage 記錄「這次瀏覽階段已確認」，
 // 分頁/瀏覽器關掉才重問，一般重整與硬重整都不會清掉這個記錄。boot 本身初始

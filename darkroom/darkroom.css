@@ -1317,173 +1317,72 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
   .shortcut-row { flex-direction: column; gap: 5px; }
   .shortcut-keys { width: auto; }
 }
-
 /* ---------------------------------------------------------------------------
-   首次進暗房的進場畫面：四行縮圖橫向跑馬燈填滿整個高度（CSS animation，不用
-   JS 逐幀算），方向左右交錯、中間兩行大而亮／外側兩行小而暗（淺焦距的縱深
-   感，不用模糊濾鏡），中間疊題字＋進入鈕，上下各一條底片穿孔裝飾呼應「暗房／
-   底片」的主題（跟 #boot 載入畫面「沖洗中…」同一套視覺語彙，不是另外發明
-   一套）。z-index 230，比 #boot（300）低——boot 淡出的 600ms 期間這層已經在
-   底下跑，boot 一收起就無縫接上。
+   進場畫面「顯影盤」
+   ---------------------------------------------------------------------------
+   一張相紙躺在顯影液裡，影像從銀鹽顆粒中長出來（暗部先出、亮部最後），游標是
+   攪動。整個場景在 #intro-gl 的片段著色器裡算完——這裡的 CSS 只負責版面：把
+   canvas 鋪滿、把題字與底片邊緣印字疊上去。著色器本體與流程見 darkroom.js 的
+   「顯影盤」一節。
+
+   z-index 230，比 #boot（300）低——boot 淡出的 600ms 期間這層已經在底下跑，
+   boot 一收起就無縫接上（沿用原本的分層，沒有改）。
    --------------------------------------------------------------------------- */
 .intro-modal { position: fixed; inset: 0; z-index: 230; display: none;
-  background: radial-gradient(ellipse at 50% 45%, #1c1e2a 0%, var(--bg) 78%); overflow: hidden; }
+  background: #101118;   /* 盤子外的暗；其餘明暗全部由著色器裡的安全燈決定 */
+  overflow: hidden; }
 .intro-modal.open { display: block; animation: fadeIn var(--d-pop) var(--ease-out); }
 @media (prefers-reduced-motion: reduce) { .intro-modal.open { animation: none; } }
-
-.intro-rows { position: absolute; inset: 0; display: flex; flex-direction: column;
-  justify-content: space-evenly; padding: 34px 0;
-  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); }
-/* .intro-rows 的 display:flex 是 author 規則，優先權會蓋過 [hidden] 的 UA 預設
-   display:none（這個坑這個專案已經踩過好幾次，見 CLAUDE.md）——切樣式時用
-   hidden 屬性藏起不用的那個容器，這裡要明講 [hidden] 才會真的消失。 */
-.intro-rows[hidden] { display: none; }
-.intro-canvas[hidden] { display: none; }
-.intro-row { overflow: hidden; white-space: nowrap; transition: opacity var(--d-slow) var(--ease-out); }
-.intro-row.edge { opacity: .38; }
-.intro-row.mid { opacity: .95; }
-.intro-track { display: inline-flex; gap: 14px; will-change: transform;
-  animation-name: introScroll; animation-duration: var(--intro-dur, 50s);
-  animation-timing-function: linear; animation-iteration-count: infinite; }
-.intro-row.right .intro-track { animation-direction: reverse; }
-.intro-track img { -webkit-user-drag: none; user-select: none; border-radius: 10px; object-fit: cover; display: block; flex: none;
-  background: var(--sunk); box-shadow: 0 8px 20px rgba(0,0,0,.4); }
-.intro-row.edge .intro-track img { width: 108px; height: 108px; }
-.intro-row.mid .intro-track img { width: 168px; height: 168px; box-shadow: 0 10px 28px rgba(0,0,0,.5); }
-@keyframes introScroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-@media (prefers-reduced-motion: reduce) { .intro-track { animation-play-state: paused; } }
-
-/* 「無限畫布」樣式：讀過 github.com/edoardolunardi/infinite-canvas 的原始碼
-   （src/infinite-canvas/constants.ts／utils.ts）之後照它的實際結構做，不是
-   憑截圖猜的——它是「區塊（chunk）」制：世界依 CHUNK_SIZE 切成立方格，每個
-   區塊用「區塊座標算出來的種子」決定裡面放哪幾張圖、放在哪裡（同一個區塊
-   再訪永遠長一樣，這是「無限」的關鍵：不是預先產生好一大片，是相機移動到
-   哪就即時算那附近的區塊），只有相機（這裡是拖曳/滾輪控制的 pan）附近的
-   區塊會真的建 DOM，離開範圍就整批移除——這是 darkroom.js updateIntroChunks()
-   在做的事，這裡只定 3D 透視的基礎樣式。
-   卡片是**固定尺寸**（跟暗房既有的塔羅抽卡卡片同一種「縮圖＋名稱」組合），
-   螢幕上看起來大小不一其實是真正的 CSS 3D perspective 透視換算出來的（近大
-   遠小），不是手動把每張卡拉伸成不同尺寸——這也是照原程式的邏輯（它的圖片
-   本尊也是正方形、大小差異很小，視覺上的大小差距是相機透視投影算出來的）。 */
-.intro-canvas { position: absolute; inset: 0; overflow: hidden; cursor: grab;
-  touch-action: none; perspective: 1400px;
-  box-shadow: inset 0 0 160px 50px rgba(13,14,20,.85); }
-.intro-canvas:active { cursor: grabbing; }
-.intro-canvas-grid { position: absolute; top: 50%; left: 50%; width: 0; height: 0;
-  transform-style: preserve-3d; will-change: transform; }
-/* ── 超取樣（supersampling）───────────────────────────────────
-   3D 透視下卡片幾乎不可能落在整數像素上（螢幕位置 =（世界座標＋位移）× 縮放，縮放
-   不是 1 就一定有小數）。實測連續 8 幀、6 張卡，**0/8 幀對齊整數像素**，而且小數部分
-   每幀跳動（某張卡是 .84→.27→.78→.30 這種接近兩幀一循環的來回）。合成器因此每一幀
-   都要用雙線性取樣把卡片貼圖重畫在不同的次像素位置：1px 邊框的亮度在相鄰兩欄像素之
-   間來回分配＝邊緣抖，文字的反鋸齒每幀重新分配＝文字閃，整塊平均亮度跟著變＝忽明忽暗。
-
-   次像素取樣消不掉，但可以**給它更多資料**：把卡片用 --ss 倍的尺寸繪製，再用
-   transform 的 scale(1/--ss) 縮回原本大小。合成器拿到的貼圖解析度變成 --ss 倍，
-   每個螢幕像素由 --ss² 個貼圖像素平均而來，次像素位移造成的變化因此被大幅平均掉
-   ——就是遊戲裡的超取樣抗鋸齒（SSAA）。畫面設計完全不變，代價是貼圖記憶體變 --ss² 倍。
-
-   **所有內部尺寸都必須乘以 --ss**（字級、內距、圓角、邊框、陰影），否則縮回去之後
-   會比原本小。集中用 calc(… * var(--ss)) 表達，改倍率只要改一個地方。
-   JS 端（darkroom.js updateIntroChunks）要配合：width/margin 用 cardPx * SS，
-   transform 尾端補 scale(1/SS)，縮圖也要跟著要 SS 倍解析度，不然照片本身沒有
-   足夠像素可以超取樣。 */
-.intro-canvas-card { --ss: 2;
-  position: absolute; top: 0; left: 0;
-  width: calc(130px * var(--ss)); margin: calc(-65px * var(--ss)) 0 0 calc(-65px * var(--ss));
-  background: var(--panel);
-  border: calc(1px * var(--ss)) solid var(--line);
-  border-radius: calc(10px * var(--ss)); overflow: hidden;
-  /* 模糊半徑刻意壓低（20px→8px）——box-shadow 的模糊是每個元素各自的繪製
-     成本，這裡同時可能有上百個卡片存在，模糊半徑越大越吃繪製/合成效能。 */
-  box-shadow: 0 calc(4px * var(--ss)) calc(8px * var(--ss)) rgba(0,0,0,.4); pointer-events: none;
-  backface-visibility: hidden; }
-/* 景深透明度是由 updateIntroDepthFade() **每一幀**寫進 style 的，而且它本來就是一條
-   隨距離連續變化的平滑曲線——不需要任何 transition。原本這裡掛著
-   `transition: opacity .5s`，等於每一幀都在「取消上一個過渡、再開一個新的」，81 張卡
-   ×60fps ≈ 每秒重啟 4800 次合成動畫；主執行緒與合成器對「這一幀該顯示多少」偶爾對不
-   上，看起來就是整張卡忽明忽暗。過渡只有兩個地方真的需要：卡片剛出現的淡入、以及區塊
-   移除時的淡出——那兩段才加 .fading（見 darkroom.js）。 */
-.intro-canvas-card.fading { transition: opacity .5s var(--ease-out); }
-.intro-canvas-card img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block;
-  background: var(--sunk); -webkit-user-drag: none; user-select: none;
-  opacity: 0; transition: opacity .4s var(--ease-out); }
-.intro-canvas-card img.on { opacity: 1; }
-/* 使用者回報「左右移動時圖片載入比較慢，導致空間空」——原本整張卡片（含
-   卡框、名稱標籤）都要等縮圖真的載入完成才顯示，等於在圖還沒到之前那個
-   位置什麼都看不到，移動快一點時前方就是一片空白。改成卡框跟景深淡出立
-   刻照常出現（用 --sunk 底色＋名稱字卡佔位），只有縮圖本身額外疊一層淡
-   入，圖還沒到之前看到的是「正在顯影的卡片」而不是純粹的空洞。 */
-/* 拖曳橫移時滑鼠常常掃過中間的文案或卡片名稱，瀏覽器原生文字選取會整片反白、
-   圖片本身也可能被當成可拖曳物件產生殘影——這片區域只用來拖曳平移，不需要
-   任何文字/圖片選取，整片關掉比逐一補 pointer-events 更不會漏。 */
+/* 拖曳/揮動時滑鼠會掃過題字，原生文字選取會整片反白——這層只用來攪動，整片關掉。 */
 .intro-modal { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-.intro-modal input, .intro-modal textarea { user-select: text; -webkit-user-select: text; }
-/* 字級與內距同樣要乘 --ss（見 .intro-canvas-card 的超取樣說明）——文字正是次像素
-   重新取樣最容易看出來的地方，這一步做對了才有意義。 */
-.intro-canvas-name { padding: calc(6px * var(--ss)) calc(9px * var(--ss)) calc(7px * var(--ss));
-  font-size: calc(11px * var(--ss)); font-weight: 600; color: var(--ink);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-@media (max-width: 640px) {
-  .intro-canvas-card { width: calc(100px * var(--ss)); margin: calc(-50px * var(--ss)) 0 0 calc(-50px * var(--ss)); }
-  .intro-canvas-name { font-size: calc(10px * var(--ss)); padding: calc(5px * var(--ss)) calc(7px * var(--ss)) calc(6px * var(--ss)); }
+
+.intro-gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+  cursor: crosshair;   /* 游標是「攪動棒」，不是指標 */
+  touch-action: none; }
+
+/* 退化版（拿不到 WebGL）：一張縮圖用對比/亮度爬升模擬顯影。沒有顆粒與漣漪，
+   但畫面不會開天窗，題字與進入鈕照常可用。 */
+.intro-fallback { position: absolute; inset: 0; display: grid; place-items: center; }
+.intro-fallback[hidden] { display: none; }
+.intro-fb-img { width: min(46vmin, 380px); aspect-ratio: 1/1; object-fit: cover;
+  border-radius: 14px; box-shadow: 0 30px 80px -20px #000;
+  animation: introDevelop 7.5s var(--ease-out) infinite; }
+@keyframes introDevelop {
+  0%   { filter: brightness(2.6) contrast(.12) sepia(.5); opacity: .25; }
+  55%  { filter: brightness(1.15) contrast(.8) sepia(.12); opacity: 1; }
+  85%, 100% { filter: none; opacity: 1; }
 }
+@media (prefers-reduced-motion: reduce) { .intro-fb-img { animation: none; } }
 
-/* 樣式切換鈕：右上角一顆 ⚙，點開兩個選項（跑馬燈／無限畫布）。 */
-.intro-style-switch { position: absolute; top: 16px; right: 16px; z-index: 3; }
-.intro-style-btn { width: 34px; height: 34px; border-radius: 50%; corner-shape: round; padding: 0;
-  background: color-mix(in srgb, var(--panel) 80%, transparent); border: 1px solid var(--line);
-  color: var(--dim); display: grid; place-items: center; font-size: 15px; }
-.intro-style-btn:hover { color: var(--ink); border-color: var(--line-2); }
-.intro-style-menu { position: absolute; top: 42px; right: 0; display: flex; flex-direction: column;
-  gap: 2px; padding: 6px; border-radius: 15px; min-width: 128px;
-  background: color-mix(in srgb, var(--panel) 92%, transparent); backdrop-filter: blur(8px);
-  border: 1px solid var(--line); box-shadow: 0 12px 30px rgba(0,0,0,.45); }
-.intro-style-menu[hidden] { display: none; }
-.intro-style-menu button { width: 100%; text-align: left; padding: 7px 10px; border-radius: 8px;
-  background: transparent; border: 0; font-size: 12.5px; color: var(--dim); }
-.intro-style-menu button:hover { background: var(--sunk); color: var(--ink); }
-.intro-style-menu button.on { background: var(--amber-soft); color: var(--ink); }
-
-.intro-copy { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 2;
-  text-align: center; padding: 30px 40px 32px; border-radius: 25px; max-width: 420px;
-  background: color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter: blur(6px);
-  border: 1px solid var(--line); box-shadow: 0 20px 60px rgba(0,0,0,.55); }
-/* 光漏細線：呼應安全燈，標題正上方一道會呼吸的琥珀光。 */
-.intro-copy::before { content: ''; display: block; width: 46px; height: 2px; margin: 0 auto 14px;
-  background: linear-gradient(90deg, transparent, var(--amber), transparent);
-  animation: introGlow 3.2s ease-in-out infinite; }
-@keyframes introGlow { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .intro-copy::before { animation: none; opacity: .8; } }
-.intro-copy h2 { margin: 0 0 10px; font-size: 28px; letter-spacing: 5px; color: var(--ink);
-  text-shadow: 0 0 24px rgba(234,173,87,.35); }
-.intro-copy p { margin: 0 0 22px; font-size: 13px; color: var(--dim); line-height: 1.6; }
-.intro-enter-btn { padding: 12px 30px; border-radius: 999px; corner-shape: round; font-size: 14px; font-weight: 600;
-  background: linear-gradient(180deg, #eaad57, var(--amber-d)); border: 1px solid var(--amber-d);
-  color: #201405; }
+/* 題字疊在相紙上方偏下的位置，不擋住顯影中的畫面中心 */
+.intro-copy { position: absolute; left: 50%; bottom: 12.5vh; transform: translateX(-50%);
+  z-index: 2; text-align: center; pointer-events: none; padding: 0 24px; }
+.intro-copy > * { pointer-events: auto; }
+.intro-copy h2 { margin: 0 0 9px; font-size: 30px; letter-spacing: 7px; font-weight: 600;
+  color: var(--ink); text-shadow: 0 2px 22px rgba(0,0,0,.85); }
+.intro-lede { margin: 0 0 20px; font-size: 12.5px; color: var(--dim);
+  text-shadow: 0 1px 12px rgba(0,0,0,.9); }
+/* 提示語跟著安全燈的顏色——它講的是「這裡可以動手」，值得被看見 */
+.intro-hint { color: var(--amber); }
+.intro-enter-btn { padding: 12px 30px; border-radius: 999px; corner-shape: round;
+  font-size: 14px; font-weight: 600; border: 0; color: #241a08;
+  background: linear-gradient(180deg, #eaad57, var(--amber-d));
+  box-shadow: 0 10px 30px -10px rgba(234,173,87,.55); }
 .intro-enter-btn:hover { filter: brightness(1.06); }
 
-@media (max-width: 640px) {
-  .intro-row.edge .intro-track img { width: 68px; height: 68px; }
-  .intro-row.mid .intro-track img { width: 100px; height: 100px; }
-  .intro-copy { padding: 22px 24px; width: calc(100% - 48px); max-width: none; box-sizing: border-box; }
-  .intro-copy h2 { font-size: 21px; letter-spacing: 2px; }
-}
+/* 底片邊緣印字：小、等寬、字距拉開，貼在畫面最下緣——底片邊上的片名與幀號就是
+   長這樣。左邊是正在顯影的詞庫，右邊是真實的總數與已顯影數。 */
+.intro-edge { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+  display: flex; justify-content: space-between; align-items: baseline; gap: 16px;
+  padding: 0 20px 14px; pointer-events: none;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 2px;
+  color: color-mix(in srgb, var(--amber) 55%, transparent); }
+.intro-sheet-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%; }
+.intro-sheet-name:not(:empty)::before { content: "▸ "; }
+.intro-meta { flex: none; font-variant-numeric: tabular-nums; }
 
-/* ══════════════════════════════════════════════════════════════════
-   臨時除錯開關（定位進場動畫閃爍用）。**問題確認後整段移除**——搜 dbg-
-   或 INTRO_DEBUG 就找得到全部相關程式碼（這裡與 darkroom.js 的開關那段）。 */
-.intro-modal.dbg-nowc .intro-canvas-grid,
-.intro-modal.dbg-nowc .intro-track { will-change: auto !important; }
-.intro-modal.dbg-novig .intro-canvas { box-shadow: none !important; }
-.intro-modal.dbg-novig .intro-rows { mask-image: none !important; -webkit-mask-image: none !important; }
-.intro-modal.dbg-flat .intro-canvas-card { border-color: transparent !important; box-shadow: none !important; }
-.intro-modal.dbg-flat .intro-row.mid .intro-track img { box-shadow: none !important; }
-.intro-modal.dbg-nophoto .intro-canvas-card img,
-.intro-modal.dbg-nophoto .intro-track img { visibility: hidden !important; }
-#intro-debug-hud { position: absolute; right: 14px; bottom: 14px; z-index: 9; pointer-events: none;
-  font-family: var(--mono); font-size: 11px; line-height: 1.7; color: var(--dim);
-  background: rgba(8,8,11,.82); border: 1px solid var(--line-2); border-radius: 10px; padding: 9px 12px; }
-#intro-debug-hud .on { color: var(--amber); font-weight: 700; }
-#intro-debug-hud .hint { color: var(--faint); margin-top: 5px; border-top: 1px solid var(--line); padding-top: 5px; }
+@media (max-width: 640px) {
+  .intro-copy { bottom: 15vh; }
+  .intro-copy h2 { font-size: 22px; letter-spacing: 4px; }
+  .intro-edge { font-size: 9px; letter-spacing: 1px; }
+}
