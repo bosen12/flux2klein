@@ -2,7 +2,11 @@
  * 基礎文生圖 + 4 條可選分支（關閉時從 prompt 移除節點）。輸出皆為 PreviewImage。
  */
 window.YZ_I = {
-  CKPT: 'waiIllustriousSDXL_v170.safetensors',   // 固定 checkpoint (node 4)
+  // 固定 checkpoint (node 4)。ComfyUI 認的 ckpt_name 是「資料夾\檔名」的相對路徑，
+  // 不是純檔名——這顆模型放在 checkpoints 底下的 illurtrious 子資料夾，實測純檔名
+  // 送出會整批 400 Bad Request（同一類坑見 app.js lora_name 那行的 folder+file
+  // 組合方式，這裡照同樣的道理補上資料夾前綴）。
+  CKPT: 'illurtrious\\waiIllustriousSDXL_v170.safetensors',
   MODE_ORDER: ['it2i'],
   MODES: {
     it2i: {

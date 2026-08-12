@@ -1,7 +1,7 @@
 {
   "4": {
     "inputs": {
-      "ckpt_name": "waiIllustriousSDXL_v170.safetensors"
+      "ckpt_name": "illurtrious\\waiIllustriousSDXL_v170.safetensors"
     },
     "class_type": "CheckpointLoaderSimple",
     "_meta": {
