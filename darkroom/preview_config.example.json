@@ -11,5 +11,7 @@
   "comfy_endpoints": ["http://127.0.0.1:8188"],
   "_discord說明": "只給 agent_draw.py 的 --discord-dm 用（送真正的 Discord embed，見 AGENT_DRAW.md）。兩個都要填才會生效，任一沒填就不能用 --discord-dm（改用 MEDIA: 附件那條路）。bot 必須跟 discord_dm_user_id 那個使用者共用至少一個伺服器，Discord 才允許主動開 DM。bot token 比暗房本身的無驗證還敏感——外流等於任何人都能用它冒充這個 bot 發訊息，不要提交進 git、不要貼進聊天視窗。",
   "discord_bot_token": "",
-  "discord_dm_user_id": ""
+  "discord_dm_user_id": "",
+  "_checkpoint說明": "生圖模式（手動生圖／塔羅抽卡／agent-draw）用的底模，只能是 darkroom/preview_ui.py 的 DARKROOM_CHECKPOINT_ROOT 資料夾底下的檔案（預設 illurtrious 子資料夾）。不影響瀏覽模式的重新生成。省略就用 DARKROOM_DEFAULT_CHECKPOINT（目前是 waiIllustriousSDXL_v170.safetensors）。由暗房介面的 ⚙ 設定彈窗寫入，通常不用手動編輯。",
+  "checkpoint": "waiIllustriousSDXL_v170.safetensors"
 }
