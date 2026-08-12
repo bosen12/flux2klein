@@ -119,6 +119,8 @@ API 格式的範本在啟動時一次 fetch 進 `state.zTemplates`，送出前 d
 
 **favicon 換了卻沒生效，先確認是不是瀏覽器挑錯檔案而非快取。** 同時宣告多個 `<link rel=icon>` 時瀏覽器會自行挑選，Chrome 會偏好高解析度的點陣圖而不是 SVG。本專案已改為只宣告 `favicon.svg`，並讓 `favicon.png` / `.ico` 保持同一設計，避免瀏覽器自行抓根目錄的 `/favicon.ico` 時拿到舊圖。**判斷方法**：把檔案 fetch 下來畫進 canvas 取樣像素，就能客觀分辨是檔案不對還是瀏覽器挑錯，不要靠肉眼猜。
 
+**暗房的圓角是「連續曲率」（squircle），不是正圓角——改圓角前先看 `darkroom.css` 開頭的 `corner-shape` 那一節。** `*, *::before, *::after { corner-shape: squircle; }` 一條掃全部（`squircle` = `superellipse(2)` = 超橢圓指數 n=4，就是 Apple `.continuous` 的角）。新增元件**不用做任何事**就會自動拿到正確的角形狀。要注意的只有兩件：① **真圓（`border-radius: 50%`）與膠囊（`999px`）必須在那條規則裡自己標 `corner-shape: round`**，否則會被萬用選擇器變成鼓起來的方塊／兩端削平的橢圓——半徑接近短邊一半的細長條（進度條那種）也算膠囊；② **squircle 在相同半徑下切掉的角比正圓少**（對角線上 0.225r vs 0.414r），所以面級元素的半徑比一般專案大約 1.25 倍是刻意的，照抄別處的半徑數字過來會顯得角太尖。10px 以下的小元件維持原半徑，那個尺寸下形狀差異看不出來。主面板 `styles.css` 目前還是正圓角，兩邊不一致是已知的。
+
 **動效有 token 系統，不要再寫字面值。** 時長用 `--dur-1`～`--dur-5`（micro / UI / 小過渡 / 區塊進場 / 大範圍換色），緩動用 `--ease-out` / `--ease-entrance` / `--ease-spring` / `--ease-toggle`。**例外是迴圈類動畫**（spinner、光環、脈動、條紋）——它們各有自己的節奏，維持字面值。切換引擎的編排節拍集中在 `app.js` 的 `BEAT` 物件。進場慢收、退場快走：退場時長要比進場短並用 ease-in。
 
 **任何靠 `finished` / `animationend` 收尾的動畫都要加 `setTimeout` 保險。** 這個專案已經三次踩到同一件事：分頁在背景時 `requestAnimationFrame` 不觸發、動畫不前進，那兩個事件永遠不會結算，收尾邏輯就永遠不執行（logo 卡在舊色、結果清不掉）。
