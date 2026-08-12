@@ -3353,6 +3353,12 @@ function hideBoot() {
 const INTRO_SHEET_SECONDS = 7.5;    // 一張相紙從空白到完全顯影的秒數（不攪動的話）
 const INTRO_HOLD_SECONDS  = 1.8;    // 顯影完停留多久才夾走
 const INTRO_AGITATORS     = 8;      // 同時追蹤幾個攪動點（= shader 裡的陣列長度）
+// 漣漪的壽命，以及「多久生一個」。兩者必須綁在一起：生成間隔 = 壽命 / 槽數，這樣
+// 連續揮動時剛好把槽填滿、而最舊的那個正好壽終正寢，**永遠不需要擠掉還活著的漣漪**。
+// 第一版是「指標每移動一段距離就生一個」，於是橫掃一次會在零點幾秒內生四十幾個、
+// 把 8 個槽輪番洗掉五輪——每個漣漪都在還沒擴散開之前就被丟掉，看起來就是水波不順。
+const INTRO_RIPPLE_LIFE = 1.5;                                  // 秒
+const INTRO_RIPPLE_GAP  = INTRO_RIPPLE_LIFE / INTRO_AGITATORS;  // 秒
 
 let introGL = null;         // { gl, prog, loc, tex, canvas } 或 null（退化模式）
 let introRAF = null;
@@ -3362,8 +3368,14 @@ let introPhase = 'develop'; // develop → hold → lift → settle
 let introPhaseT0 = 0;
 let introDevelop = 0;       // 0..1 顯影進度
 let introSheetY = 0;        // 相紙在盤裡的垂直位移（夾走／落下用）
-const introAgit = [];       // 攪動點：{ x, y, t }（x/y 是長寬比校正後的座標）
-let introPointer = { x: 0, y: 0, inside: false };
+// 固定 8 個槽，t < 0 = 空槽。不用陣列 push/shift——那會讓「還活著的漣漪被擠掉」。
+const introAgit = Array.from({ length: INTRO_AGITATORS }, () => ({ x: 0, y: 0, t: -1 }));
+let introPointer = { x: 0, y: 0, moved: false };
+let introLastSpawn = -1e9;
+// 畫布矩形快取。**不可以在 pointermove 裡呼叫 getBoundingClientRect()**——指標事件
+// 一秒上百次，每次「讀幾何」都會逼瀏覽器同步重算版面（CLAUDE.md 記過的坑，格線的
+// 聚光效果就是為此改成 rAF 節流的）。這裡的畫布是滿版的，只有 resize 需要重量。
+let introRect = null;
 
 const INTRO_VERT = `
 attribute vec2 aPos;
@@ -3399,10 +3411,15 @@ float vnoise(vec2 p) {
   float c = hash21(i + vec2(0.0, 1.0)), d = hash21(i + vec2(1.0, 1.0));
   return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
-float fbm(vec2 p) {
+// 八度數用巨集決定：顯影前緣的塊狀需要細節（3 層），液面的緩慢起伏 2 層就夠。
+// 每一層是 4 次 hash，全畫面 92 萬像素下每省一層就是省 370 萬次雜湊。
+float fbm3(vec2 p) {
   float s = 0.0, a = 0.5;
-  for (int i = 0; i < 4; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; }
+  for (int i = 0; i < 3; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; }
   return s;
+}
+float fbm2(vec2 p) {
+  return 0.5 * vnoise(p) + 0.25 * vnoise(p * 2.03);
 }
 
 void main() {
@@ -3432,7 +3449,9 @@ void main() {
   vec2 hf = vec2(0.30 * aspect, 0.30);   // 不能叫 half，那是 GLSL 保留字
   vec2 sp = rot * (p - vec2(0.0, -0.02 + uSheetY));
   vec2 q = abs(sp) / hf;
-  float k = pow(pow(q.x, 8.0) + pow(q.y, 8.0), 0.125);
+  // q^8 用連乘算，比兩次 pow() 便宜；外層那個 pow 保留是因為要拿到平滑的邊緣值
+  vec2 q2 = q * q; vec2 q4 = q2 * q2; vec2 q8 = q4 * q4;
+  float k = pow(q8.x + q8.y, 0.125);
   float inSheet = 1.0 - smoothstep(0.985, 1.005, k);
   vec2 sUv = sp / hf * 0.5 + 0.5;
   sUv.y = 1.0 - sUv.y;
@@ -3441,7 +3460,8 @@ void main() {
   vec2 refr = ripG * 0.0018;
   vec3 img = uHasTex > 0.5 ? texture2D(uTex, clamp(sUv + refr, 0.001, 0.999)).rgb : vec3(0.5);
   float lum = dot(img, vec3(0.299, 0.587, 0.114));
-  float blotch = fbm(sUv * 3.1) * 0.62 + fbm(sUv * 8.5) * 0.20;
+  // 相紙外的像素用不到顯影前緣，別白算——這兩個 fbm 是整支著色器最貴的部分
+  float blotch = inSheet > 0.0 ? (fbm3(sUv * 3.1) * 0.62 + fbm3(sUv * 8.5) * 0.20) : 0.0;
   float front = uDevelop * 2.05 + boost * 0.42;
   float e = clamp(front - lum * 0.95 - blotch * 0.85, 0.0, 1.0);
   e = smoothstep(0.0, 0.55, e);
@@ -3459,7 +3479,7 @@ void main() {
   // ── 顯影液：暗、只有安全燈的反光跟漣漪的高光 ──
   vec3 fluid = uFluid * (0.42 + 0.58 * lamp);
   fluid += uAmber * max(rip, 0.0) * 0.42 * (0.25 + lamp);
-  fluid *= 0.86 + 0.14 * fbm(p * 3.0 + uTime * 0.05);
+  fluid *= 0.86 + 0.14 * fbm2(p * 3.0 + uTime * 0.05);
 
   // 相紙在液面下的投影
   float shadow = 1.0 - 0.45 * (1.0 - smoothstep(0.98, 1.28, k));
@@ -3545,6 +3565,7 @@ function introResize() {
   // 尺寸一起提早 return，新 program 的 uRes 會停在 0，著色器裡 aspect = 0/0 = NaN，
   // 畫面整片全黑。只有真正會改變畫布緩衝區的那兩行需要判斷尺寸。
   gl.uniform2f(loc.uRes, w, h);
+  introRect = canvas.getBoundingClientRect();   // 指標事件要用的快取，只在這裡更新
   if (canvas.width === w && canvas.height === h) return;
   canvas.width = w; canvas.height = h;
   gl.viewport(0, 0, w, h);
@@ -3570,17 +3591,21 @@ function introLoadSheet() {
   img.src = thumbURL(it, 512);
 }
 
-function introPushAgit(x, y) {
-  const rect = introGL ? introGL.canvas.getBoundingClientRect() : null;
-  if (!rect || !rect.width) return;
-  const aspect = rect.width / rect.height;
-  const px = ((x - rect.left) / rect.width - 0.5) * aspect;
-  const py = -((y - rect.top) / rect.height - 0.5);
-  const last = introAgit[introAgit.length - 1];
-  // 節流：指標移動很密，太近的點不另外開一個漣漪源，否則八個槽瞬間被同一個位置吃光
-  if (last && Math.hypot(px - last.x, py - last.y) < 0.045) return;
-  introAgit.push({ x: px, y: py, t: 0 });
-  if (introAgit.length > INTRO_AGITATORS) introAgit.shift();
+// 螢幕座標 → 著色器用的長寬比校正座標。用快取的矩形，不現量。
+function introToScene(x, y) {
+  if (!introRect || !introRect.width) return null;
+  const aspect = introRect.width / introRect.height;
+  return {
+    x: ((x - introRect.left) / introRect.width - 0.5) * aspect,
+    y: -((y - introRect.top) / introRect.height - 0.5),
+  };
+}
+// 生一個漣漪：挑「最老的槽」覆寫。因為生成節奏 = 壽命 / 槽數，穩定揮動時被挑中的
+// 那個必定已經衰減到看不見了，不會有還亮著的漣漪突然消失。
+function introSpawnRipple(sx, sy, age) {
+  let slot = introAgit[0];
+  for (const a of introAgit) if (a.t > slot.t) slot = a;
+  slot.x = sx; slot.y = sy; slot.t = age || 0;
 }
 
 function introFrame(now) {
@@ -3592,15 +3617,30 @@ function introFrame(now) {
   introFrame._last = now;
   introResize();
 
-  // 攪動點老化
-  for (const a of introAgit) a.t += dt;
-  while (introAgit.length && introAgit[0].t > 3.2) introAgit.shift();
+  // 攪動點老化：超過壽命就標成空槽（t < 0），不從陣列移除——槽位固定對應 shader 的
+  // uAgit[i]，移除會讓所有漣漪換位置。
+  for (const a of introAgit) {
+    if (a.t < 0) continue;
+    a.t += dt;
+    if (a.t > INTRO_RIPPLE_LIFE) a.t = -1;
+  }
+  // 生成節奏跟指標事件的頻率脫鉤：只看時間，不看事件來了幾次。指標停下來就不再生，
+  // 既有的自然衰減完；重新開始動則立刻補一個（不用等滿一個間隔），手感不會遲鈍。
+  const sceneP = introToScene(introPointer.x, introPointer.y);
+  if (sceneP && introPointer.moved) {
+    const idle = (now - introLastSpawn) / 1000;
+    if (idle >= INTRO_RIPPLE_GAP) {
+      introSpawnRipple(sceneP.x, sceneP.y, 0);
+      introLastSpawn = now;
+    }
+    introPointer.moved = false;
+  }
 
   // 顯影流程：顯影 → 停留 → 夾走 → 新相紙落下
   const phaseT = (now - introPhaseT0) / 1000;
   if (introPhase === 'develop') {
     // 攪動會加速顯影——真實暗房也是這樣，而且這是「互動有回饋」的來源
-    const agitation = introAgit.reduce((s, a) => s + Math.exp(-a.t * 0.8), 0);
+    const agitation = introAgit.reduce((s, a) => s + (a.t < 0 ? 0 : Math.exp(-a.t * 0.8)), 0);
     introDevelop += dt / INTRO_SHEET_SECONDS * (1 + Math.min(agitation, 4) * 0.22);
     if (introDevelop >= 1) { introDevelop = 1; introPhase = 'hold'; introPhaseT0 = now; }
   } else if (introPhase === 'hold') {
@@ -3623,8 +3663,7 @@ function introFrame(now) {
   gl.uniform1f(loc.uHasTex, introGL.hasTex);
   for (let i = 0; i < INTRO_AGITATORS; i++) {
     const a = introAgit[i];
-    if (a) gl.uniform3f(loc.uAgit[i], a.x, a.y, a.t);
-    else gl.uniform3f(loc.uAgit[i], 0, 0, -1);
+    gl.uniform3f(loc.uAgit[i], a.x, a.y, a.t);
   }
   gl.drawArrays(gl.TRIANGLES, 0, 6);
   introRAF = requestAnimationFrame(introFrame);
@@ -3670,7 +3709,8 @@ function maybeStartIntro() {
   introLoadSheet();
   introPhase = 'develop'; introPhaseT0 = performance.now();
   introDevelop = 0; introSheetY = 0; introT0 = 0; introFrame._last = 0;
-  introAgit.length = 0;
+  for (const a of introAgit) a.t = -1;
+  introLastSpawn = -1e9; introPointer.moved = false;
   introRAF = requestAnimationFrame(introFrame);
 }
 
@@ -3699,18 +3739,20 @@ function closeIntro() {
 }
 
 $('intro-enter-btn').addEventListener('click', closeIntro);
+// pointermove 只記座標——真正的生成在幀迴圈裡依時間節奏做。這樣既不會被事件頻率
+// 綁架（見 INTRO_RIPPLE_GAP 的說明），也不用在事件裡讀任何幾何。
 $('intro-modal').addEventListener('pointermove', (e) => {
   if (!introGL) return;
-  introPointer.x = e.clientX; introPointer.y = e.clientY;
-  introPushAgit(e.clientX, e.clientY);
+  introPointer.x = e.clientX; introPointer.y = e.clientY; introPointer.moved = true;
 }, { passive: true });
-// 點一下＝用力攪一次：同一個位置連下三個相位錯開的漣漪源，散得比滑過去明顯
+// 點一下＝用力攪一次：同一點連下三個相位錯開的漣漪，散得比滑過去明顯。這是明確的
+// 使用者動作，可以直接插隊生成、不受節奏限制。
 $('intro-modal').addEventListener('pointerdown', (e) => {
   if (!introGL) return;
-  for (let i = 0; i < 3; i++) {
-    introPushAgit(e.clientX + (i - 1) * 6, e.clientY + (i - 1) * 4);
-    const a = introAgit[introAgit.length - 1]; if (a) a.t = i * 0.06;
-  }
+  const p = introToScene(e.clientX, e.clientY);
+  if (!p) return;
+  for (let i = 0; i < 3; i++) introSpawnRipple(p.x, p.y, i * 0.10);
+  introLastSpawn = performance.now();
 }, { passive: true });
 window.addEventListener('resize', introResize);
 window.addEventListener('keydown', (e) => {
