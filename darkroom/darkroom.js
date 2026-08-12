@@ -685,6 +685,110 @@ function dismissModal() {
   else closeModalWithMorph();
 }
 
+/* ---------------------------------------------------------------------------
+   大圖的橫向卡片列
+   ---------------------------------------------------------------------------
+   手感參考 GreenSock 的「Infinite Scrolling Cards（continuous snap）」：一列橫向
+   卡片、左右鄰卡露邊，按一次滑一格並緩動吸附回中央，走到清單頭尾無縫接回另一端。
+
+   **沒有引進 GSAP**。那個 pen 的份量幾乎都在 ScrollTrigger／Draggable 的捲動與
+   拖曳物理，而這裡要的只是「按鍵走一格」——WAAPI 一行動畫就夠，不值得為此 vendored
+   一整包（專案的依賴政策允許 vendored，但這筆划不來）。
+
+   **無限循環不是特例處理出來的**，是「窗口永遠以目前這張為中心重建」的自然結果：
+   每次都取 (i + d + n) % n 的 2*MODAL_WIN+1 張，在清單頭尾一樣鋪得滿，不需要判斷
+   邊界。動畫因此永遠是同一件事——重建完先把整列推回「上一張還在中央」的位置，再
+   滑回 0，跟目前走到哪裡無關。
+
+   置中位置整條寫在 CSS 的 calc 裡（見 darkroom.css 的 .m-track），JS 只算「一格有
+   多寬」——而且是量實際算好的卡片寬度，不是把 78% 這個數字在兩邊各寫一次。
+   --------------------------------------------------------------------------- */
+const MODAL_WIN = 2;          // 中央左右各鋪幾張，要跟 darkroom.css 的 --k 一致
+const MODAL_SLIDE_MS = 420;   // 要跟 darkroom.css 的 --d-slide 一致
+let MODAL_RAIL_ANIM = null;
+
+// render(entry, isCenter) 回傳一張卡片的內容元素。
+function buildModalStage(list, index, render) {
+  const stage = document.createElement('div');
+  stage.className = 'm-stage';
+  const rail = document.createElement('div'); rail.className = 'm-rail';
+  const track = document.createElement('div'); track.className = 'm-track';
+  const n = list.length;
+  for (let d = -MODAL_WIN; d <= MODAL_WIN; d++) {
+    const slide = document.createElement('div');
+    slide.className = 'm-slide' + (d === 0 ? ' is-current' : '');
+    // 只有一張時鄰卡留空：五格鋪同一張圖會看起來像壞掉，而不是「循環」
+    if (n > 1 || d === 0) slide.appendChild(render(list[((index + d) % n + n) % n], d === 0));
+    track.appendChild(slide);
+  }
+  rail.appendChild(track); stage.appendChild(rail);
+  return stage;
+}
+
+// 重建前先讀整列目前的視覺偏移。連按方向鍵時要把它接下去，不然每一次都從整整
+// 一格外重新開始滑，看起來會一頓一頓的。只在按鍵時讀一次，不是每幀。
+function modalRailOffset() {
+  const rail = document.querySelector('#modal-inner .m-rail');
+  if (!rail || !MODAL_RAIL_ANIM) return 0;
+  const t = getComputedStyle(rail).transform;
+  if (!t || t === 'none') return 0;
+  try { return new DOMMatrixReadOnly(t).m41; } catch (e) { return 0; }
+}
+
+// 換一張：rebuild() 負責把整個大圖以新的中心重建，這裡只做那段滑動。
+function modalSlide(dir, rebuild) {
+  const carry = modalRailOffset();
+  if (MODAL_RAIL_ANIM) { MODAL_RAIL_ANIM.cancel(); MODAL_RAIL_ANIM = null; }
+  rebuild();
+  const rail = document.querySelector('#modal-inner .m-rail');
+  const track = rail && rail.firstElementChild;
+  const slide = track && track.children[MODAL_WIN];
+  if (!slide) return;
+  const stage = rail.parentElement;
+  stage.classList.add('stepping');
+  // 剛剛還在中央的那張現在退到 MODAL_WIN - dir 的位置，讓它跟著把亮度收回去
+  const outgoing = track.children[MODAL_WIN - dir];
+  if (outgoing) outgoing.classList.add('was-current');
+  if (REDUCE_MOTION || document.visibilityState !== 'visible' || !rail.animate) return;
+  const gap = parseFloat(getComputedStyle(track).columnGap) || 0;
+  const step = slide.getBoundingClientRect().width + gap;
+  if (!step) return;
+  const anim = rail.animate(
+    [{ transform: `translateX(${dir * step + carry}px)` }, { transform: 'translateX(0px)' }],
+    { duration: MODAL_SLIDE_MS, easing: 'cubic-bezier(.22,.61,.36,1)' });
+  MODAL_RAIL_ANIM = anim;
+  const settle = () => { if (MODAL_RAIL_ANIM === anim) MODAL_RAIL_ANIM = null; };
+  anim.finished.then(settle).catch(settle);
+  setTimeout(settle, MODAL_SLIDE_MS + 80);   // 分頁在背景時 finished 不結算的保險
+}
+
+// 詞庫的一張卡。鄰卡只用縮圖——網址跟格線那邊完全一樣（沒帶 w），所以是**已經在
+// 快取裡的同一份**，等於免費；中央那張也先鋪縮圖當底，全解析度疊上去淡入。
+function renderLibSlide(item, isCenter) {
+  if (!item || !item.has_image) {
+    const ph = document.createElement('div');
+    ph.className = 'no-image'; ph.textContent = '尚無圖片';
+    return ph;
+  }
+  const relEnc = encodeURIComponent(item.rel);
+  const thumb = new Image();
+  thumb.className = 'm-img'; thumb.decoding = 'async'; thumb.alt = '';
+  thumb.src = `/api/thumb?rel=${relEnc}&v=${item.image_mtime}`;
+  if (!isCenter) { thumb.fetchPriority = 'low'; return thumb; }
+  // hero morph 接在縮圖這張：它一定已經在快取裡，View Transitions 截得到圖；
+  // 接在還沒載完的大圖上會截到一片空白。
+  thumb.id = 'modal-image';
+  thumb.dataset.rel = item.rel;
+  const box = document.createElement('div');
+  box.style.cssText = 'position:absolute;inset:0';
+  const full = new Image();
+  full.className = 'm-img m-full'; full.decoding = 'async'; full.alt = '';
+  full.addEventListener('load', () => full.classList.add('in'), { once: true });
+  full.src = `/api/image?rel=${relEnc}&t=${item.image_mtime}`;
+  box.append(thumb, full);
+  return box;
+}
+
 function openModal(rel, resetNav = true) {
   const item = itemOf(rel);
   if (!item) return;
@@ -692,12 +796,9 @@ function openModal(rel, resetNav = true) {
   inner.dataset.rel = rel;
   delete inner.dataset.gid;   // 清掉圖庫大圖可能留下的 gid，不然方向鍵分支會誤判成還在切圖庫
   const relEnc = encodeURIComponent(rel);
-  const imgHtml = item.has_image
-    ? `<img id="modal-image" data-rel="${escapeAttr(rel)}" src="/api/image?rel=${relEnc}&t=${item.image_mtime}">`
-    : `<div class="no-image">尚無圖片</div>`;
   inner.innerHTML = `
     <div>
-      ${imgHtml}
+      <div id="m-stage-slot"></div>
       <div id="modal-status" data-rel="${escapeAttr(rel)}" class="status" style="margin-top:10px;padding:0;"></div>
       <div style="margin-top:12px; display:flex; gap:8px;">
         <button class="primary" id="modal-gen">${item.has_image ? '重新生成' : '生成'}</button>
@@ -712,7 +813,14 @@ function openModal(rel, resetNav = true) {
       <div class="prompt-label">負向 Prompt</div>
       <div class="prompt-block" id="neg">載入中…</div>
     </div>`;
-  $('modal-title').textContent = item.display_name || item.name;
+  // 卡片列鋪的是「畫面上這份清單」（VISIBLE），跟方向鍵切的順序是同一份，所以
+  // 露在兩側的鄰卡就是等一下真的會切到的那兩張。VISIBLE 是空的（例如從搜尋結果
+  // 直接開）就只鋪目前這一張。
+  // 不在 VISIBLE 裡（例如從抽卡開的大圖）就只鋪這一張——硬找不到還套 index 0 會
+  // 讓中央顯示的是別人。那種情況方向鍵本來也不作用（見 keydown 的 MODAL_FROM_TAROT）。
+  let list = VISIBLE, idx = VISIBLE.findIndex(x => x.rel === rel);
+  if (idx < 0) { list = [item]; idx = 0; }
+  $('m-stage-slot').replaceWith(buildModalStage(list, idx, renderLibSlide));
   $('modal-folder').textContent = item.folder || '(根目錄)';
   $('modal-gen').onclick = () => generate(rel);
   $('modal-close').onclick = dismissModal;
@@ -732,7 +840,17 @@ function modalStep(dir) {
   const i = VISIBLE.findIndex(x => x.rel === rel);
   if (i < 0) return;
   const ni = (i + dir + VISIBLE.length) % VISIBLE.length;
-  openModal(VISIBLE[ni].rel);
+  modalSlide(dir, () => openModal(VISIBLE[ni].rel));
+}
+
+// 方向鍵與 ‹ › 鈕共用這一個入口：大圖是從圖庫還是詞庫格線開的，切的是不同清單
+// （見 openGalleryItem 設的 dataset.gid）。原本兩顆鈕寫死呼叫 modalStep()，從圖庫
+// 開的大圖按了沒有反應——方向鍵那邊早就分流了，鈕這邊漏掉。
+function modalNav(dir) {
+  const inner = $('modal-inner');
+  if (!inner) return;
+  if (inner.dataset.gid) galleryModalStep(dir);
+  else modalStep(dir);
 }
 
 function closeModal() {
@@ -745,6 +863,15 @@ function closeModal() {
 // GALLERY，順序要跟畫面上看到的一致——renderGallery() 是新到舊（陣列反過來疊代），這裡
 // 用同一個順序，不然「按右鍵」跟「畫面往右移一張」對不起來。
 function galleryOrder() { return [...GALLERY].reverse(); }
+
+// 圖庫的一張卡。生成結果沒有縮圖端點，鄰卡就用同一個網址（看過的已經在快取裡）。
+function renderGallerySlide(g, isCenter) {
+  const img = new Image();
+  img.className = 'm-img'; img.decoding = 'async'; img.alt = '';
+  if (!isCenter) img.fetchPriority = 'low';
+  img.src = '/api/gen-result?id=' + encodeURIComponent(g.id);
+  return img;
+}
 function galleryModalStep(dir) {
   const inner = $('modal-inner');
   const gid = inner && inner.dataset.gid;
@@ -753,7 +880,7 @@ function galleryModalStep(dir) {
   const i = order.findIndex(g => g.id === gid);
   if (i < 0 || !order.length) return;
   const ni = (i + dir + order.length) % order.length;
-  openGalleryItem(order[ni].id);
+  modalSlide(dir, () => openGalleryItem(order[ni].id));
 }
 
 // 開大圖：縮圖 morph 放大成大圖（shared-element，view-transition-name: hero-img）。
@@ -1036,8 +1163,8 @@ async function pollBatch() {
 }
 
 $('modal').addEventListener('click', e => { if (e.target.id === 'modal') dismissModal(); });
-$('m-prev').onclick = () => modalStep(-1);
-$('m-next').onclick = () => modalStep(1);
+$('m-prev').onclick = () => modalNav(-1);
+$('m-next').onclick = () => modalNav(1);
 window.addEventListener('keydown', e => {
   // 這個 app 的快捷鍵全部是單一按鍵（R/E/C/X/1~4/S/Z/?/方向鍵…），沒有一個需要搭配
   // Ctrl/Cmd/Alt。沒有這條擋在最前面，按 Ctrl+C 複製、Ctrl+X 剪下、Ctrl+Z 復原、
@@ -1090,13 +1217,9 @@ window.addEventListener('keydown', e => {
   if ($('modal').classList.contains('open')) {
     if (e.key === 'Escape') { dismissModal(); return; }
     if (MODAL_FROM_TAROT) return;                // 從抽卡開的大圖不左右切（那批牌不在 VISIBLE/GALLERY 順序裡）
-    // 大圖是從圖庫還是詞庫格線開的，各自左右切不同的清單——見 openGalleryItem() 設的
-    // dataset.gid／openModal() 設的 dataset.rel。之前只接了 modalStep()（只認 VISIBLE），
-    // 圖庫開的大圖完全沒有對應的清單可切，方向鍵沒有反應，使用者回報過。
-    const inner = $('modal-inner');
-    const isGallery = !!(inner && inner.dataset.gid);
-    if (e.key === 'ArrowLeft') (isGallery ? galleryModalStep(-1) : modalStep(-1));
-    else if (e.key === 'ArrowRight') (isGallery ? galleryModalStep(1) : modalStep(1));
+    // 切哪一份清單由 modalNav() 依 dataset.gid／dataset.rel 分流（‹ › 兩顆鈕走同一個入口）
+    if (e.key === 'ArrowLeft') modalNav(-1);
+    else if (e.key === 'ArrowRight') modalNav(1);
     return;
   }
   if ($('tarot').classList.contains('open')) {
@@ -3006,10 +3129,20 @@ function openGalleryItem(gid) {
   inner.dataset.gid = gid;   // 讓方向鍵知道現在切的是圖庫清單，不是詞庫格線（見 keydown 分支）
   inner.innerHTML = '';
   const left = document.createElement('div');
-  const img = document.createElement('img');
-  img.style.cssText = 'max-width:100%;border-radius:10px;background:#000';
-  img.src = '/api/gen-result?id=' + encodeURIComponent(gid);
-  left.appendChild(img);
+  const order = galleryOrder();
+  let gi = order.findIndex(x => x.id === gid);
+  const list = gi < 0 ? (g ? [g] : []) : order;
+  if (gi < 0) gi = 0;
+  const stage = buildModalStage(list, gi, renderGallerySlide);
+  // 生成結果不一定是正方形（各引擎的預設尺寸不同），舞台的長寬比跟著中央那張走，
+  // 不然直幅圖會被上下留一大片黑。詞庫預覽都是 1:1，走 CSS 的 --ar 預設值就好。
+  const cur = stage.querySelectorAll('.m-slide')[MODAL_WIN];
+  const curImg = cur && cur.querySelector('img');
+  if (curImg) curImg.addEventListener('load', () => {
+    if (curImg.naturalWidth && curImg.naturalHeight)
+      stage.style.setProperty('--ar', curImg.naturalWidth + ' / ' + curImg.naturalHeight);
+  }, { once: true });
+  left.appendChild(stage);
   const right = document.createElement('div'); right.className = 'gi-info';
   const rows = g ? [
     ['詞庫', g.name], ['資料夾', g.folder || '(根目錄)'],

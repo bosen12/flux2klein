@@ -425,6 +425,42 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
                scrollbar-gutter: stable; }
 .modal.open .modal-inner { animation: modalPop var(--d-pop) var(--ease-out) both; }
 .modal-inner img { max-width: 100%; border-radius: 10px; background: #000; display: block; }
+
+/* ── 大圖的橫向卡片列 ─────────────────────────────────────────────
+   一列橫向卡片，左右鄰卡露邊；按 ←/→ 整列滑一格、緩動吸附回中央。
+   置中位置整條寫在 .m-track 的 calc 裡（百分比對的是 .m-track 自己的寬度，而它
+   absolute inset:0 貼齊舞台，所以 100% = 舞台寬），**不需要任何 JS 量測、換視窗
+   大小自動跟著對**。JS 只負責「滑一格」那段動畫，位移套在外層的 .m-rail 上，
+   兩者分開才不用在 WAAPI 的 keyframe 裡塞 var()／calc()（那不可靠）。 */
+.m-stage { position: relative; overflow: hidden; aspect-ratio: var(--ar, 1);
+  --sw: 78%;      /* 單張卡佔舞台寬度；剩下的 22% 分給左右鄰卡露邊 */
+  --gap: 14px;
+  --k: 2;         /* 中央左右各鋪幾張，要跟 darkroom.js 的 MODAL_WIN 一致 */
+  --d-slide: 420ms; }   /* 要跟 darkroom.js 的 MODAL_SLIDE_MS 一致 */
+.m-rail { position: absolute; inset: 0; will-change: transform; }
+.m-track { position: absolute; inset: 0; display: flex; align-items: center; gap: var(--gap);
+  transform: translateX(calc(50% - var(--sw) / 2 - var(--k) * (var(--sw) + var(--gap)))); }
+.m-slide { flex: 0 0 var(--sw); height: 100%; position: relative;
+  display: flex; align-items: center; justify-content: center; opacity: .34; }
+.m-slide.is-current { opacity: 1; }
+.m-img { width: 100%; height: 100%; object-fit: contain; border-radius: 10px;
+  background: #000; display: block; }
+/* 中央那張先鋪縮圖當底，全解析度疊上來淡入——直接換 src 會先閃一格空白，
+   而且 hero morph 截圖時可能截到還沒載完的空圖。 */
+.m-full { position: absolute; inset: 0; opacity: 0;
+  transition: opacity var(--d-ui) var(--ease-out); }
+.m-full.in { opacity: 1; }
+/* 明暗只在「換張」時才用動畫過渡。卡片每次都是重建的新節點，所以 transition 不會
+   觸發（新節點一生下來就是最終值），要用 animation；而 .stepping 這個開關是為了讓
+   第一次開大圖不要跟著淡——那時 hero morph 正在跑，再疊一層淡入會打架。 */
+.m-stage.stepping .m-slide.is-current { animation: mSlideLit var(--d-slide) var(--ease-out) both; }
+.m-stage.stepping .m-slide.was-current { animation: mSlideDim var(--d-slide) var(--ease-out) both; }
+@keyframes mSlideLit { from { opacity: .34; } to { opacity: 1; } }
+@keyframes mSlideDim { from { opacity: 1; } to { opacity: .34; } }
+@media (prefers-reduced-motion: reduce) {
+  .m-stage.stepping .m-slide.is-current,
+  .m-stage.stepping .m-slide.was-current { animation: none; }
+}
 /* 開大圖的 shared-element morph：縮圖平滑放大成這張大圖（見 darkroom.js
    openModalFromThumb/closeModalWithMorph）。modal 關閉時整個 .modal 是 display:none，
    不會被 View Transitions 截圖，名字不會與縮圖那端重複。 */
@@ -432,6 +468,8 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
 ::view-transition-group(hero-img) { animation-duration: var(--d-pop); animation-timing-function: var(--ease-out); }
 .no-image { aspect-ratio: 1/1; display: flex; align-items: center; justify-content: center;
             color: var(--faint); background: var(--sunk); border-radius: 10px; border: 1px dashed var(--line); }
+/* 卡片列裡的「尚無圖片」要填滿那一格，不然它會比隔壁的圖矮一截、整列高低不齊 */
+.m-slide .no-image { width: 100%; height: 100%; aspect-ratio: auto; }
 .m-title { font-size: 17px; font-weight: 650; word-break: break-all; }
 .m-folder { font-family: var(--mono); font-size: 12px; color: var(--amber); margin-top: 4px; }
 .prompt-label { font-family: var(--mono); font-size: 10px; color: var(--faint); margin: 14px 0 5px;
