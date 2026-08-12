@@ -433,15 +433,20 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
    大小自動跟著對**。JS 只負責「滑一格」那段動畫，位移套在外層的 .m-rail 上，
    兩者分開才不用在 WAAPI 的 keyframe 裡塞 var()／calc()（那不可靠）。 */
 .m-stage { position: relative; overflow: hidden; aspect-ratio: var(--ar, 1);
-  --sw: 78%;      /* 單張卡佔舞台寬度；剩下的 22% 分給左右鄰卡露邊 */
+  /* 卡片跟舞台一樣寬＝圖是滿版的正方形（詞庫預覽都是 1:1，object-fit 不會留白），
+     而鄰卡整張落在舞台外、被 overflow 切掉，平常看不到，只在滑動途中經過。
+     曾經設成 78% 讓鄰卡露邊，代價是圖被縮小、上下多出一圈空白，不划算。 */
+  --sw: 100%;
   --gap: 14px;
   --k: 2;         /* 中央左右各鋪幾張，要跟 darkroom.js 的 MODAL_WIN 一致 */
   --d-slide: 420ms; }   /* 要跟 darkroom.js 的 MODAL_SLIDE_MS 一致 */
 .m-rail { position: absolute; inset: 0; will-change: transform; }
 .m-track { position: absolute; inset: 0; display: flex; align-items: center; gap: var(--gap);
   transform: translateX(calc(50% - var(--sw) / 2 - var(--k) * (var(--sw) + var(--gap)))); }
+/* 平常只看得到中央那張，暗度只在滑動途中經過時才會被看到——所以壓得很淺，
+   單純讓眼睛跟得上哪張正在進來，太暗會在滿版的卡片上讀成閃一下。 */
 .m-slide { flex: 0 0 var(--sw); height: 100%; position: relative;
-  display: flex; align-items: center; justify-content: center; opacity: .34; }
+  display: flex; align-items: center; justify-content: center; opacity: .62; }
 .m-slide.is-current { opacity: 1; }
 .m-img { width: 100%; height: 100%; object-fit: contain; border-radius: 10px;
   background: #000; display: block; }
@@ -455,8 +460,8 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
    第一次開大圖不要跟著淡——那時 hero morph 正在跑，再疊一層淡入會打架。 */
 .m-stage.stepping .m-slide.is-current { animation: mSlideLit var(--d-slide) var(--ease-out) both; }
 .m-stage.stepping .m-slide.was-current { animation: mSlideDim var(--d-slide) var(--ease-out) both; }
-@keyframes mSlideLit { from { opacity: .34; } to { opacity: 1; } }
-@keyframes mSlideDim { from { opacity: 1; } to { opacity: .34; } }
+@keyframes mSlideLit { from { opacity: .62; } to { opacity: 1; } }
+@keyframes mSlideDim { from { opacity: 1; } to { opacity: .62; } }
 @media (prefers-reduced-motion: reduce) {
   .m-stage.stepping .m-slide.is-current,
   .m-stage.stepping .m-slide.was-current { animation: none; }
