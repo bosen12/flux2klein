@@ -26,9 +26,12 @@ thread 搶同一個 STATE['gen_sem']（同一台 ComfyUI）」改成「每條 wo
 
 跑到一半某台斷線／壞掉怎麼辦：那台生成失敗的項目會**放回共用佇列**給還活著
 的 endpoint 接手（同一項目最多重試 3 次才真的放棄標成失敗），該台連續失敗
-3 次就判定斷線、自己停止領新工作，不會卡在失敗迴圈裡把項目白白吃掉。全部
-endpoint 都斷線的話會直接中止（不會傻等到逐張逾時），剩下沒做完的項目留在
-原地——之後端點恢復連線，重跑這支程式會自動只補還缺的那些。
+3 次就先**冷卻**（預設 90 秒，見 COOLDOWN_SECONDS）暫停領新工作，不會卡在
+失敗迴圈裡把項目白白吃掉——**不是永久放棄**，冷卻時間到會自動再試。這是
+刻意選擇：像 Cloudflare quick tunnel（`trycloudflare.com`）這種偶爾自己斷線
+又會自動重連的情況很常見，永久放棄反而會白白浪費一整台其實還活著的 GPU。
+如果真的全部 endpoint 都掛了，程式不會馬上放棄，但超過 10 分鐘沒有任何新
+完成的項目會印一次提醒（不會強制中止，可能只是剛好同時都在冷卻）。
 """
 
 from __future__ import annotations
@@ -70,12 +73,20 @@ DEFAULT_COMFY_ENDPOINTS = ["http://127.0.0.1:8188"]
 TIMEOUT = 600
 OUT_EXT = ".webp"
 
-# 同一個項目最多被重試幾次（不同 endpoint 各算一次）才真的放棄標成失敗。
-MAX_ITEM_RETRIES = 3
-# 同一台 endpoint 連續失敗幾次，就判定它斷線／壞掉，停止繼續派工作給它
-# （不然一台斷線的話，它的 worker 會一直領新項目、一直失敗，白白把項目
-# 從佇列吃掉又標成失敗，本來可以留給還活著的那幾台做）。
+# 同一個項目最多被重試幾次（不同 endpoint／同一 endpoint 冷卻恢復後再試都算）
+# 才真的放棄標成失敗。故意設得比 MAX_CONSECUTIVE_FAILS 大很多——如果只有
+# 1~2 台 endpoint、其中一台在冷卻，項目要撐過冷卻時間才等得到它恢復；設太低
+# （例如等於 MAX_CONSECUTIVE_FAILS）會讓項目在冷卻機制救回它之前就先被判定
+# 「重試次數用完」永久放棄，等於冷卻設計形同虛設。
+MAX_ITEM_RETRIES = 20
+# 同一台 endpoint 連續失敗幾次，就先讓它冷卻一陣子、不要繼續派工作給它
+# （不然一台暫時斷線的話，它的 worker 會一直領新項目、一直失敗，白白把項目
+# 從佇列吃掉又標成失敗，本來可以留給還活著的那幾台做）。**不是永久放棄**——
+# 冷卻時間到了會自動重新試。像 Cloudflare quick tunnel 這種偶爾自己斷線又
+# 自動重連（重連 backoff 最長約 64s）的情況，永久放棄反而會白白浪費一整台
+# 其實還活著的 GPU。
 MAX_CONSECUTIVE_FAILS = 3
+COOLDOWN_SECONDS = 90.0
 
 
 def plog(msg: str):
@@ -93,12 +104,15 @@ def check_endpoint(base: str, timeout: float = 5.0) -> bool:
 
 def worker(name: str, base: str, task_q: "queue.Queue[tuple[Path, int]]", template: dict, steps: int,
            stats: dict, stats_lock: threading.Lock, stop_flag: list,
-           dead_endpoints: set, dead_lock: threading.Lock):
+           endpoint_cooldown: dict, cooldown_lock: threading.Lock):
     consecutive_fails = 0
     while not stop_flag[0]:
-        with dead_lock:
-            if base in dead_endpoints:
-                return  # 這台已經被判定斷線，這條 worker 不再領新工作
+        with cooldown_lock:
+            cooldown_until = endpoint_cooldown.get(base, 0.0)
+        now = time.time()
+        if now < cooldown_until:
+            time.sleep(min(1.0, cooldown_until - now))
+            continue  # 還在冷卻，不領新工作，但一直有在檢查——冷卻時間到就自動恢復
         try:
             py, retry = task_q.get(timeout=0.5)
         except queue.Empty:
@@ -142,10 +156,11 @@ def worker(name: str, base: str, task_q: "queue.Queue[tuple[Path, int]]", templa
                      f"→ 已重試 {MAX_ITEM_RETRIES} 次都失敗，放棄這張 "
                      f"({done}/{total} · ok {ok} · fail {fail})")
             if consecutive_fails >= MAX_CONSECUTIVE_FAILS:
-                with dead_lock:
-                    dead_endpoints.add(base)
-                plog(f"[{name}] 連續失敗 {consecutive_fails} 次，判定 {base} 斷線／異常，"
-                     f"這台停止領新工作（還活著的 endpoint 繼續跑）")
+                with cooldown_lock:
+                    endpoint_cooldown[base] = time.time() + COOLDOWN_SECONDS
+                plog(f"[{name}] 連續失敗 {consecutive_fails} 次，{base} 先冷卻 {COOLDOWN_SECONDS:.0f}s "
+                     f"再重試（不是永久放棄——冷卻時間到就會自動再試）")
+                consecutive_fails = 0
         finally:
             task_q.task_done()
 
@@ -204,23 +219,24 @@ def main():
     stats = {"done": 0, "ok": 0, "fail": 0, "total": total}
     stats_lock = threading.Lock()
     stop_flag = [False]
-    dead_endpoints: set = set()
-    dead_lock = threading.Lock()
+    endpoint_cooldown: dict = {}
+    cooldown_lock = threading.Lock()
     threads = []
     for i, base in enumerate(live_endpoints):
         for slot in range(concurrency):
             name = f"worker{i}.{slot}({base})"
             t = threading.Thread(target=worker,
                                   args=(name, base, task_q, template, steps, stats, stats_lock,
-                                        stop_flag, dead_endpoints, dead_lock),
+                                        stop_flag, endpoint_cooldown, cooldown_lock),
                                   daemon=True)
             t.start()
             threads.append(t)
 
     # 用 task_q.join() 判斷「真的全部做完了」（含重試被放回去的項目）——不能只看
     # 佇列是否清空一次，失敗重試會讓佇列暫時空了又補回東西。背景 thread 等 join()
-    # 回來就設旗標，主迴圈定期醒來檢查有沒有「全部 endpoint 都斷線」這種要提早
-    # 中止的情況。
+    # 回來就設旗標。endpoint 冷卻是暫時的、不是永久放棄（見 worker() 註解），所以
+    # 這裡不會因為某些 endpoint 正在冷卻就提早中止——只在完全沒進度太久時提醒一下，
+    # 不強制停止（可能只是全部剛好都在冷卻，等一下就自己恢復）。
     done_event = threading.Event()
 
     def _joiner():
@@ -228,16 +244,23 @@ def main():
         done_event.set()
     threading.Thread(target=_joiner, daemon=True).start()
 
+    STALL_WARN_SECONDS = 600.0
+    last_progress = time.time()
+    last_done_seen = 0
     try:
         while not done_event.is_set():
-            done_event.wait(timeout=1.0)
-            with dead_lock:
-                all_dead = len(dead_endpoints) >= len(live_endpoints)
-            if all_dead and not done_event.is_set():
-                plog("所有 ComfyUI 端點都判定斷線／異常，中止（還沒做完的項目留在佇列，"
-                     "之後端點恢復後重跑這支程式會自動只補剩下的）。")
-                stop_flag[0] = True
-                break
+            done_event.wait(timeout=5.0)
+            with stats_lock:
+                done_now = stats["done"]
+            if done_now != last_done_seen:
+                last_done_seen = done_now
+                last_progress = time.time()
+            elif not done_event.is_set() and time.time() - last_progress > STALL_WARN_SECONDS:
+                with cooldown_lock:
+                    cooling = sum(1 for t_ in endpoint_cooldown.values() if t_ > time.time())
+                plog(f"提醒：已經 {STALL_WARN_SECONDS:.0f}s 沒有新完成的項目"
+                     f"（{cooling}/{len(live_endpoints)} 台目前冷卻中），仍在繼續嘗試、沒有中止。")
+                last_progress = time.time()  # 避免同一個停滯狀態一直重複印
     except KeyboardInterrupt:
         plog("收到中止：在途的生成會跑完，還沒領到的項目不會再送出去...")
         stop_flag[0] = True
