@@ -37,7 +37,7 @@ Content-Type: application/json
 |------|------|
 | `folder` | 只從這個資料夾抽（不給＝跨全部資料夾） |
 | `rarity` | 只抽這個稀有度：`common`/`rare`/`special`/`legendary`（不給＝預設池：有圖且未標稀有度） |
-| `loras` | **不給這個欄位＝套伺服器端的預設畫風 LoRA**（目前是 `antechinusStyle_illusXL_Incrs_v1`）。想指定別的：`[{"folder": "style", "file": "foo.safetensors", "strength": 0.8}]`，最多兩個。想完全不套 LoRA：明確傳 `"loras": []` |
+| `loras` | **不給這個欄位＝套伺服器端的預設畫風 LoRA**（目前是 `LeiHuoJian artstyle IL`）。想指定別的：`[{"folder": "style", "file": "foo.safetensors", "strength": 0.8}]`，最多兩個。想完全不套 LoRA：明確傳 `"loras": []` |
 | `trigger` | 額外觸發詞 |
 | `seed` | 給了就是固定亂數種子，同樣的 seed+n+folder+rarity 會抽到同一批 |
 | `client` | 自訂識別字串，預設 `"agent"` |
