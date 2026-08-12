@@ -351,7 +351,7 @@ Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188
 | （上游原始檔） | 整份 [ComfyUI-Lora-Manager](https://github.com/willmiao/ComfyUI-Lora-Manager) 原始碼，vendor 進來（無 `.git`，用 flux2klein 自己的版控） |
 | `VENDORED.md` | 來源 commit、GPLv3 授權提醒、對照上游改了什麼（只動「送到 workflow」那條路） |
 | `start_lora_manager.bat` | 啟動腳本（flux2klein 自己加的，不是上游帶的） |
-| `write_settings.py` | 每次啟動前把 `settings.json` 的 `loras` 路徑同步成 `LORA_ROOT` 環境變數（flux2klein 自己加的） |
+| `write_settings.py` | 每次啟動前把 `settings.json` 的 `loras`／`checkpoints` 路徑同步成 `LORA_ROOT`／`CHECKPOINT_ROOT` 環境變數（flux2klein 自己加的） |
 | `settings.json` | 本機設定（已 gitignore，由 `write_settings.py` 每次啟動自動產生／更新） |
 
 ### `voice-assistant/`（語音助理／LiveTalking 數字人）
