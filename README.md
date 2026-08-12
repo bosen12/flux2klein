@@ -239,6 +239,17 @@ Windows 雙擊即可（會自動啟動 Groq 多 key 代理）：
 
 改名會**連同旁邊的預覽圖 `.webp`／`.png` 一起改名**，並把該詞庫的旗標／收藏記錄遷到新檔名；重新標記會**替換**既有前綴而非疊加。
 
+### 給外部 AI agent 用的抽卡 API
+
+暗房本身沒有「抽卡」這個 API——瀏覽器裡的抽卡是前端自己從 `/api/libs` 的清單隨機挑幾筆再送生成。`darkroom/agent_draw.py` 是給**外部 AI agent**用的等價功能：
+
+- **能跑 shell/python 的 agent**：直接 `python darkroom/agent_draw.py --n 8`，一次做完抽卡、送生成、等完成、把結果存到 `darkroom/agent_draws/`。
+- **只能打 HTTP API（function calling）的 agent**：新增的 `POST /api/agent-draw` 端點把「隨機挑選」搬到伺服器端做，agent 只需要送一個小請求（`{"n": 8}`）換一個小回應（幾個 id），不用把 27000+ 筆詞庫的完整清單塞進自己的 context 才能挑。完整的三步驟呼叫順序（`/api/agent-draw` → 輪詢 `/api/gen-status` → `/api/gen-result` 取圖）與給 agent 的指令範例見 [darkroom/AGENT_DRAW.md](darkroom/AGENT_DRAW.md)。
+
+兩條路徑都預設套用同一顆畫風 LoRA（見 `preview_ui.py` 的 `AGENT_DRAW_DEFAULT_LORAS`，改完要重啟才生效），想不套 LoRA 就明確傳 `"loras": []`（CLI 是 `--no-lora`）。
+
+⚠️ `preview_ui.py` 沒有任何身份驗證、預設監聽 `0.0.0.0`——agent 要跟暗房在同一台機器用，不要把這個埠對外網開放。
+
 ---
 
 ## LoRA Manager（完整的 LoRA 瀏覽／標記／下載工具）

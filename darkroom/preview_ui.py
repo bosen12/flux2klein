@@ -302,6 +302,12 @@ LORA_ROOT = Path(os.environ.get(
     r"E:\Comfyui\loras",
 ))
 LORA_FOLDERS = ["style", "Character", "HENTAI", "illus"]
+# /api/agent-draw 沒帶 loras 欄位時套用的預設 LoRA——給外部 agent 用，讓它不用每次
+# 抽卡都要知道確切的 LoRA 檔名。想抽「不套 LoRA」要明確傳 `"loras": []`——不給
+# loras 這個欄位才會落到這個預設值。
+AGENT_DRAW_DEFAULT_LORAS = [
+    {"folder": "style", "file": "ATRex_style-12V2Rev.safetensors", "strength": 0.8},
+]
 LORA_PREVIEW_EXTS = (".preview.png", ".preview.jpeg", ".preview.jpg", ".preview.webp",
                      ".preview.mp4", ".preview.webm",
                      ".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm")
@@ -1736,6 +1742,45 @@ class Handler(BaseHTTPRequestHandler):
                 first_desc = "、".join(f"{n}@{s}" for n, s in jobs[0]["loras"]) or "(無)"
                 sample = first_desc if len(jobs) == 1 else f"{first_desc}（等 {len(jobs)} 筆，各自可能不同）"
                 plog(f"[genmode] 起 {len(items)} 張 · lora={sample}")
+                self._send_json({"ok": True, "items": items})
+                return
+            if u.path == "/api/agent-draw":
+                # 給只能打 HTTP API（function calling）、不能看整份 /api/libs 的外部 agent
+                # 用的「抽卡」端點——把隨機挑選這一步搬進伺服器端做，agent 只需要送一個小
+                # 請求、收一個小回應，不用把 27000+ 筆詞庫塞進自己的 context 才能挑。
+                # 語意等同 darkroom.js 的 tarotPool() + drawTarot()：從「有圖、未標稀有度」
+                # 的池子（或指定 folder/rarity）隨機不重複抽 n 張，直接送生成。
+                try:
+                    n = int(data.get("n") or 8)
+                except (TypeError, ValueError):
+                    n = 8
+                n = max(1, min(n, 32))   # 上限只是防呆（避免打錯字打成幾千張），不是使用限制——
+                                          # 每張都要真的排隊生成，n 隨便講都行，但別超過這個
+                folder = data.get("folder") or None
+                rarity = data.get("rarity") or None
+                pool = scan_libraries()
+                if folder is not None:
+                    pool = [x for x in pool if (x.get("folder") or "(根目錄)") == folder]
+                if rarity is not None:
+                    pool = [x for x in pool if x.get("rarity") == rarity]
+                else:
+                    pool = [x for x in pool if x.get("has_image") and not x.get("rarity")]
+                if not pool:
+                    self._send_json({"error": "候選池是空的（folder/rarity 篩選太窄，或詞庫還沒生過圖）"}, 400)
+                    return
+                seed = data.get("seed")
+                rng = random.Random(seed) if seed is not None else random
+                picks = rng.sample(pool, k=min(n, len(pool)))
+                # 沒帶 loras 這個欄位＝用預設畫風 LoRA；帶了（就算是空陣列）＝照 agent 說的走，
+                # 這樣 agent 想抽「不套 LoRA」時傳 "loras": [] 才有辦法明確表達。
+                loras_in = data["loras"] if "loras" in data else AGENT_DRAW_DEFAULT_LORAS
+                loras = _convert_loras(loras_in)
+                trigger = (data.get("trigger") or "").strip()
+                jobs = [{"rel": p["rel"], "loras": loras, "trigger": trigger} for p in picks]
+                client = (data.get("client") or "agent")[:64]
+                items = start_gen(jobs, client)
+                lora_desc = "、".join(f"{n_}@{s}" for n_, s in loras) or "(無)"
+                plog(f"[agent-draw] 抽 {len(items)} 張 · folder={folder or '(全部)'} · rarity={rarity or '(預設池)'} · lora={lora_desc}")
                 self._send_json({"ok": True, "items": items})
                 return
             if u.path == "/api/gen-cancel":

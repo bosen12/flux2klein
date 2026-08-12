@@ -45,3 +45,6 @@ favorites.json
 
 # 依 dataset 分檔的側檔 metadata（旗標／收藏／稀有度），個人判斷不進版控
 .darkroom_meta/
+
+# agent_draw.py 的預設輸出資料夾——生成結果，不是原始碼
+darkroom/agent_draws/
