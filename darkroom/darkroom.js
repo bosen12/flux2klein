@@ -3675,7 +3675,13 @@ function updateIntroChunks() {
         // 列輪到它時還是會照樣 fetch＋decode，白白佔用全域載入節奏跟伺服
         // 器縮圖產生的併發額度（server 端只有 2 個併發生成名額），排擠真
         // 正看得到的卡片，這是「有時會卡」的另一個成因。
-        entry.forEach(c => { c.cancelled = true; c.el.style.opacity = '0'; setTimeout(() => c.el.remove(), 560); });
+        entry.forEach(c => {
+          c.cancelled = true;
+          // 淡出要走過渡，所以先把 .fading 加回來（進場結束時被拿掉了，見 updateIntroDepthFade）
+          c.el.classList.add('fading');
+          c.el.style.opacity = '0';
+          setTimeout(() => c.el.remove(), 560);
+        });
         introChunks.delete(key);
       }, fadeDelay);
     });
@@ -3709,7 +3715,7 @@ function updateIntroChunks() {
     const cardPx = isMobile() ? 100 : 130;
     const entry = genChunkCards(cx, cy, cz).map(c => {
       const it = introPool[Math.floor(c.pickSeed * introPool.length) % introPool.length];
-      const card = document.createElement('div'); card.className = 'intro-canvas-card';
+      const card = document.createElement('div'); card.className = 'intro-canvas-card fading';
       card.style.width = cardPx + 'px'; card.style.margin = `-${cardPx / 2}px 0 0 -${cardPx / 2}px`;
       card.style.transform = `translate3d(${c.x.toFixed(0)}px, ${c.y.toFixed(0)}px, ${c.z.toFixed(0)}px)`;
       card.style.opacity = '0';
@@ -3725,7 +3731,7 @@ function updateIntroChunks() {
       card.append(img, name);
       grid.appendChild(card);
       // blur：目前套用的低通半徑，用來判斷「跨級距才寫 style」（見 updateIntroDepthFade）
-      const rec = { el: card, x: c.x, y: c.y, z: c.z, cancelled: false, revealAt, blur: 0 };
+      const rec = { el: card, x: c.x, y: c.y, z: c.z, cancelled: false, revealAt, blur: 0, settled: false };
       // introScheduleLoad 是全域的排隊時鐘（見上方定義），不是每次
       // updateIntroChunks() 各自從 0 開始算——使用者回報「有時會卡」，原本
       // loadIdx 只在單次呼叫內錯開，連續好幾次呼叫（例如快速拖曳連續跨過
@@ -3848,6 +3854,12 @@ function updateIntroDepthFade() {
       : Math.max(0, (dist - INTRO_FADE_CLOSE_END) / (INTRO_FADE_CLOSE_START - INTRO_FADE_CLOSE_END));
     const fade = Math.min(farFade, closeFade);
     rec.el.style.opacity = (fade * fade).toFixed(2);
+    // 進場淡入跑完就拿掉 .fading：之後每一幀的景深透明度是直接寫值，不再每幀
+    // 取消/重啟一個 0.5 秒的過渡（見 darkroom.css .intro-canvas-card.fading）。
+    if (!rec.settled && now >= rec.revealAt + 520) {
+      rec.settled = true;
+      rec.el.classList.remove('fading');
+    }
     // 低通濾波，補上 GPU 縮小取樣缺少的 mipmap（見上方 introBlurFor 的說明）。
     // 只在跨過 0.25px 級距時才寫 style，不是每幀都寫。
     const blur = introBlurFor(rec.z + introCanvasPan.z);

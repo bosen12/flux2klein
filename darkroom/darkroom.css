@@ -1377,7 +1377,14 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
   /* 模糊半徑刻意壓低（20px→8px）——box-shadow 的模糊是每個元素各自的繪製
      成本，這裡同時可能有上百個卡片存在，模糊半徑越大越吃繪製/合成效能。 */
   box-shadow: 0 4px 8px rgba(0,0,0,.4); pointer-events: none;
-  backface-visibility: hidden; transition: opacity .5s var(--ease-out); }
+  backface-visibility: hidden; }
+/* 景深透明度是由 updateIntroDepthFade() **每一幀**寫進 style 的，而且它本來就是一條
+   隨距離連續變化的平滑曲線——不需要任何 transition。原本這裡掛著
+   `transition: opacity .5s`，等於每一幀都在「取消上一個過渡、再開一個新的」，81 張卡
+   ×60fps ≈ 每秒重啟 4800 次合成動畫；主執行緒與合成器對「這一幀該顯示多少」偶爾對不
+   上，看起來就是整張卡忽明忽暗。過渡只有兩個地方真的需要：卡片剛出現的淡入、以及區塊
+   移除時的淡出——那兩段才加 .fading（見 darkroom.js）。 */
+.intro-canvas-card.fading { transition: opacity .5s var(--ease-out); }
 .intro-canvas-card img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block;
   background: var(--sunk); -webkit-user-drag: none; user-select: none;
   opacity: 0; transition: opacity .4s var(--ease-out); }
