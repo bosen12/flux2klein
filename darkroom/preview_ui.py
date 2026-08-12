@@ -90,6 +90,19 @@ def load_config() -> dict:
     return {}
 
 
+def _save_checkpoint_to_config(file: str) -> None:
+    """讀-改-寫 preview_config.json，只改 checkpoint 這個欄位，其餘既有欄位不動——
+    跟 agent_draw.py 寫入 loras 那次教訓一樣，不能整份覆蓋。"""
+    cfg = {}
+    if CONFIG_PATH.is_file():
+        try:
+            cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            cfg = {}
+    cfg["checkpoint"] = file
+    CONFIG_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def apply_special_dir(path_str: str):
     """把詞庫資料夾指向設定的位置（同時更新本模組與 gsp 的全域）。"""
     global SPECIAL_DIR
@@ -1754,6 +1767,20 @@ class Handler(BaseHTTPRequestHandler):
                 STATE["steps"] = s
                 plog(f"[steps] 生成步數設為 {s}")
                 self._send_json({"ok": True, "steps": s})
+                return
+            if u.path == "/api/checkpoint":
+                file = data.get("file") or ""
+                try:
+                    valid = {p.name for p in DARKROOM_CHECKPOINT_ROOT.glob("*.safetensors")}
+                except OSError:
+                    valid = set()
+                if file not in valid:
+                    self._send_json({"error": "不在允許的 checkpoint 清單裡"}, 400)
+                    return
+                STATE["checkpoint"] = file
+                _save_checkpoint_to_config(file)
+                plog(f"[checkpoint] 生圖模式底模設為 {file}")
+                self._send_json({"ok": True, "checkpoint": file})
                 return
             if u.path == "/api/gen":
                 # 生圖模式：對選中的詞庫套 LoRA 背景生成，結果進 _gen_results（不覆蓋詞庫預覽）。
