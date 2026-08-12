@@ -151,7 +151,12 @@ def draw_and_generate(n: int, *, base_url: str = DEFAULT_BASE_URL,
 
     final = wait_for_results([it["id"] for it in submitted], base_url=base_url, on_update=progress)
 
-    out_dir = Path(out_dir)
+    # 絕對路徑——這不是隨便的整潔習慣：Hermes 的 send_message 工具用 MEDIA:<路徑> 夾在
+    # 訊息文字裡投遞附件，那條路徑必須是絕對路徑（gateway/platforms/base.py 的
+    # validate_media_delivery_path 對相對路徑直接回 None，不會報錯、就是靜默不投遞）。
+    # out_dir 預設是 "agent_draws" 這種相對路徑，agent 呼叫這支腳本時的工作目錄不一定
+    # 是這裡，用 .resolve() 在寫檔當下就固定成絕對路徑，之後不管誰在哪裡讀這個值都對。
+    out_dir = Path(out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     results = []
     for it in submitted:
@@ -191,6 +196,9 @@ def main() -> int:
     ap.add_argument("--trigger", default="", help="額外觸發詞，附加在詞庫本身的提示詞後面")
     ap.add_argument("--out", default="agent_draws", help="輸出資料夾（預設 ./agent_draws）")
     ap.add_argument("--seed", type=int, default=None, help="抽卡隨機種子，給了就可重現同一批")
+    ap.add_argument("--json", action="store_true",
+                     help="stdout 改印一個 JSON 物件（{\"ok\":[...], \"fail\":[...]}），"
+                          "給會解析工具輸出的呼叫端（例如 LLM agent）用，比逐行文字穩")
     args = ap.parse_args()
 
     loras = [_parse_lora_arg(s) for s in args.lora] or None
@@ -200,16 +208,29 @@ def main() -> int:
             loras=loras, no_lora=args.no_lora, trigger=args.trigger, out_dir=args.out, seed=args.seed,
         )
     except DarkroomError as e:
-        print(f"錯誤：{e}", file=sys.stderr)
+        if args.json:
+            print(json.dumps({"error": str(e)}, ensure_ascii=False))
+        else:
+            print(f"錯誤：{e}", file=sys.stderr)
         return 1
 
     ok = [r for r in results if r["status"] == "done"]
     fail = [r for r in results if r["status"] != "done"]
-    for r in ok:
-        print(f"{r['out_path']}\t{r['rel']}")
-    for r in fail:
-        print(f"# 失敗：{r['rel']}（{r.get('status')}：{r.get('error', '')}）", file=sys.stderr)
-    print(f"完成 {len(ok)}/{len(results)}", file=sys.stderr)
+
+    if args.json:
+        # 只留呼叫端真正用得到的欄位：done 的要 out_path（絕對路徑，可直接餵給
+        # Hermes 的 MEDIA: 標籤）+ name（拿來當圖片說明文字）；失敗的只留原因。
+        print(json.dumps({
+            "ok": [{"name": r["name"], "rel": r["rel"], "out_path": r["out_path"]} for r in ok],
+            "fail": [{"name": r["name"], "rel": r["rel"], "status": r["status"], "error": r.get("error", "")}
+                     for r in fail],
+        }, ensure_ascii=False))
+    else:
+        for r in ok:
+            print(f"{r['out_path']}\t{r['rel']}")
+        for r in fail:
+            print(f"# 失敗：{r['rel']}（{r.get('status')}：{r.get('error', '')}）", file=sys.stderr)
+        print(f"完成 {len(ok)}/{len(results)}", file=sys.stderr)
     return 0 if not fail else 2
 
 
