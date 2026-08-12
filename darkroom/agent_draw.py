@@ -77,9 +77,17 @@ class DarkroomError(RuntimeError):
     pass
 
 
+# 這個專案已經在 generate_special_previews.py 踩過一次：urllib 預設的 User-Agent
+# （"Python-urllib/3.x"）會被某些反向代理／CDN 當爬蟲直接擋掉（RunPod 的代理是
+# 403，Discord API 前面的 Cloudflare是 403 + "error code: 1010"，症狀不同但根因
+# 一樣）。本機直連不會踩到——只有經過代理層才會，第一次遇到很難聯想到是 UA 的問題。
+# 統一在這裡加，之後這支腳本裡所有對外請求都經過這個 header。
+_USER_AGENT = "darkroom-agent-draw/1.0 (+https://github.com/bosen12/flux2klein)"
+
+
 def _http_json(method: str, url: str, payload: dict | None = None, timeout: float = 30.0) -> dict:
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
-    req = urllib.request.Request(url, data=data, method=method)
+    req = urllib.request.Request(url, data=data, method=method, headers={"User-Agent": _USER_AGENT})
     if data is not None:
         req.add_header("Content-Type", "application/json")
     try:
@@ -90,7 +98,8 @@ def _http_json(method: str, url: str, payload: dict | None = None, timeout: floa
 
 
 def _http_bytes(url: str, timeout: float = 30.0) -> bytes:
-    with urllib.request.urlopen(url, timeout=timeout) as resp:
+    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read()
 
 
@@ -285,10 +294,15 @@ def _resolve_dm_channel(bot_token: str, user_id: str) -> str:
         f"{DISCORD_API}/users/@me/channels",
         data=json.dumps({"recipient_id": user_id}).encode("utf-8"),
         method="POST",
-        headers={"Authorization": f"Bot {bot_token}", "Content-Type": "application/json"},
+        headers={"Authorization": f"Bot {bot_token}", "Content-Type": "application/json",
+                 "User-Agent": _USER_AGENT},
     )
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        return json.loads(resp.read().decode("utf-8"))["id"]
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode("utf-8"))["id"]
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")
+        raise DarkroomError(f"開 DM 頻道失敗，Discord 回傳 {e.code}：{detail}") from e
 
 
 def send_discord_embeds_dm(embeds_with_files: list[tuple[dict, str, bytes]], *,
@@ -309,7 +323,8 @@ def send_discord_embeds_dm(embeds_with_files: list[tuple[dict, str, bytes]], *,
         req = urllib.request.Request(
             f"{DISCORD_API}/channels/{channel_id}/messages",
             data=body, method="POST",
-            headers={"Authorization": f"Bot {bot_token}", "Content-Type": content_type},
+            headers={"Authorization": f"Bot {bot_token}", "Content-Type": content_type,
+                     "User-Agent": _USER_AGENT},
         )
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
