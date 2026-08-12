@@ -243,8 +243,8 @@ Windows 雙擊即可（會自動啟動 Groq 多 key 代理）：
 
 暗房本身沒有「抽卡」這個 API——瀏覽器裡的抽卡是前端自己從 `/api/libs` 的清單隨機挑幾筆再送生成。`darkroom/agent_draw.py` 是給**外部 AI agent**用的等價功能：
 
-- **能跑 shell/python 的 agent**：直接 `python darkroom/agent_draw.py --n 8`，一次做完抽卡、送生成、等完成、把結果存到 `darkroom/agent_draws/`。
-- **只能打 HTTP API（function calling）的 agent**：新增的 `POST /api/agent-draw` 端點把「隨機挑選」搬到伺服器端做，agent 只需要送一個小請求（`{"n": 8}`）換一個小回應（幾個 id），不用把 27000+ 筆詞庫的完整清單塞進自己的 context 才能挑。完整的三步驟呼叫順序（`/api/agent-draw` → 輪詢 `/api/gen-status` → `/api/gen-result` 取圖）與給 agent 的指令範例見 [darkroom/AGENT_DRAW.md](darkroom/AGENT_DRAW.md)。
+- **能跑 shell/python 的 agent**（例如 [Hermes](https://github.com/nousresearch/hermes-agent)）：直接 `python darkroom/agent_draw.py --n 8`，一次做完抽卡、送生成、等完成、把結果存到 `darkroom/agent_draws/`；加 `--json` 讓 stdout 印結構化結果方便 agent 解析。**Hermes 接在 Discord 上要另外注意**：它送圖片用的是夾在訊息文字裡的 `MEDIA:<絕對路徑>` 標籤，不是圖片網址——完整說明跟可以直接貼給它的指令見 [darkroom/AGENT_DRAW.md](darkroom/AGENT_DRAW.md) 的「Hermes agent 專用」一節。
+- **只能打 HTTP API（function calling）的 agent**：新增的 `POST /api/agent-draw` 端點把「隨機挑選」搬到伺服器端做，agent 只需要送一個小請求（`{"n": 8}`）換一個小回應（幾個 id），不用把 27000+ 筆詞庫的完整清單塞進自己的 context 才能挑。完整的三步驟呼叫順序（`/api/agent-draw` → 輪詢 `/api/gen-status` → `/api/gen-result` 取圖）見 [darkroom/AGENT_DRAW.md](darkroom/AGENT_DRAW.md)。
 
 兩條路徑都預設套用同一顆畫風 LoRA（見 `preview_ui.py` 的 `AGENT_DRAW_DEFAULT_LORAS`，改完要重啟才生效），想不套 LoRA 就明確傳 `"loras": []`（CLI 是 `--no-lora`）。
 
