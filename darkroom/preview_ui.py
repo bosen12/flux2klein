@@ -1050,7 +1050,13 @@ def apply_checkpoint_override(wf: dict) -> None:
         return
     ckpt_node = gsp.find_node(wf, "CheckpointLoaderSimple")
     if ckpt_node:
-        wf[ckpt_node]["inputs"]["ckpt_name"] = STATE["checkpoint"]
+        # ComfyUI 認的 ckpt_name 是「資料夾\檔名」的相對路徑，不是純檔名——實測用
+        # object_info 查過，bare 檔名根本不在 ComfyUI 回報的合法清單裡，直接送整批
+        # 400 Bad Request（跟 _convert_loras 處理 LoRA 子資料夾同一類坑）。
+        # STATE["checkpoint"] 存的是純檔名（跟 DARKROOM_CHECKPOINT_ROOT.glob() 掃出來
+        # 的一致，GET /api/checkpoints、POST /api/checkpoint 的驗證都用這個），只有
+        # 這裡、真正要送進 ComfyUI 的最後一刻才組成它要的相對路徑。
+        wf[ckpt_node]["inputs"]["ckpt_name"] = f"{DARKROOM_CHECKPOINT_ROOT.name}\\{STATE['checkpoint']}"
 
 
 def inject_lora(wf: dict, lora_name: str, strength: float):
