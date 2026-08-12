@@ -1372,11 +1372,32 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 .intro-canvas:active { cursor: grabbing; }
 .intro-canvas-grid { position: absolute; top: 50%; left: 50%; width: 0; height: 0;
   transform-style: preserve-3d; will-change: transform; }
-.intro-canvas-card { position: absolute; top: 0; left: 0; width: 130px; margin: -65px 0 0 -65px;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+/* ── 超取樣（supersampling）───────────────────────────────────
+   3D 透視下卡片幾乎不可能落在整數像素上（螢幕位置 =（世界座標＋位移）× 縮放，縮放
+   不是 1 就一定有小數）。實測連續 8 幀、6 張卡，**0/8 幀對齊整數像素**，而且小數部分
+   每幀跳動（某張卡是 .84→.27→.78→.30 這種接近兩幀一循環的來回）。合成器因此每一幀
+   都要用雙線性取樣把卡片貼圖重畫在不同的次像素位置：1px 邊框的亮度在相鄰兩欄像素之
+   間來回分配＝邊緣抖，文字的反鋸齒每幀重新分配＝文字閃，整塊平均亮度跟著變＝忽明忽暗。
+
+   次像素取樣消不掉，但可以**給它更多資料**：把卡片用 --ss 倍的尺寸繪製，再用
+   transform 的 scale(1/--ss) 縮回原本大小。合成器拿到的貼圖解析度變成 --ss 倍，
+   每個螢幕像素由 --ss² 個貼圖像素平均而來，次像素位移造成的變化因此被大幅平均掉
+   ——就是遊戲裡的超取樣抗鋸齒（SSAA）。畫面設計完全不變，代價是貼圖記憶體變 --ss² 倍。
+
+   **所有內部尺寸都必須乘以 --ss**（字級、內距、圓角、邊框、陰影），否則縮回去之後
+   會比原本小。集中用 calc(… * var(--ss)) 表達，改倍率只要改一個地方。
+   JS 端（darkroom.js updateIntroChunks）要配合：width/margin 用 cardPx * SS，
+   transform 尾端補 scale(1/SS)，縮圖也要跟著要 SS 倍解析度，不然照片本身沒有
+   足夠像素可以超取樣。 */
+.intro-canvas-card { --ss: 2;
+  position: absolute; top: 0; left: 0;
+  width: calc(130px * var(--ss)); margin: calc(-65px * var(--ss)) 0 0 calc(-65px * var(--ss));
+  background: var(--panel);
+  border: calc(1px * var(--ss)) solid var(--line);
+  border-radius: calc(10px * var(--ss)); overflow: hidden;
   /* 模糊半徑刻意壓低（20px→8px）——box-shadow 的模糊是每個元素各自的繪製
      成本，這裡同時可能有上百個卡片存在，模糊半徑越大越吃繪製/合成效能。 */
-  box-shadow: 0 4px 8px rgba(0,0,0,.4); pointer-events: none;
+  box-shadow: 0 calc(4px * var(--ss)) calc(8px * var(--ss)) rgba(0,0,0,.4); pointer-events: none;
   backface-visibility: hidden; }
 /* 景深透明度是由 updateIntroDepthFade() **每一幀**寫進 style 的，而且它本來就是一條
    隨距離連續變化的平滑曲線——不需要任何 transition。原本這裡掛著
@@ -1399,11 +1420,14 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
    任何文字/圖片選取，整片關掉比逐一補 pointer-events 更不會漏。 */
 .intro-modal { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .intro-modal input, .intro-modal textarea { user-select: text; -webkit-user-select: text; }
-.intro-canvas-name { padding: 6px 9px 7px; font-size: 11px; font-weight: 600; color: var(--ink);
+/* 字級與內距同樣要乘 --ss（見 .intro-canvas-card 的超取樣說明）——文字正是次像素
+   重新取樣最容易看出來的地方，這一步做對了才有意義。 */
+.intro-canvas-name { padding: calc(6px * var(--ss)) calc(9px * var(--ss)) calc(7px * var(--ss));
+  font-size: calc(11px * var(--ss)); font-weight: 600; color: var(--ink);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 640px) {
-  .intro-canvas-card { width: 100px; margin: -50px 0 0 -50px; }
-  .intro-canvas-name { font-size: 10px; padding: 5px 7px 6px; }
+  .intro-canvas-card { width: calc(100px * var(--ss)); margin: calc(-50px * var(--ss)) 0 0 calc(-50px * var(--ss)); }
+  .intro-canvas-name { font-size: calc(10px * var(--ss)); padding: calc(5px * var(--ss)) calc(7px * var(--ss)) calc(6px * var(--ss)); }
 }
 
 /* 樣式切換鈕：右上角一顆 ⚙，點開兩個選項（跑馬燈／無限畫布）。 */

@@ -3581,7 +3581,7 @@ function prefetchAheadChunks(cx0, cy0, cz0) {
           const pre = new Image();
           pre.decoding = 'async'; pre.fetchPriority = 'low';
           // 必須跟真正要用的網址完全一致（含 &w=），不然暖到的是另一份快取、白暖
-          pre.src = thumbURL(it, isMobile() ? 100 : 130);
+          pre.src = thumbURL(it, (isMobile() ? 100 : 130) * INTRO_SUPERSAMPLE);
         });
       }
     }
@@ -3713,11 +3713,18 @@ function updateIntroChunks() {
     // 那招。
     const revealAt = performance.now() + Math.min(16 + layerIdx * INTRO_LAYER_STEP_MS, 400);
     const cardPx = isMobile() ? 100 : 130;
+    // 超取樣倍率，必須跟 darkroom.css .intro-canvas-card 的 --ss 一致（見那裡的說明）：
+    // 卡片用 SS 倍尺寸繪製、再由 transform 的 scale(1/SS) 縮回來，合成器因此拿到
+    // SS 倍解析度的貼圖，次像素位移造成的抖動被平均掉。
+    const SS = INTRO_SUPERSAMPLE;
+    const boxPx = cardPx * SS;
     const entry = genChunkCards(cx, cy, cz).map(c => {
       const it = introPool[Math.floor(c.pickSeed * introPool.length) % introPool.length];
       const card = document.createElement('div'); card.className = 'intro-canvas-card fading';
-      card.style.width = cardPx + 'px'; card.style.margin = `-${cardPx / 2}px 0 0 -${cardPx / 2}px`;
-      card.style.transform = `translate3d(${c.x.toFixed(0)}px, ${c.y.toFixed(0)}px, ${c.z.toFixed(0)}px)`;
+      card.style.width = boxPx + 'px'; card.style.margin = `-${boxPx / 2}px 0 0 -${boxPx / 2}px`;
+      // scale 寫在最後＝先在元素自己的座標系縮小（繞中心，跟 margin 的置中錨點重合），
+      // 再做 3D 位移，視覺結果與原本 130px 的卡片完全相同。
+      card.style.transform = `translate3d(${c.x.toFixed(0)}px, ${c.y.toFixed(0)}px, ${c.z.toFixed(0)}px) scale(${1 / SS})`;
       card.style.opacity = '0';
       const img = document.createElement('img');
       // fetchPriority 這裡故意用 high，跟馬燈樣式的縮圖（那邊是背景裝飾，
@@ -3725,7 +3732,7 @@ function updateIntroChunks() {
       // 唯一內容，值得優先搶頻寬，讓照片更快貼上去。
       img.loading = 'lazy'; img.decoding = 'async'; img.fetchPriority = 'high'; img.alt = '';
       img.draggable = false;
-      img.width = cardPx; img.height = cardPx;
+      img.width = boxPx; img.height = boxPx;
       const name = document.createElement('div'); name.className = 'intro-canvas-name';
       name.textContent = it.display_name || it.name;
       card.append(img, name);
@@ -3737,11 +3744,9 @@ function updateIntroChunks() {
       // loadIdx 只在單次呼叫內錯開，連續好幾次呼叫（例如快速拖曳連續跨過
       // 好幾個區塊邊界）各自的錯開會疊在同一個時間點，還是會擠爆；改成共
       // 用佇列後，不管哪一批發出的請求都照同一個全域節奏排隊，不會疊加。
-      // 依卡片實際顯示尺寸要縮圖（見 thumbURL）。130px @1x 會落在 192 這一級：
-      // 卡片會隨透視在 41～294px 之間變動，單一來源尺寸不可能對所有深度都剛好，
-      // 192 是折衷——最近的卡片放大 1.5 倍（略軟但不會閃），中距離接近 1:1，
-      // 最遠那段殘留的縮小由景深低通（introBlurFor）收尾。
-      const src = thumbURL(it, cardPx);
+      // 縮圖也要跟著要 SS 倍解析度——卡片實際是用 boxPx 繪製的，只送 cardPx 那麼大的
+      // 圖等於照片本身沒有足夠像素可以超取樣，文字邊框會變好、照片卻不會。
+      const src = thumbURL(it, boxPx);
       const startLoad = () => {
         if (rec.cancelled) return;   // 排隊等待期間卡片已經被移除，不用再發這個請求
         let retried = false;
@@ -3822,6 +3827,9 @@ const INTRO_FADE_CLOSE_END = 60, INTRO_FADE_CLOSE_START = 220;
 //      不是每幀都寫（每幀都寫 filter 會逼瀏覽器不斷重繪）；
 //   ③ 會被模糊到的卡本來就很小（50～80px），模糊面積小、成本低。
 // 附帶好處：遠處變朦朧本來就是真實的大氣透視，景深感比原本只靠透明度更好。
+// 超取樣倍率。**必須跟 darkroom.css .intro-canvas-card 的 --ss 一致**，兩邊都改才有效。
+// 2 = 貼圖解析度兩倍、記憶體四倍（81 張卡約 5MB → 22MB）。
+const INTRO_SUPERSAMPLE = 2;
 const INTRO_PERSPECTIVE = 1400;    // = darkroom.css .intro-canvas 的 perspective，兩邊要一致
 // 門檻取 1.25：走樣大約從縮小 1.3 倍開始看得出來。斜率 0.75 是「理論值的六成」
 // ——理論上縮小 m 倍要用 σ≈m/2 才完全不走樣（m=2.57 時 1.28px），但那樣遠處會糊
@@ -3862,7 +3870,9 @@ function updateIntroDepthFade() {
     }
     // 低通濾波，補上 GPU 縮小取樣缺少的 mipmap（見上方 introBlurFor 的說明）。
     // 只在跨過 0.25px 級距時才寫 style，不是每幀都寫。
-    const blur = introBlurFor(rec.z + introCanvasPan.z);
+    // × SS：blur() 作用在元素自己的座標系，而超取樣之後那個座標系是 SS 倍密的
+    // （1 個元素像素 = 1/SS 個螢幕像素），不乘回去等於低通強度只剩一半。
+    const blur = introBlurFor(rec.z + introCanvasPan.z) * INTRO_SUPERSAMPLE;
     if (blur !== rec.blur) {
       rec.blur = blur;
       rec.el.style.filter = blur ? `blur(${blur}px)` : '';
@@ -3909,7 +3919,7 @@ function renderIntroCanvas() {
       if (gen !== introPrefetchGen) return;
       const pre = new Image();
       pre.decoding = 'async'; pre.fetchPriority = 'low';
-      pre.src = thumbURL(it, isMobile() ? 100 : 130);   // 同上：要跟卡片真正要的網址一致
+      pre.src = thumbURL(it, (isMobile() ? 100 : 130) * INTRO_SUPERSAMPLE);   // 同上：要跟卡片真正要的網址一致
     }, i * 70);
   });
   applyIntroCanvasTransform();
