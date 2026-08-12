@@ -11,6 +11,36 @@ let VISIBLE = [];           // 目前 grid 呈現的清單(供 modal 前後導�
 const pollers = new Set();
 const REDUCE_MOTION = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const $ = id => document.getElementById(id);
+
+// ── ALL 的索引層 ───────────────────────────────────────────────
+// 實測詞庫規模約 28000 筆，任何 `itemOf(rel)` 都是一次全庫線性掃描。
+// 最痛的是 restoreCard()——超大範圍（「全部」/跨資料夾搜尋）啟用卡片修剪後，每張卡片
+// 捲回視野都要查一次，等於在捲動的每一幀裡做 28000 次字串比較。改用 Map 查表。
+let BY_REL = new Map();
+const itemOf = rel => BY_REL.get(rel);
+// 資料夾統計（folderStats）快取：那是一次 28000 筆的分組 + 排序，而 buildRail() 在
+// 左欄搜尋的每一次按鍵都會呼叫。只有「ALL 換一份」或「有圖狀態改變」會讓它失真。
+let _folderStatsCache = null;
+function invalidateFolderStats() { _folderStatsCache = null; }
+// baseList() 的「範圍」快取：一次 render() 裡 updateStats()/buildRarityBar() 等會各算
+// 一次，搜尋時每次都是 28000 筆 filter。快取只涵蓋依 rel/name/folder（永不變動的欄位）
+// 決定的範圍篩選；has_image / rarity / flagged 這些會就地變動的欄位是在 currentList()
+// 才篩的，不進快取，所以標記／生成完成不會讓它失真。
+let _baseCache = null, _baseKey = '', _baseTagSet = null;
+function invalidateBaseList() { _baseCache = null; }
+
+function indexAll() {
+  BY_REL = new Map();
+  for (const x of ALL) {
+    BY_REL.set(x.rel, x);
+    // 搜尋用的小寫鍵先算好存著：baseList() 與跳轉搜尋都是每按一鍵掃全庫，現算
+    // toLowerCase() 等於每一鍵配置五萬多個暫時字串，光 GC 就足以讓輸入卡頓。
+    x._lname = x.name.toLowerCase();
+    x._lfolder = (x.folder || '').toLowerCase();
+  }
+  invalidateFolderStats();
+  invalidateBaseList();
+}
 // 滾動數字：見 darkroom.css .count-num（CSS counter 補間，這裡只需要設 --n）。
 const setCount = (el, value) => { if (el) el.style.setProperty('--n', String(value)); };
 
@@ -29,6 +59,7 @@ async function loadAll(force = false) {
   const r = await fetch('/api/libs' + (force ? '?force=1' : ''));
   const j = await r.json();
   ALL = j.items;
+  indexAll();
   const conn = $('conn');
   conn.classList.toggle('on', !!j.comfy);
   $('conn-text').textContent = j.comfy ? `ComfyUI 就緒 · steps ${j.steps}` : 'ComfyUI 未連線';
@@ -68,6 +99,9 @@ async function loadAll(force = false) {
 }
 
 function folderStats() {
+  // 快取的是「升冪那份」；RAIL_DESC 只影響回傳順序，不同方向切換不必重算。回傳前
+  // 複製一份再 reverse，避免呼叫端拿到的陣列跟快取是同一個物件而被就地改動。
+  if (_folderStatsCache) return RAIL_DESC ? _folderStatsCache.slice().reverse() : _folderStatsCache;
   const map = new Map();
   for (const x of ALL) {
     const f = x.folder || '(根目錄)';
@@ -84,8 +118,8 @@ function folderStats() {
     if (nb !== null) return 1;
     return a.name.localeCompare(b.name, 'zh-Hant', { numeric: true });
   });
-  if (RAIL_DESC) arr.reverse();
-  return arr;
+  _folderStatsCache = arr;
+  return RAIL_DESC ? arr.slice().reverse() : arr;
 }
 let RAIL_DESC = localStorage.getItem('yz-rail-desc') === '1';   // 資料夾排序方向（預設升冪）
 
@@ -156,10 +190,12 @@ function buildRail() {
 
 // 只套資料夾／搜尋範圍（不含 view 與稀有度篩選）——稀有度分布數就是算這個
 function baseList() {
+  const key = SEARCH + '\u0000' + CUR_FOLDER + '\u0000' + (ALL_FOLDERS ? '1' : '0');
+  if (_baseCache && _baseKey === key && _baseTagSet === TAG_MATCH_SET) return _baseCache;
   let list;
   if (SEARCH) {
     const q = SEARCH.toLowerCase();
-    list = ALL.filter(x => x.name.toLowerCase().includes(q) || (x.folder || '').toLowerCase().includes(q));
+    list = ALL.filter(x => x._lname.includes(q) || x._lfolder.includes(q));
   } else if (TAG_MATCH_SET) {
     list = ALL;   // 標籤搜尋跨資料夾，不受目前選的資料夾限制（跟名稱搜尋一樣）
   } else if (ALL_FOLDERS) {
@@ -168,6 +204,7 @@ function baseList() {
     list = ALL.filter(x => (x.folder || '(根目錄)') === CUR_FOLDER);
   }
   if (TAG_MATCH_SET) list = list.filter(x => TAG_MATCH_SET.has(x.rel));
+  _baseCache = list; _baseKey = key; _baseTagSet = TAG_MATCH_SET;
   return list;
 }
 
@@ -354,7 +391,7 @@ function pruneCard(card) {
 }
 function restoreCard(card) {
   if (!card.classList.contains('pruned')) return;
-  const it = ALL.find(x => x.rel === card.dataset.rel);
+  const it = itemOf(card.dataset.rel);
   if (!it) return;   // 極少數情況：修剪期間這筆資料被移除（例如重掃後消失），留空等下次 render() 清掉
   const thumb = card.querySelector('.thumb');
   if (thumb) { thumb.innerHTML = thumbInnerHTML(it); wireThumb(thumb, it); }
@@ -476,7 +513,7 @@ function cardOf(it) {
 // 標記/取消「不優質」：樂觀更新（先變色再送），失敗回退。狀態同步到 ALL、
 // 兩種介面（格線卡片、審核網格）與計數。
 async function toggleFlag(rel, force) {
-  const it = ALL.find(x => x.rel === rel);
+  const it = itemOf(rel);
   const next = (typeof force === 'boolean') ? force : !(it && it.flagged);
   if (it) it.flagged = next;
   applyFlagVisual(rel, next);
@@ -506,7 +543,7 @@ function applyFlagVisual(rel, flagged) {
 // 收藏／取消收藏：樂觀更新（先變色再送），失敗回退。點右上角星號直接切換，
 // 不需要進選取模式。
 async function toggleFav(rel, force) {
-  const it = ALL.find(x => x.rel === rel);
+  const it = itemOf(rel);
   const next = (typeof force === 'boolean') ? force : !(it && it.favorited);
   if (it) it.favorited = next;
   applyFavVisual(rel, next, true);          // 立刻反映＋播放收藏動畫
@@ -558,7 +595,7 @@ async function generate(rel) {
   });
   const j = await r.json();
   if (j.error) { alert(j.error); return; }
-  const it = ALL.find(x => x.rel === rel);
+  const it = itemOf(rel);
   if (it) it.job = { status: 'queued', message: '排隊中...' };
   const card = document.querySelector(`.card[data-rel="${cssAttr(rel)}"]`);
   if (card) updateStatusEl(card.querySelector('.status'), it.job);
@@ -572,7 +609,7 @@ async function pollStatus(rel) {
     while (true) {
       const r = await fetch('/api/status?rel=' + encodeURIComponent(rel));
       const job = await r.json();
-      const it = ALL.find(x => x.rel === rel);
+      const it = itemOf(rel);
       if (it) it.job = job;
       const card = document.querySelector(`.card[data-rel="${cssAttr(rel)}"]`);
       if (card) updateStatusEl(card.querySelector('.status'), job);
@@ -581,6 +618,7 @@ async function pollStatus(rel) {
       if (job.status === 'done' || job.status === 'error') {
         if (job.status === 'done') {
           if (it) { it.has_image = true; it.image_mtime = Math.floor(Date.now() / 1000); }
+          invalidateFolderStats();   // 「有圖」數變了，左欄的 have/total 與覆蓋率條要重算
           reloadThumb(rel); reloadModalImage(rel); buildRail();
         }
         break;
@@ -593,7 +631,7 @@ async function pollStatus(rel) {
 function reloadThumb(rel) {
   const card = document.querySelector(`.card[data-rel="${cssAttr(rel)}"]`);
   if (!card) return;
-  const it = ALL.find(x => x.rel === rel);
+  const it = itemOf(rel);
   if (!it) return;
   card.classList.remove('missing', 'pruned');   // pruned：見 pruneCard()，這裡重建了內容就不算修剪狀態了
   const thumb = card.querySelector('.thumb');
@@ -615,7 +653,7 @@ function dismissModal() {
 }
 
 function openModal(rel, resetNav = true) {
-  const item = ALL.find(x => x.rel === rel);
+  const item = itemOf(rel);
   if (!item) return;
   const inner = $('modal-inner');
   inner.dataset.rel = rel;
@@ -691,7 +729,7 @@ function galleryModalStep(dir) {
 // 守 REDUCE_MOTION 與 visibilityState（窗格隱藏 callback 不結算，CLAUDE.md 老坑）。
 function openModalFromThumb(rel, thumbImg) {
   MODAL_FROM_TAROT = false;                 // 格線縮圖開的大圖：關閉走 morph 縮回縮圖
-  const item = ALL.find(x => x.rel === rel);
+  const item = itemOf(rel);
   const canMorph = document.startViewTransition && !REDUCE_MOTION
     && document.visibilityState === 'visible' && item && item.has_image && thumbImg;
   if (!canMorph) { openModal(rel); return; }
@@ -850,21 +888,30 @@ $('tag-search-clear').onclick = () => {
 $('rescan').onclick = () => loadAll(true);
 $('menu-btn').onclick = () => $('rail').classList.toggle('open');
 // 卡片聚光：游標在縮圖上移動時更新 --mx/--my（委派在 grid 上，只有 hover 的縮圖會算）
-$('grid').addEventListener('pointermove', e => {
-  const thumb = e.target.closest('.thumb');
-  if (!thumb) return;
-  const r = thumb.getBoundingClientRect();
-  thumb.style.setProperty('--mx', (e.clientX - r.left) + 'px');
-  thumb.style.setProperty('--my', (e.clientY - r.top) + 'px');
-});
+//
+// 兩個聚光委派共用 spotlight()。原本每一次 pointermove 都「讀 getBoundingClientRect()
+// → 寫 style」，指標事件一秒可以來上百次，而每次寫完樣式再讀幾何就是一次強制同步版面
+// （layout thrashing）——在 28000 筆的卡片牆上這個 layout 一點都不便宜。改成：
+//   ① 只在 rAF 裡寫，一幀最多一次（螢幕本來也就更新這麼多次，多寫的都是丟掉的工）；
+//   ② 矩形量測快取在元素上，只有換到另一個元素才重新量。捲動中矩形會過期，但那只是
+//      柔光的位置差幾像素，捲完第一次移動就修正回來——不值得為它每幀重新 layout。
+let _spotEl = null, _spotRect = null, _spotX = 0, _spotY = 0, _spotRAF = 0;
+function spotFlush() {
+  _spotRAF = 0;
+  if (!_spotEl || !_spotRect) return;
+  _spotEl.style.setProperty('--mx', (_spotX - _spotRect.left) + 'px');
+  _spotEl.style.setProperty('--my', (_spotY - _spotRect.top) + 'px');
+}
+function spotlight(e, sel) {
+  const el = e.target.closest(sel);
+  if (!el) { _spotEl = null; _spotRect = null; return; }
+  if (el !== _spotEl) { _spotEl = el; _spotRect = el.getBoundingClientRect(); }
+  _spotX = e.clientX; _spotY = e.clientY;
+  if (!_spotRAF) _spotRAF = requestAnimationFrame(spotFlush);
+}
+$('grid').addEventListener('pointermove', e => spotlight(e, '.thumb'), { passive: true });
 // 圖庫卡同一招聚光（見 .gc-square::after）
-$('gallery-grid').addEventListener('pointermove', e => {
-  const sq = e.target.closest('.gc-square');
-  if (!sq) return;
-  const r = sq.getBoundingClientRect();
-  sq.style.setProperty('--mx', (e.clientX - r.left) + 'px');
-  sq.style.setProperty('--my', (e.clientY - r.top) + 'px');
-});
+$('gallery-grid').addEventListener('pointermove', e => spotlight(e, '.gc-square'), { passive: true });
 // 資料夾排序方向切換（升冪 ↑ / 降冪 ↓），記住選擇
 function updateRailSortLabel() {
   const b = $('rail-sort'); if (b) b.textContent = RAIL_DESC ? '降冪 ↓' : '升冪 ↑';
@@ -1125,7 +1172,7 @@ function drawTarot(pool, label) {
     card.addEventListener('click', () => { MODAL_FROM_TAROT = true; openModal(it.rel); });   // 大圖疊上層，關掉回到這批牌
     if (!REDUCE) {                                        // 3D 傾斜（參考 Aceternity 3D card）
       card.addEventListener('mousemove', e => tiltCard(card, e));
-      card.addEventListener('mouseleave', () => { card.style.transform = ''; });
+      card.addEventListener('mouseleave', () => tiltReset(card));
     }
     wrap.appendChild(card);
   });
@@ -1146,18 +1193,39 @@ function drawTarot(pool, label) {
 // 卡片隨滑鼠 3D 傾斜（參考 Aceternity 3D card）：依游標相對卡片中心算 rotateX/Y，
 // 並讓光澤跟著游標。翻牌後牌面已非鏡像，傾斜方向自然。
 // 不加 scale——縮放會把整張(含文字/圖)當點陣圖放大而糊掉；只留傾斜，內容較清晰。
-function tiltCard(card, e) {
-  const r = card.getBoundingClientRect();
-  const px = (e.clientX - r.left) / r.width - 0.5;    // -0.5 ~ 0.5
-  const py = (e.clientY - r.top) / r.height - 0.5;
+// 跟聚光（spotlight）同一個理由做 rAF 節流＋矩形快取：mousemove 一秒上百次，每次都
+// 「寫 transform 再讀 getBoundingClientRect()」會逼瀏覽器在事件迴圈裡同步重算版面，
+// 而這裡量的還是一張正在跑 3D transform 的牌。矩形只在換牌時重量——牌是浮層置中的，
+// 滑鼠停在同一張牌上時它不會移動，快取不會過期。
+let _tiltCard = null, _tiltRect = null, _tiltGlare = null, _tiltX = 0, _tiltY = 0, _tiltRAF = 0;
+function tiltFlush() {
+  _tiltRAF = 0;
+  const card = _tiltCard, r = _tiltRect;
+  if (!card || !r || !r.width || !r.height) return;
+  const px = (_tiltX - r.left) / r.width - 0.5;    // -0.5 ~ 0.5
+  const py = (_tiltY - r.top) / r.height - 0.5;
   const MAX = 11;
   card.style.transform =
     `rotateX(${(-py * MAX).toFixed(2)}deg) rotateY(${(px * MAX).toFixed(2)}deg)`;
-  const g = card.querySelector('.tarot-glare');
-  if (g) {
-    g.style.setProperty('--gx', ((px + 0.5) * 100).toFixed(1) + '%');
-    g.style.setProperty('--gy', ((py + 0.5) * 100).toFixed(1) + '%');
+  if (_tiltGlare) {
+    _tiltGlare.style.setProperty('--gx', ((px + 0.5) * 100).toFixed(1) + '%');
+    _tiltGlare.style.setProperty('--gy', ((py + 0.5) * 100).toFixed(1) + '%');
   }
+}
+function tiltCard(card, e) {
+  if (card !== _tiltCard) {
+    _tiltCard = card;
+    _tiltRect = card.getBoundingClientRect();
+    _tiltGlare = card.querySelector('.tarot-glare');
+  }
+  _tiltX = e.clientX; _tiltY = e.clientY;
+  if (!_tiltRAF) _tiltRAF = requestAnimationFrame(tiltFlush);
+}
+// 離開牌面時把快取清掉，不然下次滑回同一張牌會沿用可能已經過期的矩形（牌會重新發牌、
+// 位置可能不同），而且 tiltFlush 若在 transform 被清空之後才跑會把傾斜又寫回去。
+function tiltReset(card) {
+  if (_tiltCard === card) { _tiltCard = null; _tiltRect = null; _tiltGlare = null; }
+  card.style.transform = '';
 }
 
 function closeTarot() {
@@ -1214,7 +1282,7 @@ function drawLoraTarot(pool, label) {
     card.addEventListener('click', () => { selectGenLora(l); closeTarot(); });
     if (!REDUCE) {
       card.addEventListener('mousemove', e => tiltCard(card, e));
-      card.addEventListener('mouseleave', () => { card.style.transform = ''; });
+      card.addEventListener('mouseleave', () => tiltReset(card));
     }
     wrap.appendChild(card);
   });
@@ -1568,7 +1636,7 @@ function drawTagTarot() {
   cards.forEach((c, i) => setTimeout(() => c.classList.add('revealed'), dealDone + i * 32));
 }
 function assignTarot(rel, card, key) {
-  const it = ALL.find(x => x.rel === rel);
+  const it = itemOf(rel);
   TAROT_HISTORY.push({ rel, prev: it ? (it.rarity || '') : '' });   // 供 Z 復原
   applyRarity(rel, key);                                            // 即時寫側檔
   RARITY_KEYS.forEach(k => card.classList.remove('assigned-' + k, 'rar-' + k));
@@ -1727,7 +1795,7 @@ function updateTagbar() {
 
 // 即時把某詞庫的稀有度寫進側檔（樂觀更新本地 ALL[].rarity、失敗回退＋toast）。
 async function applyRarity(rel, key) {
-  const it = ALL.find(x => x.rel === rel);
+  const it = itemOf(rel);
   const prev = it ? (it.rarity || '') : '';
   if (key === prev) return true;
   if (it) it.rarity = key;
@@ -2827,7 +2895,12 @@ function renderConceptsTplResults() {
   const q = $csTplSearch.value.trim().toLowerCase();
   $csTplResults.innerHTML = '';
   if (!q) return;
-  const hits = ALL.filter(x => x.name.toLowerCase().includes(q) || (x.folder || '').toLowerCase().includes(q)).slice(0, 30);
+  // 只要前 30 筆：湊滿就停，不必為了丟掉而掃完整個 28000 筆詞庫（每次按鍵都會跑）。
+  // 比對用預先算好的小寫鍵（見 indexAll），省掉每筆兩次 toLowerCase() 的字串配置。
+  const hits = [];
+  for (const x of ALL) {
+    if (x._lname.includes(q) || x._lfolder.includes(q)) { hits.push(x); if (hits.length >= 30) break; }
+  }
   if (!hits.length) { $csTplResults.innerHTML = '<div class="cs-tpl-empty">找不到符合的詞庫</div>'; return; }
   hits.forEach(item => {
     const row = document.createElement('button'); row.type = 'button'; row.className = 'cs-tpl-row';
@@ -3037,7 +3110,7 @@ async function runGen(rels, tarotItems, label) {
   const ts = Date.now();
   items.forEach((it, i) => {
     const job = jobs[i] || {};
-    GALLERY.push({ id: it.id, name: it.name, rel: it.rel, folder: (ALL.find(x => x.rel === it.rel) || {}).folder || '',
+    GALLERY.push({ id: it.id, name: it.name, rel: it.rel, folder: (itemOf(it.rel) || {}).folder || '',
                    loras: job.loras || [], trigger: job.trigger || '', ts, done: false, err: false, seed: null });
   });
   updateGalleryHead();
@@ -3072,7 +3145,7 @@ async function runGenJobs(jobs, picks, label) {
   const ts = Date.now();
   items.forEach((it, i) => {
     const job = jobs[i] || {};
-    GALLERY.push({ id: it.id, name: it.name, rel: it.rel, folder: (ALL.find(x => x.rel === it.rel) || {}).folder || '',
+    GALLERY.push({ id: it.id, name: it.name, rel: it.rel, folder: (itemOf(it.rel) || {}).folder || '',
                    loras: job.loras || [], trigger: job.trigger || '', ts, done: false, err: false, seed: null });
   });
   updateGalleryHead();
@@ -3124,7 +3197,7 @@ function openGenTarot(items, picks, label) {
     card.addEventListener('click', () => { if (!card.classList.contains('pending')) { MODAL_FROM_TAROT = true; openGalleryItem(it.id); } });   // 疊上層，關掉回到這批牌
     if (!REDUCE) {
       card.addEventListener('mousemove', e => tiltCard(card, e));
-      card.addEventListener('mouseleave', () => { card.style.transform = ''; });
+      card.addEventListener('mouseleave', () => tiltReset(card));
     }
     wrap.appendChild(card);
   });
