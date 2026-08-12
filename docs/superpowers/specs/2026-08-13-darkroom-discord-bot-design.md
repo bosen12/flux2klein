@@ -48,9 +48,11 @@
 無參數，靠 Discord message component（按鈕／下拉選單）一步步往下選，全程不用打字：
 
 1. `/lora` → 回一則 ephemeral 訊息＋4 個分類按鈕（`style`／`Character`／`HENTAI`／`illus`，對應暗房 `LORA_FOLDERS`）＋一顆「🚫 不套用 LoRA」按鈕（點了直接把 `selected_lora` 存成空陣列 `[]`，跟「還沒選過」的 `null` 是不同語意，見下方 config 說明）
-2. 點分類 → 打 `GET /api/loras`、篩出該分類，`edit_message` 換成該分類項目按鈕清單：每頁最多 20 個（4 列 × 5 顆，留第 5 列給導覽），項目按鈕 label 是 LoRA 標題（截斷到 80 字元，Discord 按鈕 label 上限）；第 5 列固定放「◀ 上一頁」「下一頁 ▶」（到頁首/頁尾自動 `disabled`）「🔙 換分類」
-3. 點某個項目 → `edit_message` 換成**詳情畫面**（2026-08-13 追加，見下）
-4. 詳情畫面確認 → 把 `{folder, file, strength, trigger}` 寫進 `discord-bot/config.json` 的 `selected_lora`，`edit_message` 顯示「LoRA 已設為 `<title>`（強度 X.XX）」；取消 → 回到剛才那一頁的項目清單
+2. 點分類 → 打 `GET /api/loras`、篩出該分類，`edit_message` 換成該分類的分頁下拉選單（2026-08-13 二次改版，見下）
+3. 選單選某一筆 → `edit_message` 換成**詳情畫面**（見下）
+4. 詳情畫面確認 → 把 `{folder, file, strength, trigger}` 寫進 `discord-bot/config.json` 的 `selected_lora`，`edit_message` 顯示「LoRA 已設為 `<title>`（強度 X.XX）」；取消 → 回到剛才那一頁的選單
+
+**分頁下拉選單**（2026-08-13 二次改版——第一版是每頁 20 顆項目按鈕，使用者要求改成下拉選單＋可搜尋）：每頁最多 25 筆（Discord `Select` 元件單一頁的選項數硬上限），`SelectOption.label` 用 LoRA 標題（`item.title or item.name or item.file`，跟暗房自己 `darkroom.js` 的 `lora.title || lora.name` 同一套慣例，截斷到 100 字元）。**選單本身支援打字過濾當前頁的選項**——這是 Discord 客戶端的原生能力，不用自己實作搜尋邏輯，但只能篩選「已經裝進這個選單的 25 筆」，篩不到還沒翻到的其他頁。選單下方一列放「◀ 上一頁」「下一頁 ▶」（到頁首/頁尾自動 `disabled`）「🔙 換分類」三顆按鈕。
 
 **詳情畫面**（2026-08-13 追加——使用者要求能調強度、能像暗房面板一樣勾選要套用哪些觸發詞段落）：
 

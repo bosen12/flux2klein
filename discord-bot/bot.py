@@ -31,7 +31,7 @@ import darkroom_client as dc
 CONFIG_PATH = Path(__file__).resolve().parent / "config.json"
 LORA_CATEGORIES = ["style", "Character", "HENTAI", "illus"]
 LORA_STRENGTH = 0.8   # 比照暗房 AGENT_DRAW_DEFAULT_LORAS 的既有慣例，不開放調整
-LORA_PAGE_SIZE = 20   # 4 列 x 5 顆項目按鈕，留第 5 列給上一頁/下一頁/換分類
+LORA_PAGE_SIZE = 25   # Discord select 單一元件最多 25 個選項
 GACHA_MAX_N = 100
 POLL_INTERVAL_S = 1.0
 EMBED_COLOR = 0xEAAD57   # 跟 agent_draw.py 的 DISCORD_EMBED_COLOR 一致
@@ -64,14 +64,10 @@ http_session: aiohttp.ClientSession | None = None
 
 
 def _lora_label(item: dict) -> str:
+    # 跟暗房自己（darkroom.js）的慣例一致：title 優先，沒有才退回 name。Discord select
+    # option 的 label 上限 100 字元。
     title = item.get("title") or item.get("name") or item.get("file")
     return title[:100]
-
-
-def _lora_button_label(item: dict) -> str:
-    # Discord 按鈕 label 上限 80 字元，比 embed/訊息文字的限制更嚴。
-    title = item.get("title") or item.get("name") or item.get("file")
-    return title[:77] + "…" if len(title) > 80 else title
 
 
 @bot.event
@@ -193,7 +189,9 @@ class LoraDetailView(discord.ui.View):
 
 
 class LoraItemPageView(discord.ui.View):
-    """單一分類內的分頁項目按鈕（每頁 20 個），加上一頁/下一頁/換分類。"""
+    """單一分類內的分頁下拉選單（每頁最多 25 個，Discord select 的硬上限），
+    選單本身支援打字過濾當前頁的選項（Discord 原生能力，不用自己實作搜尋），
+    另外配上一頁/下一頁/換分類三顆按鈕。"""
 
     def __init__(self, category: str, items: list[dict], page: int) -> None:
         super().__init__(timeout=180)
@@ -218,19 +216,27 @@ class LoraItemPageView(discord.ui.View):
 
     def _build(self) -> None:
         self.clear_items()
-        for i, it in enumerate(self._page_items()):
-            btn = discord.ui.Button(label=_lora_button_label(it), style=discord.ButtonStyle.secondary, row=i // 5)
-            btn.callback = self._make_item_callback(it)
-            self.add_item(btn)
+        page_items = self._page_items()
+        select = discord.ui.Select(
+            placeholder="選擇 LoRA（可在選單內打字過濾這一頁）",
+            row=0,
+            options=[
+                discord.SelectOption(label=_lora_label(it), value=str(i))
+                for i, it in enumerate(page_items)
+            ],
+        )
+        select.callback = self._make_select_callback(page_items)
+        self.add_item(select)
+
         prev_btn = discord.ui.Button(label="◀ 上一頁", style=discord.ButtonStyle.secondary,
-                                      disabled=self.page <= 0, row=4)
+                                      disabled=self.page <= 0, row=1)
         prev_btn.callback = self._make_page_callback(self.page - 1)
         self.add_item(prev_btn)
         next_btn = discord.ui.Button(label="下一頁 ▶", style=discord.ButtonStyle.secondary,
-                                      disabled=self.page >= self.total_pages - 1, row=4)
+                                      disabled=self.page >= self.total_pages - 1, row=1)
         next_btn.callback = self._make_page_callback(self.page + 1)
         self.add_item(next_btn)
-        back_btn = discord.ui.Button(label="🔙 換分類", style=discord.ButtonStyle.secondary, row=4)
+        back_btn = discord.ui.Button(label="🔙 換分類", style=discord.ButtonStyle.secondary, row=1)
         back_btn.callback = self._back_callback
         self.add_item(back_btn)
 
@@ -240,8 +246,10 @@ class LoraItemPageView(discord.ui.View):
             await interaction.response.edit_message(embed=view.build_embed(), view=view)
         return callback
 
-    def _make_item_callback(self, item: dict):
+    def _make_select_callback(self, page_items: list[dict]):
         async def callback(interaction: discord.Interaction) -> None:
+            idx = int(interaction.data["values"][0])
+            item = page_items[idx]
             view = LoraDetailView(item, self.category, self.items, self.page)
             await interaction.response.edit_message(embed=view.build_embed(), view=view)
         return callback
