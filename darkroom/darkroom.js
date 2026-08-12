@@ -3879,6 +3879,7 @@ function updateIntroDepthFade() {
     // 修法：精度提高到 0.001（誤差降一個數量級），並把尾巴減掉再正規化——曲線
     // 前段的「先快後慢」保持不變，但會以非零的斜率乾淨地收到 0，不再有尾巴賴在
     // 那個表現不出來的區間裡。
+    const fade = Math.min(farFade, closeFade);
     const raw = fade * fade;
     const op = raw <= INTRO_FADE_CUT ? 0 : (raw - INTRO_FADE_CUT) / (1 - INTRO_FADE_CUT);
     rec.el.style.opacity = op.toFixed(3);
