@@ -1343,6 +1343,36 @@ def _convert_loras(loras_in):
     return out
 
 
+def _default_trigger_for_loras(loras_in) -> str:
+    """把 loras_in（/api/agent-draw 用的原始 {folder,file,strength} 陣列，_convert_loras
+    轉換之前那個格式）裡每個 LoRA 的觸發詞（civitai.trainedWords）串成一句話。
+
+    這是為了讓 agent-draw 的行為跟面板一致：面板選 LoRA 時會自動把觸發詞帶進提示詞框
+    （見 README「自動把該 LoRA 的觸發詞...帶進一個像提示詞的文字框」，list_loras()
+    读的是同一個 metadata 欄位）。agent-draw 預設就套用一顆 LoRA
+    （AGENT_DRAW_DEFAULT_LORAS），如果不比照面板的行為，這顆 LoRA需要觸發詞才生效的
+    部分就會套用不到——只呼叫端明確給了 trigger 才不會走到這裡（見呼叫處）。"""
+    if not isinstance(loras_in, list):
+        return ""
+    words = []
+    for lora in loras_in[:2]:
+        lora = lora or {}
+        file = lora.get("file")
+        if not file:
+            continue
+        stem = file[:-len(".safetensors")] if file.endswith(".safetensors") else file
+        meta_path = LORA_ROOT / (lora.get("folder") or "") / (stem + ".metadata.json")
+        if not meta_path.is_file():
+            continue
+        try:
+            md = json.loads(meta_path.read_text(encoding="utf-8"))
+            raw_words = (md.get("civitai") or {}).get("trainedWords") or []
+            words.extend(_strip_angle_tags(w) for w in raw_words if w)
+        except Exception:
+            pass
+    return ", ".join(w for w in words if w)
+
+
 def _job_display_name(rel, loras):
     """算這個生成工作在圖庫/塔羅卡片上要顯示的名字。有 rel（詞庫模板）就用它的檔名；
     沒有（Concepts 抽卡「不抽詞庫模板」時）就退而求其次，把用到的 LoRA 檔名接起來，
@@ -1776,11 +1806,15 @@ class Handler(BaseHTTPRequestHandler):
                 loras_in = data["loras"] if "loras" in data else AGENT_DRAW_DEFAULT_LORAS
                 loras = _convert_loras(loras_in)
                 trigger = (data.get("trigger") or "").strip()
+                if not trigger:
+                    # 呼叫端沒明確給 trigger 才自動帶入 LoRA 的觸發詞——跟面板選 LoRA
+                    # 的行為一致（見 _default_trigger_for_loras 的說明）。
+                    trigger = _default_trigger_for_loras(loras_in)
                 jobs = [{"rel": p["rel"], "loras": loras, "trigger": trigger} for p in picks]
                 client = (data.get("client") or "agent")[:64]
                 items = start_gen(jobs, client)
                 lora_desc = "、".join(f"{n_}@{s}" for n_, s in loras) or "(無)"
-                plog(f"[agent-draw] 抽 {len(items)} 張 · folder={folder or '(全部)'} · rarity={rarity or '(預設池)'} · lora={lora_desc}")
+                plog(f"[agent-draw] 抽 {len(items)} 張 · folder={folder or '(全部)'} · rarity={rarity or '(預設池)'} · lora={lora_desc} · trigger={trigger or '(無)'}")
                 # 把實際套用的 loras 一起回傳——呼叫端沒帶 loras 時套的是伺服器端的
                 # AGENT_DRAW_DEFAULT_LORAS，呼叫端不該自己重複那份預設值才知道套了
                 # 什麼（例如組 Discord embed 要顯示 LoRA 名稱時），單一事實來源在這裡。
