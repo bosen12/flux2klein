@@ -1470,3 +1470,20 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
   .intro-copy { padding: 22px 24px; width: calc(100% - 48px); max-width: none; box-sizing: border-box; }
   .intro-copy h2 { font-size: 21px; letter-spacing: 2px; }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   臨時除錯開關（定位進場動畫閃爍用）。**問題確認後整段移除**——搜 dbg-
+   或 INTRO_DEBUG 就找得到全部相關程式碼（這裡與 darkroom.js 的開關那段）。 */
+.intro-modal.dbg-nowc .intro-canvas-grid,
+.intro-modal.dbg-nowc .intro-track { will-change: auto !important; }
+.intro-modal.dbg-novig .intro-canvas { box-shadow: none !important; }
+.intro-modal.dbg-novig .intro-rows { mask-image: none !important; -webkit-mask-image: none !important; }
+.intro-modal.dbg-flat .intro-canvas-card { border-color: transparent !important; box-shadow: none !important; }
+.intro-modal.dbg-flat .intro-row.mid .intro-track img { box-shadow: none !important; }
+.intro-modal.dbg-nophoto .intro-canvas-card img,
+.intro-modal.dbg-nophoto .intro-track img { visibility: hidden !important; }
+#intro-debug-hud { position: absolute; right: 14px; bottom: 14px; z-index: 9; pointer-events: none;
+  font-family: var(--mono); font-size: 11px; line-height: 1.7; color: var(--dim);
+  background: rgba(8,8,11,.82); border: 1px solid var(--line-2); border-radius: 10px; padding: 9px 12px; }
+#intro-debug-hud .on { color: var(--amber); font-weight: 700; }
+#intro-debug-hud .hint { color: var(--faint); margin-top: 5px; border-top: 1px solid var(--line); padding-top: 5px; }

@@ -3553,8 +3553,13 @@ let introScrollAccum = 0;
 let introRAF = null;
 
 function applyIntroCanvasTransform() {
-  const tx = introCanvasPan.x + introDrift.x, ty = introCanvasPan.y + introDrift.y;
-  $('intro-canvas-grid').style.transform = `translate3d(${tx.toFixed(1)}px, ${ty.toFixed(1)}px, ${introCanvasPan.z.toFixed(1)}px)`;
+  let tx = introCanvasPan.x + introDrift.x, ty = introCanvasPan.y + introDrift.y, tz = introCanvasPan.z;
+  // INTRO_DEBUG.snap：見下方除錯開關那段（問題確認後連同整段移除）
+  if (typeof INTRO_DEBUG !== 'undefined' && INTRO_DEBUG.snap) {
+    const d = window.devicePixelRatio || 1;
+    tx = Math.round(tx * d) / d; ty = Math.round(ty * d) / d; tz = Math.round(tz * d) / d;
+  }
+  $('intro-canvas-grid').style.transform = `translate3d(${tx.toFixed(1)}px, ${ty.toFixed(1)}px, ${tz.toFixed(1)}px)`;
   updateIntroChunks();
   updateIntroDepthFade();
 }
@@ -3851,6 +3856,7 @@ function updateIntroDepthFade() {
   // 不再等縮圖 ready 才淡入——卡框本身（--sunk 底色＋名稱）不需要等圖片，
   // 縮圖是否顯示交給 img.on class（見 updateIntroChunks 的 onOk），兩者分開
   // 淡入，卡框可以立刻出現。
+  if (typeof INTRO_DEBUG !== 'undefined' && INTRO_DEBUG.noFade) return;   // 除錯開關，見下方
   const camX = -introCanvasPan.x, camY = -introCanvasPan.y, camZ = -introCanvasPan.z;
   const now = performance.now();
   introChunks.forEach(entry => entry.forEach((rec) => {
@@ -3935,6 +3941,8 @@ function renderIntroCanvas() {
 // 迴圈（見 startIntroFrameLoop）。
 function introFrameStep() {
   if (getIntroStyle() !== 'canvas' || !$('intro-modal').classList.contains('open')) { introRAF = null; return; }
+  // INTRO_DEBUG.freeze：完全不更新位置，畫面靜止（見下方除錯開關那段）
+  if (typeof INTRO_DEBUG !== 'undefined' && INTRO_DEBUG.freeze) { introRAF = requestAnimationFrame(introFrameStep); return; }
   if (!introDragging && !isMobile()) {
     introDrift.x += (introMouseN.x * INTRO_DRIFT_AMOUNT - introDrift.x) * INTRO_DRIFT_LERP;
     introDrift.y += (introMouseN.y * INTRO_DRIFT_AMOUNT - introDrift.y) * INTRO_DRIFT_LERP;
@@ -4060,9 +4068,69 @@ document.addEventListener('click', (e) => {
   $('intro-style-menu').hidden = true;
   $('intro-style-btn').setAttribute('aria-expanded', 'false');
 });
+// ══════════════════════════════════════════════════════════════════
+// 臨時除錯開關：定位「進場動畫在閃」用的二分工具。**問題確認後整段移除**
+// （搜 INTRO_DEBUG 就找得到全部相關程式碼：這一段、applyIntroCanvasTransform
+// 裡的 snap、introFrameStep 的 freeze、updateIntroDepthFade 的 noFade，
+// 以及 darkroom.css 結尾的 .dbg-* 規則）。
+//
+// 為什麼需要它：閃爍是視覺現象，而我（AI）看不到畫面，靠推理已經連續猜錯四次。
+// 與其繼續猜，不如把每個嫌疑做成可以單獨關掉的開關，由使用者按一按回報「哪個
+// 關掉就不閃了」——一次就能定位，不用再來回。
+//
+// 進場畫面開著時按數字鍵切換，右下角會顯示目前狀態：
+//   1 凍結全部動態      ← 最重要的一個：凍住之後還閃，就完全不是「移動」造成的
+//   2 位置對齊整數像素   ← 次像素重新取樣的直接反證
+//   3 關掉 will-change   ← 強制瀏覽器重繪而不是重新取樣貼圖
+//   4 關掉暗角/遮罩      ← 大面積漸層疊在會動的內容上
+//   5 關掉卡片邊框與陰影 ← 1px 髮絲線是次像素取樣最容易看出來的東西
+//   6 隱藏照片只留卡框   ← 還閃就跟圖片內容完全無關
+//   7 關掉景深透明度     ← 半透明重疊造成的干涉
+//   0 全部復原
+const INTRO_DEBUG = { freeze: 0, snap: 0, noWC: 0, noVig: 0, flat: 0, noPhoto: 0, noFade: 0 };
+const INTRO_DEBUG_KEYS = {
+  '1': ['freeze', '凍結全部動態'],
+  '2': ['snap',   '位置對齊整數像素'],
+  '3': ['noWC',   '關掉 will-change'],
+  '4': ['noVig',  '關掉暗角/遮罩'],
+  '5': ['flat',   '關掉卡片邊框與陰影'],
+  '6': ['noPhoto','隱藏照片只留卡框'],
+  '7': ['noFade', '關掉景深透明度'],
+};
+function introDebugApply() {
+  const m = $('intro-modal');
+  m.classList.toggle('dbg-nowc', !!INTRO_DEBUG.noWC);
+  m.classList.toggle('dbg-novig', !!INTRO_DEBUG.noVig);
+  m.classList.toggle('dbg-flat', !!INTRO_DEBUG.flat);
+  m.classList.toggle('dbg-nophoto', !!INTRO_DEBUG.noPhoto);
+  // 馬燈的捲動是 CSS animation，凍結要用 play-state
+  document.querySelectorAll('.intro-track').forEach(t => {
+    t.style.animationPlayState = INTRO_DEBUG.freeze ? 'paused' : '';
+  });
+  if (INTRO_DEBUG.noFade) {
+    document.querySelectorAll('.intro-canvas-card').forEach(c => { c.style.opacity = '1'; c.style.filter = ''; });
+  }
+  applyIntroCanvasTransform();
+  let box = $('intro-debug-hud');
+  if (!box) {
+    box = document.createElement('div'); box.id = 'intro-debug-hud';
+    $('intro-modal').appendChild(box);
+  }
+  box.innerHTML = Object.entries(INTRO_DEBUG_KEYS)
+    .map(([k, [prop, label]]) => `<div class="${INTRO_DEBUG[prop] ? 'on' : ''}">${k} · ${label}${INTRO_DEBUG[prop] ? ' ✓' : ''}</div>`)
+    .join('') + '<div class="hint">0 全部復原</div>';
+}
 window.addEventListener('keydown', (e) => {
   if (!$('intro-modal').classList.contains('open')) return;
-  if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); closeIntro(); }
+  if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); closeIntro(); return; }
+  if (e.key === '0') {
+    for (const k of Object.keys(INTRO_DEBUG)) INTRO_DEBUG[k] = 0;
+    introDebugApply(); return;
+  }
+  const hit = INTRO_DEBUG_KEYS[e.key];
+  if (!hit) return;
+  INTRO_DEBUG[hit[0]] = INTRO_DEBUG[hit[0]] ? 0 : 1;
+  introDebugApply();
 });
 
 // 18+ 年齡確認擋在 boot 沖洗動畫之前：sessionStorage 記錄「這次瀏覽階段已確認」，
