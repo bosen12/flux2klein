@@ -707,6 +707,24 @@ const MODAL_WIN = 2;          // 中央左右各鋪幾張，要跟 darkroom.css 
 const MODAL_SLIDE_MS = 420;   // 要跟 darkroom.css 的 --d-slide 一致
 let MODAL_RAIL_ANIM = null;
 
+// 大圖現在是「在哪一份清單裡走」。由每個開大圖的地方各自設定：格線縮圖 → VISIBLE、
+// 圖庫縮圖 → galleryOrder()、抽卡 → 那批牌。方向鍵、‹ › 鈕與卡片列的鄰卡全部讀這
+// 一份，三者永遠一致。
+//
+// 以前沒有這個東西，方向鍵寫死認 VISIBLE／GALLERY，所以抽卡開的大圖只能整個停掉
+// 左右切（MODAL_FROM_TAROT 那條 early return）——但抽八張的時候「翻完這張看下一張」
+// 正是最想要的操作。MODAL_FROM_TAROT 仍然留著，它管的是**關閉行為**（回到那批牌
+// 而不是縮回格線縮圖），跟「往左右走哪一份清單」是兩件事。
+let MODAL_LIST = null;        // { kind: 'lib' | 'gallery', items: [...] }
+
+// kind 對得上就用它，否則退回該類型的預設清單。openModal() 可能被重新整理用途地
+// 呼叫（例如生成完成後刷新同一張），那時 MODAL_LIST 可能是別的情境留下的，所以
+// 使用端還要再確認「目前這張真的在裡面」。
+function modalListFor(kind) {
+  if (MODAL_LIST && MODAL_LIST.kind === kind && MODAL_LIST.items.length) return MODAL_LIST.items;
+  return kind === 'gallery' ? galleryOrder() : VISIBLE;
+}
+
 // render(entry, isCenter) 回傳一張卡片的內容元素。
 function buildModalStage(list, index, render) {
   const stage = document.createElement('div');
@@ -816,9 +834,10 @@ function openModal(rel, resetNav = true) {
   // 卡片列鋪的是「畫面上這份清單」（VISIBLE），跟方向鍵切的順序是同一份，所以
   // 露在兩側的鄰卡就是等一下真的會切到的那兩張。VISIBLE 是空的（例如從搜尋結果
   // 直接開）就只鋪目前這一張。
-  // 不在 VISIBLE 裡（例如從抽卡開的大圖）就只鋪這一張——硬找不到還套 index 0 會
-  // 讓中央顯示的是別人。那種情況方向鍵本來也不作用（見 keydown 的 MODAL_FROM_TAROT）。
-  let list = VISIBLE, idx = VISIBLE.findIndex(x => x.rel === rel);
+  // 卡片列鋪的清單要跟方向鍵走的完全同一份（見 MODAL_LIST），露在兩側的鄰卡才會
+  // 真的是等一下會切到的那兩張。找不到目前這張就只鋪一張——硬套 index 0 會讓中央
+  // 顯示的是別人。
+  let list = modalListFor('lib'), idx = list.findIndex(x => x.rel === rel);
   if (idx < 0) { list = [item]; idx = 0; }
   $('m-stage-slot').replaceWith(buildModalStage(list, idx, renderLibSlide));
   $('modal-folder').textContent = item.folder || '(根目錄)';
@@ -833,24 +852,20 @@ function openModal(rel, resetNav = true) {
   }).catch(e => { $('pos').textContent = String(e); });
 }
 
-function modalStep(dir) {
-  const inner = $('modal-inner');
-  const rel = inner && inner.dataset.rel;
-  if (!rel || !VISIBLE.length) return;
-  const i = VISIBLE.findIndex(x => x.rel === rel);
-  if (i < 0) return;
-  const ni = (i + dir + VISIBLE.length) % VISIBLE.length;
-  modalSlide(dir, () => openModal(VISIBLE[ni].rel));
-}
-
-// 方向鍵與 ‹ › 鈕共用這一個入口：大圖是從圖庫還是詞庫格線開的，切的是不同清單
-// （見 openGalleryItem 設的 dataset.gid）。原本兩顆鈕寫死呼叫 modalStep()，從圖庫
-// 開的大圖按了沒有反應——方向鍵那邊早就分流了，鈕這邊漏掉。
+// 方向鍵與 ‹ › 鈕共用這一個入口。大圖是詞庫還是圖庫，由 openGalleryItem() 設的
+// dataset.gid ／ openModal() 設的 dataset.rel 分辨；要走的清單一律問 MODAL_LIST，
+// 所以格線、圖庫、抽卡三種來源都能左右切，各自走各自那一份。
 function modalNav(dir) {
   const inner = $('modal-inner');
   if (!inner) return;
-  if (inner.dataset.gid) galleryModalStep(dir);
-  else modalStep(dir);
+  const gid = inner.dataset.gid;
+  const kind = gid ? 'gallery' : 'lib';
+  const list = modalListFor(kind);
+  if (!list || list.length < 2) return;                 // 只有一張（例如手機抽一張）就沒得切
+  const i = gid ? list.findIndex(g => g.id === gid) : list.findIndex(x => x.rel === inner.dataset.rel);
+  if (i < 0) return;
+  const ni = (i + dir + list.length) % list.length;
+  modalSlide(dir, () => (gid ? openGalleryItem(list[ni].id) : openModal(list[ni].rel)));
 }
 
 function closeModal() {
@@ -859,9 +874,8 @@ function closeModal() {
   if (inner) { delete inner.dataset.rel; delete inner.dataset.gid; }
 }
 
-// 圖庫大圖的左右切換：跟 modalStep()（切詞庫格線的 VISIBLE）是不同清單，圖庫大圖切的是
-// GALLERY，順序要跟畫面上看到的一致——renderGallery() 是新到舊（陣列反過來疊代），這裡
-// 用同一個順序，不然「按右鍵」跟「畫面往右移一張」對不起來。
+// 圖庫大圖的預設順序要跟畫面上看到的一致——renderGallery() 是新到舊（陣列反過來
+// 疊代），這裡用同一個順序，不然「按右鍵」跟「畫面往右移一張」對不起來。
 function galleryOrder() { return [...GALLERY].reverse(); }
 
 // 圖庫的一張卡。生成結果沒有縮圖端點，鄰卡就用同一個網址（看過的已經在快取裡）。
@@ -872,23 +886,13 @@ function renderGallerySlide(g, isCenter) {
   img.src = '/api/gen-result?id=' + encodeURIComponent(g.id);
   return img;
 }
-function galleryModalStep(dir) {
-  const inner = $('modal-inner');
-  const gid = inner && inner.dataset.gid;
-  if (!gid) return;
-  const order = galleryOrder();
-  const i = order.findIndex(g => g.id === gid);
-  if (i < 0 || !order.length) return;
-  const ni = (i + dir + order.length) % order.length;
-  modalSlide(dir, () => openGalleryItem(order[ni].id));
-}
-
 // 開大圖：縮圖 morph 放大成大圖（shared-element，view-transition-name: hero-img）。
 // 老套路——舊快照在 callback 前截（此時縮圖有名字），callback 裡先清掉縮圖名字再開
 // modal（大圖經 css 帶 hero-img），新快照只有大圖有名字 → 縮圖平滑長成大圖。
 // 守 REDUCE_MOTION 與 visibilityState（窗格隱藏 callback 不結算，CLAUDE.md 老坑）。
 function openModalFromThumb(rel, thumbImg) {
   MODAL_FROM_TAROT = false;                 // 格線縮圖開的大圖：關閉走 morph 縮回縮圖
+  MODAL_LIST = { kind: 'lib', items: VISIBLE };   // 左右切就是畫面上這份格線的順序
   const item = itemOf(rel);
   const canMorph = document.startViewTransition && !REDUCE_MOTION
     && document.visibilityState === 'visible' && item && item.has_image && thumbImg;
@@ -1216,8 +1220,8 @@ window.addEventListener('keydown', e => {
   // 大圖疊在抽卡之上時，鍵盤先歸大圖：Esc 關大圖回到那批牌（而非關掉整個抽卡）
   if ($('modal').classList.contains('open')) {
     if (e.key === 'Escape') { dismissModal(); return; }
-    if (MODAL_FROM_TAROT) return;                // 從抽卡開的大圖不左右切（那批牌不在 VISIBLE/GALLERY 順序裡）
-    // 切哪一份清單由 modalNav() 依 dataset.gid／dataset.rel 分流（‹ › 兩顆鈕走同一個入口）
+    // 切哪一份清單由 modalNav() 依 MODAL_LIST 決定（‹ › 兩顆鈕走同一個入口）。
+    // 抽卡開的大圖也能左右切——走的是那批牌，不是格線的 VISIBLE。
     if (e.key === 'ArrowLeft') modalNav(-1);
     else if (e.key === 'ArrowRight') modalNav(1);
     return;
@@ -1325,7 +1329,12 @@ function drawTarot(pool, label) {
        </div>`;
     card.querySelector('.tarot-name').textContent = it.display_name || it.name;
     card.querySelector('.tarot-folder').textContent = it.folder || '(根目錄)';
-    card.addEventListener('click', () => { MODAL_FROM_TAROT = true; openModal(it.rel); });   // 大圖疊上層，關掉回到這批牌
+    // 大圖疊上層，關掉回到這批牌；左右切走的就是**這批牌**（picks），不是格線的 VISIBLE
+    card.addEventListener('click', () => {
+      MODAL_FROM_TAROT = true;
+      MODAL_LIST = { kind: 'lib', items: picks };
+      openModal(it.rel);
+    });
     if (!REDUCE) {                                        // 3D 傾斜（參考 Aceternity 3D card）
       card.addEventListener('mousemove', e => tiltCard(card, e));
       card.addEventListener('mouseleave', () => tiltReset(card));
@@ -2893,7 +2902,14 @@ function buildGalleryCard(g, i) {
   const img = document.createElement('img'); img.className = 'gen-live'; img.alt = ''; img.decoding = 'async';
   img.onload = () => img.classList.add('ld');
   if (g.done) img.src = '/api/gen-result?id=' + g.id;
-  img.onclick = () => { const gg = GALLERY.find(x => x.id === g.id); if (gg && gg.done) { MODAL_FROM_TAROT = false; openGalleryItem(g.id); } };
+  img.onclick = () => {
+    const gg = GALLERY.find(x => x.id === g.id);
+    if (!gg || !gg.done) return;
+    MODAL_FROM_TAROT = false;
+    // 左右切走整個圖庫（畫面上的順序），還在生的沒有圖可看、跳過
+    MODAL_LIST = { kind: 'gallery', items: galleryOrder().filter(x => x.done) };
+    openGalleryItem(g.id);
+  };
   const spin = document.createElement('div'); spin.className = 'gen-spin'; spin.innerHTML = '<i class="gen-loader"></i>';
   sq.append(img, spin);
   const nm = document.createElement('div'); nm.className = 'gc-name'; nm.textContent = g.name;
@@ -3370,7 +3386,15 @@ function openGenTarot(items, picks, label) {
        </div>`;
     card.querySelector('.tarot-name').textContent = item.display_name || item.name || it.name;
     card.querySelector('.tarot-folder').textContent = item.folder || '(根目錄)';
-    card.addEventListener('click', () => { if (!card.classList.contains('pending')) { MODAL_FROM_TAROT = true; openGalleryItem(it.id); } });   // 疊上層，關掉回到這批牌
+    // 疊上層，關掉回到這批牌；左右切走的是**這批生圖裡已經完成的那些**（還在生的
+    // 沒有圖可看，切過去只會是空的）
+    card.addEventListener('click', () => {
+      if (card.classList.contains('pending')) return;
+      MODAL_FROM_TAROT = true;
+      MODAL_LIST = { kind: 'gallery',
+        items: CUR_GEN_TAROT_IDS.map(id => GALLERY.find(g => g.id === id)).filter(g => g && g.done) };
+      openGalleryItem(it.id);
+    });
     if (!REDUCE) {
       card.addEventListener('mousemove', e => tiltCard(card, e));
       card.addEventListener('mouseleave', () => tiltReset(card));
