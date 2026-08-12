@@ -1039,6 +1039,20 @@ def do_generate(rel: str, seed: int | None = None, in_batch: bool = False):
 # 「生圖」模式：選詞庫 + LoRA → 注入 LoraLoader 生成，結果只放前端結果區、
 # 不覆蓋詞庫的預覽圖（存在記憶體 _gen_results，供 /api/gen-result 取用）。
 # ---------------------------------------------------------------------------
+def apply_checkpoint_override(wf: dict) -> None:
+    """如果 STATE["checkpoint"] 有設定，把 wf 裡的 CheckpointLoaderSimple 節點換成它。
+
+    只有生圖模式（_gen_one_worker）呼叫這個函式；瀏覽模式的 do_generate()
+    刻意不呼叫，維持 workflow.json 原本內建的底模——見
+    docs/superpowers/specs/2026-08-12-darkroom-checkpoint-picker-design.md
+    的範圍決定。"""
+    if not STATE.get("checkpoint"):
+        return
+    ckpt_node = gsp.find_node(wf, "CheckpointLoaderSimple")
+    if ckpt_node:
+        wf[ckpt_node]["inputs"]["ckpt_name"] = STATE["checkpoint"]
+
+
 def inject_lora(wf: dict, lora_name: str, strength: float):
     """在工作流插入一個 LoraLoader：把原本吃 checkpoint model([_,0])/clip([_,1]) 的節點
     改接到它（VAE([_,2]) 不動）。lora_name 用 ComfyUI 認得的 '<folder>\\<file>'。"""
@@ -1293,6 +1307,7 @@ def _gen_one_worker(gid, rel, loras, trigger, wait_for=None, mark_started=None):
             wf = prepare_workflow(STATE["template"], positive=positive, negative=negative,
                                   seed=seed, filename_prefix=prefix,
                                   steps=STATE["steps"])
+            apply_checkpoint_override(wf)
             # loras 是 0~2 筆 (lora_name, strength)；inject_lora 每呼叫一次都會把「目前
             # 所有吃 checkpoint model/clip 輸出的節點」重新接到新插的 LoraLoader，所以連
             # 呼叫兩次會自動疊成一條鏈（ckpt → LoraLoader2 → LoraLoader1 → 其餘節點），
