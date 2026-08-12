@@ -3705,7 +3705,8 @@ function updateIntroChunks() {
       name.textContent = it.display_name || it.name;
       card.append(img, name);
       grid.appendChild(card);
-      const rec = { el: card, x: c.x, y: c.y, z: c.z, cancelled: false, revealAt };
+      // blur：目前套用的低通半徑，用來判斷「跨級距才寫 style」（見 updateIntroDepthFade）
+      const rec = { el: card, x: c.x, y: c.y, z: c.z, cancelled: false, revealAt, blur: 0 };
       // introScheduleLoad 是全域的排隊時鐘（見上方定義），不是每次
       // updateIntroChunks() 各自從 0 開始算——使用者回報「有時會卡」，原本
       // loadIdx 只在單次呼叫內錯開，連續好幾次呼叫（例如快速拖曳連續跨過
@@ -3769,6 +3770,46 @@ const INTRO_FADE_NEAR = 420, INTRO_FADE_FAR = 2200;
 // 之間淡出，CLOSE_END 以內（幾乎貼到鏡頭）完全透明——卡片會在明顯變大之
 // 前就先淡出，不會撐到誇張的大小。
 const INTRO_FADE_CLOSE_END = 60, INTRO_FADE_CLOSE_START = 220;
+
+// ── 遠處卡片的摩爾紋／閃爍（縮小取樣走樣）─────────────────────────
+// 使用者回報「卡片往遠處消失時會有類似摩爾紋的東西，看起來很像在閃」。這不是
+// 動畫邏輯的問題，是 GPU 縮小取樣的走樣（minification aliasing）：
+//
+// 卡片是一個 130px 的 CSS 盒子，瀏覽器先把它「點陣化」成一張 130px 的貼圖，
+// 之後每一幀由 GPU 依 3D 變換把那張貼圖縮小畫到畫面上。實測（perspective
+// 1400px）卡片退到最遠時螢幕上只剩約 50px，等於縮小 2.6 倍。GPU 用的是雙線性
+// 取樣、**沒有 mipmap**：縮小超過 2 倍時，每個螢幕像素涵蓋的 7 個貼圖像素裡只
+// 有 4 個被取樣，而鏡頭一直在漂移，每一幀「取到哪 4 個」都不一樣——照片裡的高
+// 頻細節因此每幀跳動（看起來在沸騰／閃），規律紋理則互相干涉成摩爾紋。
+//
+// 正解就是補上 mipmap 少掉的那一步：**依縮小倍率做低通濾波**。縮小 m 倍時用
+// σ≈m/2 的模糊把高頻先濾掉，取樣就不會走樣。`filter: blur()` 作用在元素自己的
+// 座標系（會再被 3D 變換縮小），所以這裡直接用「m/2 區域像素」當半徑。
+//
+// 成本控制：模糊是逐元素的繪製成本，這個元件同時可能有 81 張卡（而且它對效能
+// 一向敏感，見 README 那段「多渲染一圈緩衝區塊實測更卡」）。所以
+//   ① 只有縮小超過門檻的遠卡才加，近處的卡完全不碰、維持全銳利；
+//   ② 半徑量化成 0.25px 級距並記在 rec.blur 上，**只有跨過級距才寫 style**，
+//      不是每幀都寫（每幀都寫 filter 會逼瀏覽器不斷重繪）；
+//   ③ 會被模糊到的卡本來就很小（50～80px），模糊面積小、成本低。
+// 附帶好處：遠處變朦朧本來就是真實的大氣透視，景深感比原本只靠透明度更好。
+const INTRO_PERSPECTIVE = 1400;    // = darkroom.css .intro-canvas 的 perspective，兩邊要一致
+// 門檻取 1.25：走樣大約從縮小 1.3 倍開始看得出來。斜率 0.75 是「理論值的六成」
+// ——理論上縮小 m 倍要用 σ≈m/2 才完全不走樣（m=2.57 時 1.28px），但那樣遠處會糊
+// 成一團；取六成剛好把跳動壓下去又保留一點細節，看得出還是一張照片。
+const INTRO_BLUR_FROM = 1.25;      // 縮小超過這個倍率才開始補模糊（以下維持全銳利）
+const INTRO_BLUR_SLOPE = 0.75;
+const INTRO_BLUR_MAX = 2.2;        // 區域像素上限，再高只會糊成一團看不出是什麼
+function introBlurFor(zRelCamera) {
+  // 透視縮放：z 越負（越遠）scale 越小，縮小倍率 = 1/scale
+  const denom = INTRO_PERSPECTIVE - zRelCamera;
+  if (denom <= 1) return 0;                       // 已經穿過鏡頭平面，交給 CLOSE 段淡出處理
+  const minify = denom / INTRO_PERSPECTIVE;
+  if (minify <= INTRO_BLUR_FROM) return 0;
+  const r = (minify - INTRO_BLUR_FROM) * INTRO_BLUR_SLOPE;   // 低通強度隨縮小倍率線性增加
+  return Math.min(INTRO_BLUR_MAX, Math.round(r * 4) / 4);   // 量化成 0.25px 級距
+}
+
 function updateIntroDepthFade() {
   // 不再等縮圖 ready 才淡入——卡框本身（--sunk 底色＋名稱）不需要等圖片，
   // 縮圖是否顯示交給 img.on class（見 updateIntroChunks 的 onOk），兩者分開
@@ -3784,6 +3825,13 @@ function updateIntroDepthFade() {
       : Math.max(0, (dist - INTRO_FADE_CLOSE_END) / (INTRO_FADE_CLOSE_START - INTRO_FADE_CLOSE_END));
     const fade = Math.min(farFade, closeFade);
     rec.el.style.opacity = (fade * fade).toFixed(2);
+    // 低通濾波，補上 GPU 縮小取樣缺少的 mipmap（見上方 introBlurFor 的說明）。
+    // 只在跨過 0.25px 級距時才寫 style，不是每幀都寫。
+    const blur = introBlurFor(rec.z + introCanvasPan.z);
+    if (blur !== rec.blur) {
+      rec.blur = blur;
+      rec.el.style.filter = blur ? `blur(${blur}px)` : '';
+    }
   }));
 }
 function renderIntroCanvas() {
