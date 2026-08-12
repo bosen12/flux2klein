@@ -216,6 +216,10 @@
     <div class="cs-tab-panel" id="cs-tab-general">
       <p class="cs-hint">這裡是 LoRA1／LoRA2 的全域控制面板，跟 LoRA 大面板互相即時同步（強度、固定的 LoRA 都共用同一份狀態，改哪邊另一邊都會跟著變）。按 <b>Concepts</b> 抽卡時：哪格固定放著 LoRA 就鎖定用它，沒有固定但範圍晶片設了分類就縮小範圍隨機抽；情境（concepts）兩格都沒覆蓋到時會自動從全部 concepts 隨機補一顆，其他分類沒有這個補位。標「已跳過」的格子完全不參與這個判斷。</p>
       <button type="button" class="ghost lora-help-btn" id="lora-help-btn">？ 詳細教學</button>
+      <label class="cs-row cs-row-checkpoint">
+        <span>底模</span>
+        <select id="cs-checkpoint"></select>
+      </label>
       <div class="cs-scope-block" data-slot="0">
         <div class="cs-scope-head">
           <span class="cs-scope-label">LoRA1</span>

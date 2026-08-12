@@ -872,6 +872,9 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 .cs-row input[type=range] { flex: 1; }
 .cs-row output { font-family: var(--mono); font-size: 11px; min-width: 30px; text-align: right; color: var(--faint); }
 .cs-row-count input[type=number] { flex: 1; width: 0; min-width: 0; padding: 4px 8px; font-size: 12px; }
+.cs-row-checkpoint select { flex: 1; padding: 4px 8px; font-size: 12px;
+  background: var(--sunk); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; }
+.cs-row-checkpoint select:disabled { opacity: .5; }
 .cs-row-check { cursor: pointer; }
 .cs-row-check span { width: auto; flex: 1; line-height: 1.4; }
 .cs-row-check input { accent-color: var(--amber); flex: none; }

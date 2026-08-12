@@ -2957,7 +2957,51 @@ async function openCsModal() {
   renderCsScopeChips(0);
   renderCsScopeChips(1);
   moveCsTabPill();
+  loadCheckpointPicker();
 }
+// checkpoint 選擇器：只列 DARKROOM_CHECKPOINT_ROOT 那個資料夾（見後端 /api/checkpoints），
+// 只影響生圖模式，見 preview_ui.py 的 apply_checkpoint_override() 說明。
+async function loadCheckpointPicker() {
+  const sel = $('cs-checkpoint');
+  if (!sel) return;
+  try {
+    const r = await fetch('/api/checkpoints');
+    const j = await r.json();
+    sel.innerHTML = '';
+    if (!j.items || !j.items.length) {
+      const opt = document.createElement('option');
+      opt.textContent = '（找不到 checkpoint 資料夾）';
+      opt.disabled = true; opt.selected = true;
+      sel.appendChild(opt);
+      sel.disabled = true;
+      return;
+    }
+    sel.disabled = false;
+    for (const file of j.items) {
+      const opt = document.createElement('option');
+      opt.value = file;
+      opt.textContent = file.replace(/\.safetensors$/i, '');
+      if (file === j.current) opt.selected = true;
+      sel.appendChild(opt);
+    }
+  } catch (e) {
+    sel.innerHTML = '<option disabled selected>載入失敗</option>';
+  }
+}
+$('cs-checkpoint').onchange = async (e) => {
+  const file = e.target.value;
+  try {
+    const r = await fetch('/api/checkpoint', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file }),
+    });
+    const j = await r.json();
+    if (j.error) { toast('設定失敗：' + j.error); return; }
+    toast('底模已切換：' + file.replace(/\.safetensors$/i, ''));
+  } catch (e) {
+    toast('設定失敗，連不到伺服器');
+  }
+};
 function closeCsModal() {
   const modal = $('cs-modal');
   if (!modal.classList.contains('open')) return;
