@@ -375,6 +375,16 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
 .thumb::after { content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none; mix-blend-mode: screen;
   opacity: 0; transition: opacity var(--d-ui) var(--ease-out);
   background: radial-gradient(150px circle at var(--mx, 50%) var(--my, 50%), rgba(234,173,87,.28), transparent 62%); }
+/* 圖還沒載入：格線縮圖跟塔羅牌面（.tarot-front.loading）共用同一套微光，讓「這裡
+   在載入」跟「這裡本來就沒圖」（.empty，靜態不動）看得出差別。共用 tarotShimmer
+   這個 keyframe，不重新定義一份。z-index 1，蓋在圖片下面（img 沒有另外設 z-index，
+   等於 0），蓋在聚光/星芒（z-index 3/2）之下不會互相蓋掉。 */
+.thumb.loading::before {
+  content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: linear-gradient(100deg, transparent 18%, rgba(234,173,87,.10) 40%,
+              rgba(234,173,87,.20) 50%, rgba(234,173,87,.10) 60%, transparent 82%);
+  background-size: 220% 100%; animation: tarotShimmer 1.1s linear infinite;
+}
 .card:hover .thumb::after { opacity: 1; }
 .sparkles { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
 .sparkles i { position: absolute; width: var(--sz, 3px); height: var(--sz, 3px); border-radius: 50%; corner-shape: round; background: #fff;

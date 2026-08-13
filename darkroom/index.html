@@ -145,7 +145,10 @@
           <button class="ghost" id="gen-page-all">全部重生</button>
         </div>
         <div class="gen-group browse-only">
-          <span class="gen-label">全部</span>
+          <!-- 跟上面「本頁」互為一組，標「全庫」而不是「全部」——上方篩選 tab 跟下面稀有度
+               晶片也各自有一顆「全部」，三個字面相同、意思都不一樣，擠在同一區塊容易看錯。
+               見 CLAUDE.md「全部」重複使用那條的說明。 -->
+          <span class="gen-label">全庫</span>
           <button class="primary" id="gen-all-missing">補缺少</button>
           <button class="ghost" id="gen-all-regen">全部重生</button>
         </div>

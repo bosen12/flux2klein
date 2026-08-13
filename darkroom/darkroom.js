@@ -421,7 +421,15 @@ function restoreCard(card) {
   const it = itemOf(card.dataset.rel);
   if (!it) return;   // 極少數情況：修剪期間這筆資料被移除（例如重掃後消失），留空等下次 render() 清掉
   const thumb = card.querySelector('.thumb');
-  if (thumb) { thumb.innerHTML = thumbInnerHTML(it); wireThumb(thumb, it); }
+  if (thumb) {
+    thumb.classList.toggle('loading', !!it.has_image);
+    thumb.innerHTML = thumbInnerHTML(it);
+    wireThumb(thumb, it);
+    // 圖是瀏覽器快取的（多半是——同一個 URL 之前就載過），onload 可能不會再等一輪
+    // 事件迴圈才觸發，這裡跟塔羅牌面同一招：載完就是載完，不用等微光空轉一輪才發現。
+    const img = thumb.querySelector('img');
+    if (img && img.complete && img.naturalWidth) thumb.classList.remove('loading');
+  }
   card.classList.remove('pruned');
 }
 
@@ -500,8 +508,12 @@ function sparklesHTML(n = 7) {
 // thumb.innerHTML，所以這些覆蓋層要有單一來源，避免生成後星號/生成鈕被清掉）。
 function thumbInnerHTML(it) {
   const relEnc = encodeURIComponent(it.rel);
+  // 圖還沒載入時 .thumb 跑跟塔羅牌面（.tarot-front.loading）同一套微光——共用
+  // tarotShimmer 這個 keyframe，不重新定義一份。onload/onerror 都要收掉 loading
+  // （失敗也不能讓微光一直轉，見 CLAUDE.md「hover 泡泡」那條同類型的教訓：載入
+  // 狀態一定要有明確的收尾，不能只處理成功路徑）。
   const media = it.has_image
-    ? `<img loading="lazy" decoding="async" width="360" height="360" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="" onload="this.classList.add('ld')" onerror="this.classList.add('ld')">`
+    ? `<img loading="lazy" decoding="async" width="360" height="360" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="" onload="this.classList.add('ld');this.closest('.thumb').classList.remove('loading')" onerror="this.closest('.thumb').classList.remove('loading')">`
     : `<div class="empty">${ICON_EMPTY}<span>尚無圖片</span></div>`;
   return `${media}` +
     (it.rarity === 'legendary' ? sparklesHTML() : '') +
@@ -532,7 +544,7 @@ function cardOf(it) {
   // 卡片不顯示每張的生成狀態小標（完成/排隊/生成中/失敗）——批次時每張都冒出來太吵。
   // 整體進度看頂部的「批次 X/Y」，完成靠縮圖自己更新。生成狀態仍會顯示在點開的大圖裡。
   el.innerHTML = `
-    <div class="thumb">${thumbInnerHTML(it)}</div>
+    <div class="thumb${it.has_image ? ' loading' : ''}">${thumbInnerHTML(it)}</div>
     <div class="card-body">
       <div class="card-name"></div>
       ${SEARCH ? '<div class="card-folder"></div>' : ''}
