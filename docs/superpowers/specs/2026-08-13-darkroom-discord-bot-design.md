@@ -88,19 +88,30 @@
 
 ### `/gacha n:<1~100，不給預設 1>`
 
-1. 立即（3 秒內）回覆呼叫頻道：「🎴 已排入 {n} 張，開始生成…」（`interaction.response.send_message`）
+1. 立即（3 秒內）回覆呼叫頻道一則 ephemeral 的輕量 ack：「🎴 已排入 {n} 張，開始生成…」（`interaction.response.send_message`，只是滿足 Discord 3 秒回應窗口，不是真正的進度顯示）
 2. 背景呼叫 `POST /api/agent-draw`，`loras`/`trigger` 依 `selected_lora` 的三種狀態組出對應 payload（見上方「`selected_lora` 的三種狀態」表格）。回應拿到 `items`（含 `id`/`rel`/`name`）與實際套用的 `loras`
-3. 輪詢 `GET /api/gen-status?ids=<全部 id 逗號接>`（間隔 1 秒），任何一個 id 第一次轉成 `done` 就：
+3. 用一般頻道訊息（`reply_channel.send()`，不是 interaction 的一部分）送出**進度訊息**：embed 顯示「🎴 生成中…（0/{n} 完成）」，掛一顆「❌ 取消剩餘」按鈕（2026-08-13 追加，見下）
+4. 輪詢 `GET /api/gen-status?ids=<全部 id 逗號接>`（間隔 1 秒），任何一個 id 第一次轉成 `done` 就：
    - `GET /api/gen-result?id=<id>` 拿圖片 bytes
    - 組一則 embed：title = 資料夾（系列）＋詞庫名稱、欄位放套用的 LoRA（沒套就顯示「無」）、圖片用 embed 的 `attachment://`
    - `channel.send(embed=..., file=...)` 送到 `gacha_output_channel_id` 指定的頻道（不是呼叫的頻道，也不是 interaction followup——避開 15 分鐘 webhook 過期限制）
-   - 轉 `error` 的 id 只計入失敗數，不送訊息
-4. 全部 id 結束（`done` 或 `error`）後，`channel.send()`（一般頻道訊息，送回呼叫的頻道，不是 followup）：「完成 {ok}/{n} 張」，`ok < n` 時附一句「{n-ok} 張失敗」
+   - 每有一張新完成或新失敗，就把步驟 3 的進度訊息 `.edit()` 成最新的「X/{n} 完成」（`Message.edit()`，一般 bot API 呼叫，不是 interaction followup，同樣不受 15 分鐘限制）
+   - 轉 `error` 的 id 計入失敗數，不額外送訊息
+5. 全部 id 結束（`done`／`error`，或使用者按了取消）後，把進度訊息 `.edit()` 成最終狀態（「✅ 完成 X/{n} 張」或「🚫 已取消（X/{n} 張已完成）」），拿掉取消按鈕（`view=None`）
 
-**技術限制與因應**：Discord interaction 的 followup webhook 只在原始 interaction 建立後 15 分鐘內有效。`n` 上限 100、單張生成 10~30 秒時，全部跑完可能遠超過 15 分鐘，所以步驟 1 之後的所有輸出（包含步驟 4 的完成提示）都改用機器人身分的一般頻道訊息（`channel.send()`），不依賴 interaction 的 followup token，沒有時間限制。
+**❌ 取消剩餘按鈕**（2026-08-13 追加）：按下只設一個 `asyncio.Event`，不直接碰 `pending` 那個字典（活在 `_run_gacha` 迴圈的區域變數裡，按鈕的 callback 拿不到）。輪詢迴圈每輪開頭先檢查這個旗標，設了就呼叫 `POST /api/gen-cancel {ids: <目前還 pending 的全部 id>}` 然後跳出迴圈——**已經送進 ComfyUI 開始跑的那張不會被中途打斷**，暗房那邊只能取消「還在排隊、還沒真的開始生成」的項目，這個限制在 UI 上沒有特別提示，按鈕文字用「取消剩餘」而不是「停止生成」是刻意的用詞選擇。
+
+**技術限制與因應**：Discord interaction 的 followup webhook 只在原始 interaction 建立後 15 分鐘內有效。`n` 上限 100、單張生成 10~30 秒時，全部跑完可能遠超過 15 分鐘，所以步驟 1 之後的所有輸出（包含進度訊息本身跟它的每一次更新）都改用機器人身分的一般頻道訊息／`Message.edit()`，不依賴 interaction 的 followup token，沒有時間限制。
+
+## LoRA 預覽縮圖（2026-08-13 追加）
+
+選定 LoRA 進入詳情畫面時，`embed.set_thumbnail()` 帶上暗房 `GET /api/lora-preview?folder=&file=` 回傳的圖片（用 `attachment://` 附件參照，跟 `/gacha` 的成品圖同一套做法，因為暗房通常跑在 `127.0.0.1`，Discord 的伺服器沒辦法直接抓那個網址，一定要機器人自己下載再當附件傳上去）。強度／觸發詞調整時重建畫面**不重抓圖**——縮圖 bytes 跟著 `LoraDetailView` 的建構子一路傳下去，只有第一次選中這個 LoRA 時才真的打一次 API。
+
+**踩過的坑**：實測抓到一顆 228MB 的「縮圖」（LoRA Manager 掃描進來的素材，副檔名寫 `.jpeg` 但實際內容是 PNG、而且尺寸離譜地大——這是既有詞庫的資料品質問題，不是這次改動造成的）。Discord 附件有上限（免費伺服器約 8~10MB），直接把這種檔案包成 `discord.File` 上傳會讓整個互動失敗。`darkroom_client.get_lora_preview()` 因此在讀 body 前先檢查 `resp.content_length`，超過 `MAX_LORA_PREVIEW_BYTES`（8MB）就直接回 `None`（不顯示縮圖，不是拋錯中斷選擇流程）——**判斷方法**：這類「大部分正常、少數素材異常」的問題很難靠讀程式碼發現，是拿真實資料跑過一輪（用 `curl -w "size=%{size_download}"` 量實際大小）才踩到的，加防護前記得先用真實資料測一輪，不要只用小樣本。短片格式（`.mp4`/`.webm`）也一律跳過，Discord embed 縮圖放不了影片。
 
 ## 錯誤處理
 
+- 所有錯誤訊息（暗房連不上、選擇不合法、輸入找不到符合項目等）一律用紅色（`ERROR_COLOR = 0xE74C3C`）的 embed 顯示，跟正常訊息的琥珀色（`EMBED_COLOR`）一眼分得出來，不再用純文字內容
 - 暗房 API 連不上（`ConnectionError`/timeout）→ 回覆「暗房伺服器連不上，確認 preview_ui.py 有在跑」，不丟原始 traceback
 - `/api/checkpoint` 回 400（不在允許清單）→ 照暗房回傳的錯誤訊息原文回覆
 - `/api/agent-draw` 候選池是空的（400）→ 照原文回覆
@@ -110,9 +121,9 @@
 
 - 不支援多台 Discord 伺服器（單一 `guild_id`）
 - 不支援每個使用者各自的 LoRA/checkpoint 偏好（已確認全局共用）
-- `/lora` 不開放調整 strength（固定 0.8）
-- 不做取消中的 gacha 批次的指令（有需要再加）
 - 不把 `/lora` 選的值同步回暗房伺服器（`/api/agent-draw` 本身就支援每次呼叫帶 `loras` 覆寫，不需要碰暗房的全局預設）
+
+（`/lora` 可調 strength、`/gacha` 可中途取消——原本列在這裡的兩項，2026-08-13 使用者要求後已經做了，見上方對應章節）
 
 ## 驗證方式
 
@@ -121,3 +132,4 @@
 1. `python -m py_compile` 過語法檢查
 2. 暗房 `preview_ui.py` 開著、機器人也跑起來，在真實 Discord 伺服器裡實際打 `/intro`、`/lora`、`/chkp`、`/gacha n:1`，確認回覆與圖片都正確送達指定頻道
 3. 刻意在暗房沒開的狀態下打指令，確認錯誤訊息合理（不是丟 500/traceback）
+4. `darkroom_client.py` 新增的 `get_lora_preview()`／`gen_cancel()` 用獨立腳本對真實 `preview_ui.py`（port 7860）測過：抓一顆已知有正常大小預覽圖的 LoRA 確認能拿到圖；抓那顆 228MB 的異常縮圖確認會被 `MAX_LORA_PREVIEW_BYTES` 擋下回 `None`（不是拋例外炸掉整個互動）；`gen_cancel` 對不存在的 id 呼叫確認回 `{"ok": true, "cancelled_queued": 0}`，不報錯

@@ -8,6 +8,8 @@ asyncio event loop 裡跑，urllib 是同步阻塞呼叫，會卡住整個 bot �
 """
 from __future__ import annotations
 
+from urllib.parse import quote
+
 import aiohttp
 
 
@@ -82,3 +84,29 @@ async def gen_result_bytes(session: aiohttp.ClientSession, base_url: str, gen_id
             return await resp.read()
     except aiohttp.ClientError:
         raise DarkroomError("暗房伺服器連不上，確認 preview_ui.py 有在跑")
+
+
+async def gen_cancel(session: aiohttp.ClientSession, base_url: str, ids: list[str]) -> dict:
+    """取消還在排隊/沒開始跑的項目（已經送進 ComfyUI 在跑的那張不會被中途打斷，
+    但不會再有新的張數啟動）。回傳 {"ok": True, "cancelled_queued": n}。"""
+    return await _post_json(session, f"{base_url}/api/gen-cancel", {"ids": ids})
+
+
+MAX_LORA_PREVIEW_BYTES = 8 * 1024 * 1024   # Discord 附件上限保守抓 8MB（免費伺服器的常見上限）
+
+
+async def get_lora_preview(session: aiohttp.ClientSession, base_url: str,
+                            folder: str, file: str) -> bytes | None:
+    """回傳 LoRA 預覽圖 bytes；沒有預覽圖、抓取失敗、或圖片太大（超過 Discord 附件上限，
+    實測踩過一顆 228MB 的「縮圖」——LoRA Manager 掃描進來的素材品質不保證）都回 None
+    （呼叫端拿不到圖時就不顯示縮圖，不是要中斷整個選擇流程的錯誤）。"""
+    url = f"{base_url}/api/lora-preview?folder={quote(folder)}&file={quote(file)}"
+    try:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            if resp.status != 200:
+                return None
+            if resp.content_length is not None and resp.content_length > MAX_LORA_PREVIEW_BYTES:
+                return None
+            return await resp.read()
+    except aiohttp.ClientError:
+        return None

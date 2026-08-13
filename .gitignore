@@ -51,3 +51,7 @@ darkroom/agent_draws/
 
 # Discord 互動機器人的本機設定（含 bot token）
 discord-bot/config.json
+
+# Discord 機器人跑起來時的 log／pid（開發時手動 nohup 用，不是原始碼）
+discord-bot/bot.out
+discord-bot/bot.pid

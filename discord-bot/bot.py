@@ -35,6 +35,12 @@ LORA_PAGE_SIZE = 25   # Discord select 單一元件最多 25 個選項
 GACHA_MAX_N = 100
 POLL_INTERVAL_S = 1.0
 EMBED_COLOR = 0xEAAD57   # 跟 agent_draw.py 的 DISCORD_EMBED_COLOR 一致
+ERROR_COLOR = 0xE74C3C   # 錯誤訊息用紅色，跟正常訊息的琥珀色一眼分得出來
+LORA_VIDEO_EXTS = (".mp4", ".webm")   # 這幾種預覽是短片，Discord embed 縮圖放不了影片，跳過
+
+
+def _error_embed(message: str) -> discord.Embed:
+    return discord.Embed(description=message, color=ERROR_COLOR)
 
 
 def load_config() -> dict:
@@ -68,6 +74,20 @@ def _lora_label(item: dict) -> str:
     # option 的 label 上限 100 字元。
     title = item.get("title") or item.get("name") or item.get("file")
     return title[:100]
+
+
+async def _fetch_lora_preview(item: dict) -> tuple[bytes, str] | None:
+    """回傳 (bytes, 檔名) 給 embed 縮圖用，沒有預覽圖／是短片／抓取失敗都回 None——
+    這不是致命錯誤，沒有縮圖就不顯示，不該中斷選擇 LoRA 的流程。"""
+    preview = item.get("preview")
+    if not preview or preview.lower().endswith(LORA_VIDEO_EXTS):
+        return None
+    assert http_session is not None
+    data = await dc.get_lora_preview(http_session, BASE_URL, item["folder"], item["file"])
+    if data is None:
+        return None
+    ext = Path(preview).suffix or ".png"
+    return data, f"preview{ext}"
 
 
 @bot.event
@@ -110,13 +130,17 @@ class LoraDetailView(discord.ui.View):
 
     def __init__(self, item: dict, category: str | None = None, items: list[dict] | None = None,
                  page: int = 0, strength: float = LORA_STRENGTH,
-                 selected_words: set[int] | None = None) -> None:
+                 selected_words: set[int] | None = None,
+                 preview: tuple[bytes, str] | None = None) -> None:
         super().__init__(timeout=180)
         self.item = item
         self.category = category
         self.items = items
         self.page = page
         self.strength = strength
+        # 縮圖只在第一次選中這個 LoRA 時抓一次（見呼叫端），之後強度/觸發詞變動
+        # 重建畫面時原樣帶著走，不用每次點按鈕都重抓一次圖。
+        self.preview = preview
         words = item.get("trainedWords") or []
         # 沒指定就預設全選——比照暗房面板選 LoRA 時「自動把觸發詞帶進提示詞框」的既有行為
         self.selected_words = selected_words if selected_words is not None else set(range(len(words)))
@@ -131,7 +155,14 @@ class LoraDetailView(discord.ui.View):
         embed.add_field(name="強度", value=f"{self.strength:.2f}", inline=True)
         trigger = self._trigger_text()
         embed.add_field(name="觸發詞", value=trigger or "（不加觸發詞）", inline=False)
+        if self.preview:
+            embed.set_thumbnail(url=f"attachment://{self.preview[1]}")
         return embed
+
+    def attachments(self) -> list[discord.File]:
+        if not self.preview:
+            return []
+        return [discord.File(io.BytesIO(self.preview[0]), filename=self.preview[1])]
 
     def _build(self) -> None:
         self.clear_items()
@@ -166,14 +197,15 @@ class LoraDetailView(discord.ui.View):
 
     async def _on_words_change(self, interaction: discord.Interaction) -> None:
         selected = {int(v) for v in interaction.data.get("values", [])}
-        view = LoraDetailView(self.item, self.category, self.items, self.page, self.strength, selected)
-        await interaction.response.edit_message(embed=view.build_embed(), view=view)
+        view = LoraDetailView(self.item, self.category, self.items, self.page, self.strength, selected, self.preview)
+        await interaction.response.edit_message(embed=view.build_embed(), view=view, attachments=view.attachments())
 
     def _make_strength_callback(self, delta: float):
         async def callback(interaction: discord.Interaction) -> None:
             strength = round(min(LORA_STRENGTH_MAX, max(LORA_STRENGTH_MIN, self.strength + delta)), 2)
-            view = LoraDetailView(self.item, self.category, self.items, self.page, strength, self.selected_words)
-            await interaction.response.edit_message(embed=view.build_embed(), view=view)
+            view = LoraDetailView(self.item, self.category, self.items, self.page, strength,
+                                   self.selected_words, self.preview)
+            await interaction.response.edit_message(embed=view.build_embed(), view=view, attachments=view.attachments())
         return callback
 
     async def _on_confirm(self, interaction: discord.Interaction) -> None:
@@ -256,8 +288,9 @@ class LoraItemPageView(discord.ui.View):
         async def callback(interaction: discord.Interaction) -> None:
             idx = int(interaction.data["values"][0])
             item = page_items[idx]
-            view = LoraDetailView(item, self.category, self.items, self.page)
-            await interaction.response.edit_message(embed=view.build_embed(), view=view)
+            preview = await _fetch_lora_preview(item)
+            view = LoraDetailView(item, self.category, self.items, self.page, preview=preview)
+            await interaction.response.edit_message(embed=view.build_embed(), view=view, attachments=view.attachments())
         return callback
 
     async def _back_callback(self, interaction: discord.Interaction) -> None:
@@ -283,8 +316,9 @@ class LoraSearchResultView(discord.ui.View):
     async def _on_select(self, interaction: discord.Interaction) -> None:
         idx = int(interaction.data["values"][0])
         item = self.matches[idx]
-        view = LoraDetailView(item)
-        await interaction.response.edit_message(embed=view.build_embed(), view=view)
+        preview = await _fetch_lora_preview(item)
+        view = LoraDetailView(item, preview=preview)
+        await interaction.response.edit_message(embed=view.build_embed(), view=view, attachments=view.attachments())
 
 
 class LoraSearchModal(discord.ui.Modal, title="搜尋 LoRA"):
@@ -295,7 +329,7 @@ class LoraSearchModal(discord.ui.Modal, title="搜尋 LoRA"):
         try:
             data = await dc.get_loras(http_session, BASE_URL)
         except dc.DarkroomError as e:
-            await interaction.response.send_message(str(e), ephemeral=True)
+            await interaction.response.send_message(embed=_error_embed(str(e)), ephemeral=True)
             return
         needle = self.query.value.lower()
         matches = []
@@ -306,7 +340,9 @@ class LoraSearchModal(discord.ui.Modal, title="搜尋 LoRA"):
             if len(matches) >= 25:
                 break
         if not matches:
-            await interaction.response.send_message(f"找不到符合「{self.query.value}」的 LoRA", ephemeral=True)
+            await interaction.response.send_message(
+                embed=_error_embed(f"找不到符合「{self.query.value}」的 LoRA"), ephemeral=True,
+            )
             return
         embed = discord.Embed(title=f"搜尋「{self.query.value}」", color=EMBED_COLOR)
         await interaction.response.send_message(
@@ -336,11 +372,13 @@ class LoraCategoryView(discord.ui.View):
             try:
                 data = await dc.get_loras(http_session, BASE_URL)
             except dc.DarkroomError as e:
-                await interaction.response.edit_message(content=str(e), embed=None, view=None)
+                await interaction.response.edit_message(content=None, embed=_error_embed(str(e)), view=None)
                 return
             items = [it for it in data.get("items", []) if it.get("category") == category]
             if not items:
-                await interaction.response.edit_message(content=f"{category} 分類目前沒有 LoRA", embed=None, view=None)
+                await interaction.response.edit_message(
+                    content=None, embed=_error_embed(f"{category} 分類目前沒有 LoRA"), view=None,
+                )
                 return
             view = LoraItemPageView(category, items, page=0)
             await interaction.response.edit_message(embed=view.build_embed(), view=view)
@@ -377,7 +415,7 @@ class ChkpConfirmView(discord.ui.View):
         try:
             await dc.set_checkpoint(http_session, BASE_URL, self.name)
         except dc.DarkroomError as e:
-            await interaction.response.edit_message(content=str(e), embed=None, view=None)
+            await interaction.response.edit_message(content=None, embed=_error_embed(str(e)), view=None)
             return
         await interaction.response.edit_message(content=f"checkpoint 已設為 `{self.name}`", embed=None, view=None)
 
@@ -408,14 +446,48 @@ async def chkp_cmd(interaction: discord.Interaction) -> None:
     try:
         data = await dc.get_checkpoints(http_session, BASE_URL)
     except dc.DarkroomError as e:
-        await interaction.response.send_message(str(e), ephemeral=True)
+        await interaction.response.send_message(embed=_error_embed(str(e)), ephemeral=True)
         return
     items = data.get("items", [])
     if not items:
-        await interaction.response.send_message("找不到任何 checkpoint", ephemeral=True)
+        await interaction.response.send_message(embed=_error_embed("找不到任何 checkpoint"), ephemeral=True)
         return
     embed = discord.Embed(title="選擇 checkpoint", color=EMBED_COLOR)
     await interaction.response.send_message(embed=embed, view=ChkpView(items, data.get("current")), ephemeral=True)
+
+
+def _gacha_status_embed(n: int, done: int, errors: int, state: str) -> discord.Embed:
+    """state: 'running'（還在跑）/ 'done'（正常跑完）/ 'cancelled'（使用者按了取消）。"""
+    if state == "cancelled":
+        title = f"🚫 已取消（{done}/{n} 張已完成）"
+        color = ERROR_COLOR
+    elif state == "done":
+        title = f"✅ 完成 {done}/{n} 張"
+        color = EMBED_COLOR
+    else:
+        title = f"🎴 生成中…（{done}/{n} 完成）"
+        color = EMBED_COLOR
+    embed = discord.Embed(title=title, color=color)
+    if errors:
+        embed.description = f"{errors} 張失敗"
+    return embed
+
+
+class GachaCancelView(discord.ui.View):
+    """掛在進度訊息上的「取消」按鈕。按下只設一個旗標，實際呼叫暗房
+    /api/gen-cancel 跟停止輪詢是 _run_gacha 的迴圈自己看旗標決定——按鈕
+    callback 不直接碰 pending 清單（那份清單活在迴圈的區域變數裡）。"""
+
+    def __init__(self, cancel_event: asyncio.Event) -> None:
+        super().__init__(timeout=None)   # 訊息生命週期由 _run_gacha 自己收尾，不靠 view 逾時
+        self.cancel_event = cancel_event
+
+    @discord.ui.button(label="❌ 取消剩餘", style=discord.ButtonStyle.danger)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        self.cancel_event.set()
+        button.disabled = True
+        button.label = "取消中…"
+        await interaction.response.edit_message(view=self)
 
 
 async def _run_gacha(interaction: discord.Interaction, n: int) -> None:
@@ -423,14 +495,14 @@ async def _run_gacha(interaction: discord.Interaction, n: int) -> None:
     output_channel_id = CONFIG.get("gacha_output_channel_id")
     if not output_channel_id:
         await interaction.response.send_message(
-            "還沒設定 gacha_output_channel_id，請先在 config.json 填好圖片要送去哪個頻道",
+            embed=_error_embed("還沒設定 gacha_output_channel_id，請先在 config.json 填好圖片要送去哪個頻道"),
             ephemeral=True,
         )
         return
     output_channel = bot.get_channel(int(output_channel_id))
     if output_channel is None:
         await interaction.response.send_message(
-            f"機器人拿不到頻道 id {output_channel_id}（不在同一個伺服器，或機器人沒被邀進去）",
+            embed=_error_embed(f"機器人拿不到頻道 id {output_channel_id}（不在同一個伺服器，或機器人沒被邀進去）"),
             ephemeral=True,
         )
         return
@@ -447,13 +519,16 @@ async def _run_gacha(interaction: discord.Interaction, n: int) -> None:
                            "strength": selected.get("strength", LORA_STRENGTH)}]
         trigger_payload = selected.get("trigger") or ""
 
-    await interaction.response.send_message(f"🎴 已排入 {n} 張，開始生成…")
+    # 只是個 3 秒內一定要有的輕量 ack，真正看得到進度/取消按鈕的是下面另外
+    # send 出去的那則訊息——這樣後續無論跑多久都不受 interaction followup
+    # 15 分鐘過期的限制（進度訊息用一般頻道訊息 .edit()，不是 interaction API）。
+    await interaction.response.send_message(f"🎴 已排入 {n} 張，開始生成…", ephemeral=True)
     reply_channel = interaction.channel
 
     try:
         draw = await dc.agent_draw(http_session, BASE_URL, n, loras=loras_payload, trigger=trigger_payload)
     except dc.DarkroomError as e:
-        await reply_channel.send(str(e))
+        await reply_channel.send(embed=_error_embed(str(e)))
         return
 
     items = draw["items"]
@@ -463,17 +538,30 @@ async def _run_gacha(interaction: discord.Interaction, n: int) -> None:
     pending = {it["id"]: it for it in items}
     done_ids: set[str] = set()
     error_ids: set[str] = set()
+    cancel_event = asyncio.Event()
+    cancel_view = GachaCancelView(cancel_event)
+    progress_msg = await reply_channel.send(embed=_gacha_status_embed(n, 0, 0, "running"), view=cancel_view)
 
+    cancelled = False
     while pending:
+        if cancel_event.is_set():
+            cancelled = True
+            try:
+                await dc.gen_cancel(http_session, BASE_URL, list(pending))
+            except dc.DarkroomError:
+                pass   # 取消本身失敗也不影響「不再繼續輪詢」這個結果
+            break
         try:
             statuses = await dc.gen_status(http_session, BASE_URL, list(pending))
         except dc.DarkroomError as e:
-            await reply_channel.send(str(e))
+            await reply_channel.send(embed=_error_embed(str(e)))
             break
+        progressed = False
         for gid, st in statuses.items():
             status = st.get("status")
             if status == "done" and gid not in done_ids:
                 done_ids.add(gid)
+                progressed = True
                 item = pending.pop(gid, None)
                 if item is None:
                     continue
@@ -491,15 +579,16 @@ async def _run_gacha(interaction: discord.Interaction, n: int) -> None:
                 await output_channel.send(embed=embed, file=file_obj)
             elif status == "error" and gid not in error_ids:
                 error_ids.add(gid)
+                progressed = True
                 pending.pop(gid, None)
-        if pending:
+        if progressed:
+            await progress_msg.edit(embed=_gacha_status_embed(n, len(done_ids), len(error_ids), "running"),
+                                     view=cancel_view)
+        if pending and not cancel_event.is_set():
             await asyncio.sleep(POLL_INTERVAL_S)
 
-    ok = len(done_ids)
-    msg = f"完成 {ok}/{n} 張"
-    if error_ids:
-        msg += f"（{len(error_ids)} 張失敗）"
-    await reply_channel.send(msg)
+    final_state = "cancelled" if cancelled else "done"
+    await progress_msg.edit(embed=_gacha_status_embed(n, len(done_ids), len(error_ids), final_state), view=None)
 
 
 @bot.tree.command(name="gacha", description="抽卡生圖")
