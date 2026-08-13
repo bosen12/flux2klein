@@ -47,14 +47,16 @@
 
 無參數，靠 Discord message component（按鈕／下拉選單）一步步往下選，全程不用打字：
 
-1. `/lora` → 回一則 ephemeral 訊息＋4 個分類按鈕（`style`／`Character`／`HENTAI`／`illus`，對應暗房 `LORA_FOLDERS`）＋一顆「🚫 不套用 LoRA」按鈕（點了直接把 `selected_lora` 存成空陣列 `[]`，跟「還沒選過」的 `null` 是不同語意，見下方 config 說明）
+1. `/lora` → 回一則 ephemeral 訊息＋4 個分類按鈕（`style`／`Character`／`HENTAI`／`illus`，對應暗房 `LORA_FOLDERS`）＋一顆「🔍 搜尋」按鈕（見下）＋一顆「🚫 不套用 LoRA」按鈕（點了直接把 `selected_lora` 存成空陣列 `[]`，跟「還沒選過」的 `null` 是不同語意，見下方 config 說明）
 2. 點分類 → 打 `GET /api/loras`、篩出該分類，`edit_message` 換成該分類的分頁下拉選單（見下）
 3. 選單選某一筆 → `edit_message` 換成**詳情畫面**（見下）
-4. 詳情畫面確認 → 把 `{folder, file, strength, trigger}` 寫進 `discord-bot/config.json` 的 `selected_lora`，`edit_message` 顯示「LoRA 已設為 `<title>`（強度 X.XX）」；取消 → 回到剛才那一頁的選單
+4. 詳情畫面確認 → 把 `{folder, file, strength, trigger}` 寫進 `discord-bot/config.json` 的 `selected_lora`，`edit_message` 顯示「LoRA 已設為 `<title>`（強度 X.XX）」；取消 → 回到剛才那一頁的選單（從🔍搜尋結果進來的沒有「那一頁」，取消就單純清空）
 
 **分頁下拉選單**：每頁最多 25 筆（Discord `Select` 元件單一頁的選項數硬上限），`SelectOption.label` 用 LoRA 標題（`item.title or item.name or item.file`，跟暗房自己 `darkroom.js` 的 `lora.title || lora.name` 同一套慣例，截斷到 100 字元）。選單下方一列放「◀ 上一頁」「下一頁 ▶」（到頁首/頁尾自動 `disabled`）「🔙 換分類」三顆按鈕。
 
-**這個互動方式繞了一圈才定案，記錄一下避免以後重踩**：使用者一開始要求「可搜尋」，第一次以為 Discord 的字串 `Select` 元件跟角色/頻道選單一樣有內建打字過濾，實作後使用者實測回報「沒辦法打字」；改成 slash command 的 `query` 參數 + autocomplete（真正能跨全部 921 筆即時打字搜尋，這是 Discord 唯一支援大量選項打字搜尋的機制）；但使用者最後表態**要的是「點開一個真正的下拉選單」這個互動形式本身，即使沒搜尋也接受**——所以最終定案是回到分類→分頁下拉選單，**選單本身沒有搜尋功能**（Discord 的字串 Select 元件本來就沒有內建搜尋框，只有使用者/角色/頻道這幾種拉取 Discord 自己伺服器資料的 entity select 才有），只能翻頁＋捲動找。
+**🔍 搜尋按鈕**（2026-08-13 四次改版最後追加）：使用者確認「選單本身沒搜尋功能也接受」之後又問「有沒有辦法選單+搜尋都要」。真正的答案是 Discord 選單元件本身仍然做不到，但可以組合另一個元件達成同樣效果——`discord.ui.Modal`（跳出的表單彈窗）。點「🔍 搜尋」→ `interaction.response.send_modal(LoraSearchModal())` 跳出一個帶單一文字欄位的表單→使用者打關鍵字送出→`Modal.on_submit` 收到後**由機器人自己**過濾 `GET /api/loras` 的結果（`file`/`title`/`name`，不分大小寫，跨全部分類，最多 25 筆命中）→組成 `LoraSearchResultView`（單一 `Select`，選項就是命中結果）用**新的一則 ephemeral 訊息**顯示（不能沿用原本那則訊息：送出 modal 本身就耗盡了那次按鈕互動的回應額度，`on_submit` 收到的是 modal 提交產生的全新一輪互動，只能開新訊息，這是 Discord API 的限制不是實作選擇）。選中結果一樣導去**詳情畫面**，`category` 帶 `None`（搜尋結果沒有「頁」的概念，取消直接清空）。
+
+**這個互動方式繞了四次才定案，記錄一下避免以後重踩**：① 一開始以為 Discord 的字串 `Select` 元件跟角色/頻道選單一樣有內建打字過濾，實作後使用者實測回報「沒辦法打字」；② 改成 slash command 的 `query` 參數 + autocomplete（真正能跨全部 921 筆即時打字搜尋，技術上是對的）；③ 使用者表態要的是「點開一個真正的下拉選單」這個互動形式本身，不是打指令參數，改回分類→分頁 select，接受選單本身沒搜尋；④ 使用者接著問「有沒有辦法選單又能搜尋」，才想到 Modal + Select 的組合可以兩者都要——**Discord 的字串 Select 元件本身確實沒有內建搜尋框**（這點從頭到尾沒有變過，只有使用者/角色/頻道這幾種拉取 Discord 自己伺服器資料的 entity select 才有），但透過另一個元件（Modal）收集查詢字串、伺服器端自己過濾、再用 Select 呈現結果，可以組合出「選單＋搜尋」的體驗，不违反 Discord 元件本身的限制。
 
 **詳情畫面**（2026-08-13 追加——使用者要求能調強度、能像暗房面板一樣勾選要套用哪些觸發詞段落）：
 

@@ -92,7 +92,7 @@ async def intro(interaction: discord.Interaction) -> None:
         color=EMBED_COLOR,
     )
     embed.add_field(name="/gacha n:<1~100>", value="抽卡生圖，逐張生完就送圖", inline=False)
-    embed.add_field(name="/lora", value="點選分類→翻頁選 LoRA→確認，切換抽卡套用的 LoRA（全局共用）", inline=False)
+    embed.add_field(name="/lora", value="點選分類/搜尋→選 LoRA→確認，切換抽卡套用的 LoRA（全局共用）", inline=False)
     embed.add_field(name="/chkp", value="點選 checkpoint→確認，切換底模（全局共用）", inline=False)
     await interaction.response.send_message(embed=embed)
 
@@ -104,10 +104,13 @@ LORA_STRENGTH_STEP = 0.05   # 跟暗房自己的強度滑桿（darkroom.js sInpu
 
 class LoraDetailView(discord.ui.View):
     """按鈕流程最後一步：調強度、勾選要套用的觸發詞段落、確認/取消。
-    取消回到剛才那一頁的項目清單。"""
+    取消回到剛才那一頁的項目清單——如果是從分類/分頁進來的（category 有值）；
+    如果是從 🔍 搜尋結果進來的（category 是 None，沒有「那一頁」可以回去），
+    取消就單純清空訊息。"""
 
-    def __init__(self, item: dict, category: str, items: list[dict], page: int,
-                 strength: float = LORA_STRENGTH, selected_words: set[int] | None = None) -> None:
+    def __init__(self, item: dict, category: str | None = None, items: list[dict] | None = None,
+                 page: int = 0, strength: float = LORA_STRENGTH,
+                 selected_words: set[int] | None = None) -> None:
         super().__init__(timeout=180)
         self.item = item
         self.category = category
@@ -184,8 +187,11 @@ class LoraDetailView(discord.ui.View):
         )
 
     async def _on_cancel(self, interaction: discord.Interaction) -> None:
-        view = LoraItemPageView(self.category, self.items, self.page)
-        await interaction.response.edit_message(embed=view.build_embed(), view=view)
+        if self.category is not None and self.items is not None:
+            view = LoraItemPageView(self.category, self.items, self.page)
+            await interaction.response.edit_message(embed=view.build_embed(), view=view)
+        else:
+            await interaction.response.edit_message(content="已取消", embed=None, view=None)
 
 
 class LoraItemPageView(discord.ui.View):
@@ -259,8 +265,57 @@ class LoraItemPageView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=LoraCategoryView())
 
 
+class LoraSearchResultView(discord.ui.View):
+    """🔍 搜尋結果：一個下拉選單（最多 25 筆命中），選了直接進詳情畫面。
+    category=None 帶進 LoraDetailView，取消時單純清空（沒有「上一頁」可回）。"""
+
+    def __init__(self, matches: list[dict], query: str) -> None:
+        super().__init__(timeout=180)
+        self.matches = matches
+        select = discord.ui.Select(
+            placeholder=f"「{query}」的搜尋結果（{len(matches)} 筆）",
+            options=[discord.SelectOption(label=_lora_label(it), value=str(i))
+                     for i, it in enumerate(matches)],
+        )
+        select.callback = self._on_select
+        self.add_item(select)
+
+    async def _on_select(self, interaction: discord.Interaction) -> None:
+        idx = int(interaction.data["values"][0])
+        item = self.matches[idx]
+        view = LoraDetailView(item)
+        await interaction.response.edit_message(embed=view.build_embed(), view=view)
+
+
+class LoraSearchModal(discord.ui.Modal, title="搜尋 LoRA"):
+    query = discord.ui.TextInput(label="關鍵字", placeholder="輸入檔名或標題的一部分", max_length=100)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        assert http_session is not None
+        try:
+            data = await dc.get_loras(http_session, BASE_URL)
+        except dc.DarkroomError as e:
+            await interaction.response.send_message(str(e), ephemeral=True)
+            return
+        needle = self.query.value.lower()
+        matches = []
+        for it in data.get("items", []):
+            haystack = f"{it.get('file', '')} {it.get('title', '')} {it.get('name', '')}".lower()
+            if needle in haystack:
+                matches.append(it)
+            if len(matches) >= 25:
+                break
+        if not matches:
+            await interaction.response.send_message(f"找不到符合「{self.query.value}」的 LoRA", ephemeral=True)
+            return
+        embed = discord.Embed(title=f"搜尋「{self.query.value}」", color=EMBED_COLOR)
+        await interaction.response.send_message(
+            embed=embed, view=LoraSearchResultView(matches, self.query.value), ephemeral=True,
+        )
+
+
 class LoraCategoryView(discord.ui.View):
-    """/lora 第一步：4 個分類按鈕。"""
+    """/lora 第一步：4 個分類按鈕＋搜尋＋不套用。"""
 
     def __init__(self) -> None:
         super().__init__(timeout=180)
@@ -268,6 +323,9 @@ class LoraCategoryView(discord.ui.View):
             btn = discord.ui.Button(label=cat, style=discord.ButtonStyle.primary)
             btn.callback = self._make_callback(cat)
             self.add_item(btn)
+        search_btn = discord.ui.Button(label="🔍 搜尋", style=discord.ButtonStyle.primary)
+        search_btn.callback = self._search_callback
+        self.add_item(search_btn)
         none_btn = discord.ui.Button(label="🚫 不套用 LoRA", style=discord.ButtonStyle.secondary)
         none_btn.callback = self._no_lora_callback
         self.add_item(none_btn)
@@ -287,6 +345,12 @@ class LoraCategoryView(discord.ui.View):
             view = LoraItemPageView(category, items, page=0)
             await interaction.response.edit_message(embed=view.build_embed(), view=view)
         return callback
+
+    async def _search_callback(self, interaction: discord.Interaction) -> None:
+        # 跳出輸入框讓使用者打字，送出（Modal.on_submit）之後另開一則訊息顯示
+        # 結果選單——不能沿用原本那則訊息，因為送 modal 本身就會消耗掉這次
+        # component 互動的回應額度，後續是 modal 提交產生的新一輪互動。
+        await interaction.response.send_modal(LoraSearchModal())
 
     async def _no_lora_callback(self, interaction: discord.Interaction) -> None:
         # 存空陣列，不是 None——None 代表「還沒選過」，/gacha 會落到暗房伺服器端自己的
