@@ -2436,6 +2436,10 @@ function renderLmSlotTabs() {
       clear.title = `清空 LoRA ${i + 1}`; clear.setAttribute('aria-label', `清空 LoRA ${i + 1}`); clear.textContent = '✕';
       clear.addEventListener('click', (e) => {
         e.stopPropagation();
+        // ✕ 在 tab 裡面，點下去滑鼠沒有真的離開 tab，mouseleave 不會觸發，預覽圖
+        // 會停在清空前的內容一直浮著——要自己手動關掉（跟 .cs-locked-clear 那顆
+        // 清空鈕同一個坑，見上面那份的註解）。
+        hideLoraPreviewTip();
         GEN_LORA_SLOTS[i] = { lora: null, strength: slot.strength, twPicks: new Set() };
         setActiveSlot(i);
         renderGenCurrent(); renderLmCurrent(); renderLmList($('lm-search').value);
