@@ -194,6 +194,17 @@
 </div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+<!-- 取代 window.confirm 的通用確認對話框，樣式跟其他彈窗一致，見 confirmDialog()。 -->
+<div id="confirm-modal" class="confirm-modal" role="alertdialog" aria-modal="true">
+  <div class="confirm-modal-inner">
+    <div class="confirm-modal-msg" id="confirm-modal-msg"></div>
+    <div class="confirm-modal-actions">
+      <button class="ghost" id="confirm-modal-cancel">取消</button>
+      <button class="primary" id="confirm-modal-ok">確定</button>
+    </div>
+  </div>
+</div>
+
 <div id="modal" class="modal">
   <button class="m-nav prev" id="m-prev" aria-label="上一個">‹</button>
   <div class="modal-inner" id="modal-inner"></div>

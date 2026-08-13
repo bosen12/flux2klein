@@ -1208,6 +1208,22 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
   transition: opacity var(--d-exit) var(--ease-in), transform var(--d-exit) var(--ease-in); }
 .toast.show { opacity: 1; transform: translate(-50%, 0);
   transition: opacity var(--d-ui) var(--ease-out), transform var(--d-ui) var(--ease-out); }
+/* 錯誤訊息用左側色條＋文字色跟一般提示分開，不用整塊變色（那樣在暗色底上太搶眼）。
+   沿用既有的 --err（跟卡片標記失敗、生成狀態錯誤同一個顏色語彙）。 */
+.toast.error { border-color: var(--err); color: var(--err);
+  box-shadow: var(--shadow), inset 3px 0 0 var(--err); }
+
+/* ── 通用確認對話框（取代 window.confirm，樣式跟其他彈窗一致）─────────────── */
+.confirm-modal { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center;
+  justify-content: center; background: rgba(10,10,14,.6); opacity: 0; pointer-events: none;
+  transition: opacity var(--d-ui) var(--ease-out); }
+.confirm-modal.open { opacity: 1; pointer-events: auto; }
+.confirm-modal-inner { background: var(--panel); border: 1px solid var(--line-2);
+  box-shadow: var(--shadow); padding: 22px 24px; max-width: 360px; width: calc(100% - 40px);
+  transform: translateY(10px) scale(.98); transition: transform var(--d-ui) var(--ease-out); }
+.confirm-modal.open .confirm-modal-inner { transform: translateY(0) scale(1); }
+.confirm-modal-msg { color: var(--ink); font-size: 14px; line-height: 1.55; white-space: pre-wrap; }
+.confirm-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
 
 /* ── 抽卡打標（打標模式）：15 張（5×3），每張牌面下方 4 顆稀有度按鈕。發牌/翻牌/
    光環沿用上方 .tarot-* ，這裡只調尺寸與加打標按鈕。 */

@@ -562,7 +562,7 @@ async function toggleFlag(rel, force) {
   } catch (e) {
     if (it) it.flagged = !next;               // 回退
     applyFlagVisual(rel, !next);
-    alert('標記失敗：' + e.message);
+    toast('標記失敗：' + e.message, true);
   }
   updateReviewCount();
 }
@@ -592,7 +592,7 @@ async function toggleFav(rel, force) {
   } catch (e) {
     if (it) it.favorited = !next;           // 回退
     applyFavVisual(rel, !next, false);
-    alert('收藏失敗：' + e.message);
+    toast('收藏失敗：' + e.message, true);
   }
 }
 
@@ -627,7 +627,7 @@ async function generate(rel) {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rel })
   });
   const j = await r.json();
-  if (j.error) { alert(j.error); return; }
+  if (j.error) { toast(j.error, true); return; }
   const it = itemOf(rel);
   if (it) it.job = { status: 'queued', message: '排隊中...' };
   const card = document.querySelector(`.card[data-rel="${cssAttr(rel)}"]`);
@@ -1113,7 +1113,7 @@ async function launchBatch(scope, regenerate) {
   const source = scope === 'all' ? ALL : currentList();
   const rels = (regenerate ? source : source.filter(x => !x.has_image)).map(x => x.rel);
   if (!rels.length) {
-    alert(regenerate ? '目前範圍沒有可生成的項目' : '目前範圍沒有缺圖的項目');
+    toast(regenerate ? '目前範圍沒有可生成的項目' : '目前範圍沒有缺圖的項目', true);
     return;
   }
   // 補缺少：打亂順序（不從頭跑到尾，每次補到的是隨機分佈的詞庫）
@@ -1125,13 +1125,13 @@ async function launchBatch(scope, regenerate) {
   }
   const scopeTxt = scope === 'all' ? '全部詞庫' : (SEARCH ? '搜尋結果' : '此資料夾');
   const modeTxt = regenerate ? '重新生成(會覆蓋既有圖)' : '補齊缺少的';
-  if (!confirm(`${scopeTxt} · ${modeTxt}\n共 ${rels.length} 張,將以每次 2 張並行處理,可能耗時很久。確定?`)) return;
+  if (!(await confirmDialog(`${scopeTxt} · ${modeTxt}\n共 ${rels.length} 張,將以每次 2 張並行處理,可能耗時很久。確定?`))) return;
   const r = await fetch('/api/batch_generate', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ rels, regenerate })
   });
   const j = await r.json();
-  if (j.error) { alert(j.error); return; }
+  if (j.error) { toast(j.error, true); return; }
   pollBatch();
 }
 $('gen-page-missing').onclick = () => launchBatch('page', false);
@@ -1140,7 +1140,7 @@ $('gen-all-missing').onclick  = () => launchBatch('all', false);
 $('gen-all-regen').onclick    = () => launchBatch('all', true);
 
 $('batch-stop').onclick = async () => {
-  if (!confirm('停止批次?當前這張仍會跑完。')) return;
+  if (!(await confirmDialog('停止批次?當前這張仍會跑完。'))) return;
   await fetch('/api/batch_stop', { method: 'POST' });
 };
 
@@ -1176,6 +1176,12 @@ window.addEventListener('keydown', e => {
   // preventDefault——使用者回報「很多 Windows 預設快捷鍵都不能用」就是這個。任何組合鍵
   // 一律直接放行給瀏覽器/系統處理，不進這支 handler 的判斷邏輯。
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  // 確認對話框（z-index 90，取代 window.confirm）排最最前面：它可能疊在任何畫面之上
+  // （批次生成鈕在頂列，不屬於任何其他 modal 的子層級），Esc 一律當取消，不往下傳。
+  if ($('confirm-modal').classList.contains('open')) {
+    if (e.key === 'Escape') { e.preventDefault(); _confirmModalResolve(false); }
+    return;
+  }
   // 快捷鍵一覽（z-index 210，蓋過所有其他疊層）排最前面：不管現在開著什麼，Esc 都先關
   // 這個說明疊層，不去動底下真正在操作的東西。
   if ($('shortcuts-overlay').classList.contains('open')) {
@@ -1298,7 +1304,7 @@ const isMobile = () => matchMedia('(max-width: 640px)').matches || matchMedia('(
 // label 會併進塔羅標題與空池提示，讓使用者看得出這批是從哪裡抽的。
 function drawTarot(pool, label) {
   pool = pool || ALL.filter(x => x.has_image);            // 只抽有 webp（旁邊有圖）的詞庫
-  if (!pool.length) { alert(label ? `「${label}」沒有已生成預覽圖的詞庫可抽` : '目前沒有任何已生成預覽圖的詞庫可抽'); return; }
+  if (!pool.length) { toast(label ? `「${label}」沒有已生成預覽圖的詞庫可抽` : '目前沒有任何已生成預覽圖的詞庫可抽', true); return; }
   const want = isMobile() ? 1 : 8;                        // 手機一次一張，桌面 8 張（4+4）
   const picks = sampleN(pool, Math.min(want, pool.length));
   const n = picks.length;
@@ -1933,12 +1939,33 @@ const RARITY_FULL = { common: '普通版', rare: '稀有版', special: '特別�
 const SEL = new Set();                 // 打標模式選取的 rel
 
 let _toastT = null;
-function toast(msg) {
+function toast(msg, isError) {
   const t = $('toast'); if (!t) return;
   t.textContent = msg; t.classList.add('show');
+  t.classList.toggle('error', !!isError);
   clearTimeout(_toastT);
   _toastT = setTimeout(() => t.classList.remove('show'), 2600);
 }
+
+/* 取代 window.confirm——同一套彈窗慣例（squircle、背景遮罩、Esc／✕都能關，Esc 的
+   攔截寫在上面的全域 keydown 最前面，因為這個對話框可能疊在任何畫面之上）。
+   回傳 Promise<boolean>，呼叫端一律 `if (!(await confirmDialog('...'))) return;`。 */
+let _confirmModalResolve = null;
+function confirmDialog(message) {
+  const modal = $('confirm-modal');
+  $('confirm-modal-msg').textContent = message;
+  modal.classList.add('open');
+  return new Promise(resolve => {
+    _confirmModalResolve = (ok) => {
+      modal.classList.remove('open');
+      _confirmModalResolve = null;
+      resolve(ok);
+    };
+  });
+}
+$('confirm-modal-ok').onclick = () => _confirmModalResolve && _confirmModalResolve(true);
+$('confirm-modal-cancel').onclick = () => _confirmModalResolve && _confirmModalResolve(false);
+$('confirm-modal').onclick = (e) => { if (e.target.id === 'confirm-modal') _confirmModalResolve && _confirmModalResolve(false); };
 
 function toggleSel(rel, cardEl) {
   if (SEL.has(rel)) SEL.delete(rel); else SEL.add(rel);
