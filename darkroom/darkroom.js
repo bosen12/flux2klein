@@ -496,6 +496,9 @@ const ICON_EMPTY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 const ICON_STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.1l2.63 5.33 5.88.85-4.25 4.15 1 5.86L12 16.79 6.74 19.6l1-5.86L3.49 9.28l5.88-.85z"/></svg>';
 const RARITY_LABEL = { common: '普通', rare: '稀有', special: '特別', legendary: '傳奇' };
 const rarTag = (r) => r ? `<span class="rar-tag ${r}">${RARITY_LABEL[r] || ''}</span>` : '';
+const scoreBadgeHTML = (score) => (score && typeof score.final === 'number')
+  ? `<span class="score-badge" tabindex="0" role="button" aria-label="評分明細：${score.final.toFixed(1)} 分">${score.final.toFixed(1)}</span>`
+  : '';
 // 傳奇卡的閃爍火花層（Aceternity Sparkles 的 vanilla 版）：隨機位置＋延遲的小星點
 function sparklesHTML(n = 7) {
   let s = '';
@@ -518,6 +521,7 @@ function thumbInnerHTML(it) {
   return `${media}` +
     (it.rarity === 'legendary' ? sparklesHTML() : '') +
     rarTag(it.rarity) +
+    scoreBadgeHTML(it.score) +
     `<button class="fav-btn" type="button" aria-label="收藏" aria-pressed="${it.favorited ? 'true' : 'false'}">${ICON_STAR}</button>` +
     `<span class="pick-box" aria-hidden="true"></span>` +
     `<span class="flag-x" aria-hidden="true">✕</span>` +

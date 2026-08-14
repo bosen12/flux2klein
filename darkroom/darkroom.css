@@ -1279,6 +1279,14 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 .thumb .rar-tag        { top: 8px; left: 8px; }    /* 格線左上角（已移除生成狀態徽章） */
 .tarot-front .rar-tag  { top: 8px;  left: 8px; }
 
+/* 分數徽章：加權總分，圓角小標籤貼縮圖左下角（右上是 fav-btn/pick-box、左上是
+   rar-tag，左下是唯一空著的角落）。膠囊形狀要明確標 corner-shape: round——squircle
+   全域規則會讓它變兩端削平的橢圓，見檔案開頭 corner-shape 一節的例外說明。 */
+.score-badge { position: absolute; z-index: 3; bottom: 8px; left: 8px;
+  font-size: 10px; font-weight: 800; letter-spacing: .02em;
+  padding: 2px 7px; border-radius: 999px; corner-shape: round;
+  background: rgba(18,19,28,.82); color: var(--amber); cursor: default; }
+
 .card.rar-rare    { border-color: var(--rar-rare);    box-shadow: inset 0 0 0 1px var(--rar-rare),    0 0 16px -3px var(--rar-rare); }
 .card.rar-special { border-color: var(--rar-special); box-shadow: inset 0 0 0 1px var(--rar-special), 0 0 16px -3px var(--rar-special); }
 .card.rar-legendary { border-color: hsl(var(--rar-h) 90% 64%);
