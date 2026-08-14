@@ -923,12 +923,18 @@ def scan_libraries(force: bool = False) -> list[dict]:
     fl = flagged_set()
     fv = fav_set()
     rmap = rarity_map()
+    smap = score_map()
     return [
         dict(it,
              job=dict(jobs.get(it["rel"]) or {}),
              flagged=(it["rel"] in fl),
              favorited=(it["rel"] in fv),
-             rarity=(rmap[it["rel"]] if it["rel"] in rmap else it["rarity"]))
+             rarity=(rmap[it["rel"]] if it["rel"] in rmap else it["rarity"]),
+             # 分數跟圖片存在性綁定：has_image=False 一律回 None，即使側檔裡還留著
+             # 舊紀錄（圖被刪了/還沒生成過），不能顯示分數——見設計文件「分數跟圖片
+             # 存在性綁定」一節，這個不變量只在這個唯一的讀取點保證，不用到處掛
+             # 刪除 hook。
+             score=(smap.get(it["rel"]) if it["has_image"] else None))
         for it in cached
     ]
 
