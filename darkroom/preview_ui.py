@@ -369,19 +369,19 @@ def _score_image_bytes(img_bytes: bytes) -> dict | None:
     """POST 圖片 bytes 給 waifu-score 的合併端點，回傳 Task 1 定義的分數 dict；
     連線失敗/timeout/非 200 一律安靜回 None（呼叫端負責 log），不拋例外——評分
     是錦上添花的背景動作，不能因為服務沒開就影響生成本身。"""
-    boundary = f"----darkroomscore{uuid.uuid4().hex}"
-    body = (
-        f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="file"; filename="card.webp"\r\n'
-        f"Content-Type: image/webp\r\n\r\n"
-    ).encode("utf-8") + img_bytes + f"\r\n--{boundary}--\r\n".encode("utf-8")
-    headers = {
-        "Content-Type": f"multipart/form-data; boundary={boundary}",
-        "User-Agent": "darkroom-preview-ui/1.0",
-    }
-    req = urllib.request.Request(f"{SCORE_SERVICE_BASE}/api/darkroom-score",
-                                 data=body, headers=headers, method="POST")
     try:
+        boundary = f"----darkroomscore{uuid.uuid4().hex}"
+        body = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="card.webp"\r\n'
+            f"Content-Type: image/webp\r\n\r\n"
+        ).encode("utf-8") + img_bytes + f"\r\n--{boundary}--\r\n".encode("utf-8")
+        headers = {
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "User-Agent": "darkroom-preview-ui/1.0",
+        }
+        req = urllib.request.Request(f"{SCORE_SERVICE_BASE}/api/darkroom-score",
+                                     data=body, headers=headers, method="POST")
         with urllib.request.urlopen(req, timeout=SCORE_TIMEOUT) as resp:
             raw = resp.read()
         return json.loads(raw.decode("utf-8"))
