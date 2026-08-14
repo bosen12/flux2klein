@@ -1321,6 +1321,12 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
   font-size: 10px; font-weight: 800; letter-spacing: .02em;
   padding: 2px 7px; border-radius: 999px; corner-shape: round;
   background: rgba(18,19,28,.82); color: var(--amber); cursor: default; }
+/* 光環：門檻見 JS 端 scoreHaloBand()（6.5~7.5 淺藍、≥7.5 淺紫）。用一圈實邊
+   （0 0 0 1px）+ 一圈模糊光暈（0 0 Npx）疊出「光環」感，跟卡片稀有度光環
+   （.card.rar-legendary 那組 box-shadow）同一種手法，數值改小一點是因為
+   徽章本身很小，太大的暈染範圍會蓋過旁邊的縮圖內容。 */
+.score-badge.halo-blue   { box-shadow: 0 0 0 1px #8ec5ff, 0 0 9px 2px rgba(142,197,255,.55); }
+.score-badge.halo-purple { box-shadow: 0 0 0 1px #c9a8ff, 0 0 9px 2px rgba(201,168,255,.55); }
 
 /* 大圖 modal 的評分明細——「光度計」面板。三色沿用 .rar-tag.legendary 漸層
    已經在用的色碼，不重新發明一組顏色；--score-color 由 .score-panel.low/mid/high

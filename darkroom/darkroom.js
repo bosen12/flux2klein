@@ -540,8 +540,18 @@ const ICON_EMPTY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 const ICON_STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.1l2.63 5.33 5.88.85-4.25 4.15 1 5.86L12 16.79 6.74 19.6l1-5.86L3.49 9.28l5.88-.85z"/></svg>';
 const RARITY_LABEL = { common: '普通', rare: '稀有', special: '特別', legendary: '傳奇' };
 const rarTag = (r) => r ? `<span class="rar-tag ${r}">${RARITY_LABEL[r] || ''}</span>` : '';
+// 徽章光環門檻——使用者原話「6.5到7.5用淺藍，7.5以上淺紫」，跟大圖 modal
+// 上色（5.5/7.5）、評分分布晶片（4/7/8）都是各自獨立的門檻，三套系統故意
+// 不共用，各自服務不同情境（modal 是「這張好不好」、分布晶片是「篩選範圍」、
+// 這裡是「縮圖上一眼認出高分」），不要為了統一而互相牽動。
+function scoreHaloBand(final) {
+  if (typeof final !== 'number') return '';
+  if (final >= 7.5) return 'halo-purple';
+  if (final >= 6.5) return 'halo-blue';
+  return '';
+}
 const scoreBadgeHTML = (score) => (score && typeof score.final === 'number')
-  ? `<span class="score-badge" tabindex="0" role="button" aria-label="評分明細：${score.final.toFixed(1)} 分">${score.final.toFixed(1)}</span>`
+  ? `<span class="score-badge ${scoreHaloBand(score.final)}" tabindex="0" role="button" aria-label="評分明細：${score.final.toFixed(1)} 分">${score.final.toFixed(1)}</span>`
   : '';
 function scoreDetailHTML(score) {
   return `<div class="score-tip-row"><b>加權總分</b><b>${score.final.toFixed(2)}</b></div>
