@@ -402,6 +402,17 @@ def _score_service_available() -> bool:
         return False
 
 
+def _score_and_persist(rel: str, img_bytes: bytes):
+    """瀏覽模式生成成功後的背景評分：算完就永久寫進側檔。見 do_generate() 裡
+    的呼叫點——緊接在 _scan_note_image() 之後，用同一份剛寫出的圖片 bytes，
+    不用另外重讀檔案。"""
+    with _score_sem:
+        result = _score_image_bytes(img_bytes)
+    if result:
+        result["at"] = time.time()
+        set_score(rel, result)
+
+
 # ---------------------------------------------------------------------------
 # LoRA（給「生圖」模式用）：讀 ComfyUI 的 loras 資料夾，列出每個 .safetensors 的觸發詞
 # 與預覽圖。沿用主面板 serve.py 的做法與路徑（可用環境變數 LORA_ROOT 覆寫）。這些檔在
@@ -1119,6 +1130,8 @@ def do_generate(rel: str, seed: int | None = None, in_batch: bool = False):
                 except OSError:
                     pass
             _scan_note_image(rel, out_img)
+            threading.Thread(target=_score_and_persist, args=(rel, img_bytes),
+                             daemon=True).start()
             dt = time.time() - t0
             set_job(
                 rel,
