@@ -511,18 +511,45 @@ function scoreBand(final) {
   if (final >= 5.5) return 'mid';
   return 'low';
 }
-// openModal()／openGalleryItem() 共用：大圖 modal 的評分明細列，跟格線 hover
-// tooltip（scoreDetailHTML，上面）內容一樣，但用 .gi-row 這套既有的
-// key-value 列樣式（openGalleryItem 的 LoRA/seed/時間資訊欄本來就是這樣排的），
-// 加權總分那一列的數字額外套 scoreBand() 算出的顏色 class。
+// 光度計風格的單一子分數列：標籤 + 細長度量條（0~10 對應 0~100%）+ 數值。
+// track 一律用安全燈琥珀色（跟三個子分數本身的高低無關，那是總分光環的事），
+// 呼應暗房既有的曝光表視覺語言。
+function scoreMeterRowHTML(label, val10, displayText) {
+  const pct = Math.max(0, Math.min(100, (Number(val10) || 0) / 10 * 100));
+  return `<div class="score-meter">
+    <span class="score-meter-lbl">${label}</span>
+    <span class="score-meter-track"><span class="score-meter-fill" style="width:${pct}%"></span></span>
+    <span class="score-meter-val">${displayText}</span>
+  </div>`;
+}
+// openModal()／openGalleryItem() 共用：大圖 modal 的評分明細面板——「光度計」造型，
+// 總分是一圈依分數比例填色的光環（呼應 #boot 開機畫面的 .boot-ring 同一種
+// conic-gradient 遮罩手法）包著大數字，下面三條細量條是子分數，取代原本純文字
+// key-value 列表（那個版本標籤欄位固定 52px，"Waifu Scorer" 這種較長的英文標籤會
+// 被擠成兩行，且三個分數視覺權重完全一樣，掃視不出總分/子分的主從關係）。
 function modalScoreRowsHTML(score) {
   if (!score || typeof score.final !== 'number') {
-    return `<div class="gi-row"><span class="gi-k">評分</span><span class="gi-v">尚未評分</span></div>`;
+    return `<div class="score-panel score-panel-empty">
+      <span class="score-empty-dot" aria-hidden="true"></span>
+      <span class="score-empty-txt">尚未評分</span>
+    </div>`;
   }
-  return `<div class="gi-row"><span class="gi-k">加權總分</span><span class="gi-v score-final ${scoreBand(score.final)}">${score.final.toFixed(2)}</span></div>
-    <div class="gi-row"><span class="gi-k">Blackroot</span><span class="gi-v">${score.blackroot.toFixed(2)}</span></div>
-    <div class="gi-row"><span class="gi-k">Waifu Scorer</span><span class="gi-v">${score.waifu.toFixed(2)}</span></div>
-    <div class="gi-row"><span class="gi-k">Kawai</span><span class="gi-v">${score.kawai_tier} · ${score.kawai_score.toFixed(2)}</span></div>`;
+  const band = scoreBand(score.final);
+  const pct = Math.max(0, Math.min(100, score.final / 10 * 100));
+  return `<div class="score-panel score-panel-${band}" style="--score-pct:${pct}%">
+    <div class="score-dial-row">
+      <span class="score-dial" aria-hidden="true">
+        <span class="score-dial-ring"></span>
+        <span class="score-dial-num">${score.final.toFixed(2)}</span>
+      </span>
+      <span class="score-dial-lbl">加權總分</span>
+    </div>
+    <div class="score-meters">
+      ${scoreMeterRowHTML('Blackroot', score.blackroot, score.blackroot.toFixed(2))}
+      ${scoreMeterRowHTML('Waifu', score.waifu, score.waifu.toFixed(2))}
+      ${scoreMeterRowHTML('Kawai', score.kawai_norm, `${score.kawai_tier} · ${score.kawai_score.toFixed(2)}`)}
+    </div>
+  </div>`;
 }
 let SCORE_TIP_EL = null;
 function ensureScoreTip() {

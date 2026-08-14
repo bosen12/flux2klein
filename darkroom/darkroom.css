@@ -1296,13 +1296,42 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
   padding: 2px 7px; border-radius: 999px; corner-shape: round;
   background: rgba(18,19,28,.82); color: var(--amber); cursor: default; }
 
-/* 大圖 modal 的評分明細列沿用 .gi-row/.gi-k/.gi-v（openGalleryItem 既有樣式，
-   見該規則定義處），只有加權總分那個數字額外分段上色。三色直接借用
-   .rar-tag.legendary 漸層已經在用的色碼，不重新發明一組顏色。 */
+/* 大圖 modal 的評分明細——「光度計」面板。三色沿用 .rar-tag.legendary 漸層
+   已經在用的色碼，不重新發明一組顏色；--score-color 由 .score-panel.low/mid/high
+   決定，面板背景/邊框/光環/總分數字都跟著它變，只寫一次。 */
 .gi-score { margin: 10px 0; }
-.score-final.low  { color: #ff5f6d; font-weight: 700; }
-.score-final.mid  { color: #ffb347; font-weight: 700; }
-.score-final.high { color: #42f5a1; font-weight: 700; }
+.score-panel { position: relative; display: flex; flex-direction: column; gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--score-color, var(--line-2)) 35%, var(--line));
+  background: color-mix(in srgb, var(--score-color, transparent) 6%, var(--sunk)); }
+.score-panel-low  { --score-color: #ff5f6d; }
+.score-panel-mid  { --score-color: #ffb347; }
+.score-panel-high { --score-color: #42f5a1; }
+
+.score-dial-row { display: flex; align-items: center; gap: 12px; }
+.score-dial { position: relative; width: 52px; height: 52px; flex: none; display: grid; place-items: center; }
+/* 遮罩手法跟 #boot 開機畫面的 .boot-ring 同一招：conic-gradient 畫滿圈，
+   radial-gradient 遮罩挖空中間只留一圈細環，這次是靜態依分數比例填色，不轉。 */
+.score-dial-ring { position: absolute; inset: 0; border-radius: 50%; corner-shape: round;
+  background: conic-gradient(var(--score-color) var(--score-pct, 0%),
+    color-mix(in srgb, var(--score-color) 18%, transparent) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px)); }
+.score-dial-num { position: relative; font-family: var(--mono); font-size: 15px; font-weight: 800; color: var(--score-color); }
+.score-dial-lbl { font-family: var(--mono); font-size: 10px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--faint); }
+
+.score-meters { display: flex; flex-direction: column; gap: 7px; }
+.score-meter { display: grid; grid-template-columns: 64px 1fr 56px; align-items: center; gap: 8px; }
+.score-meter-lbl { font-size: 11px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.score-meter-track { height: 4px; border-radius: 999px; corner-shape: round;
+  background: color-mix(in srgb, var(--amber) 12%, var(--line)); overflow: hidden; }
+.score-meter-fill { display: block; height: 100%; border-radius: 999px; corner-shape: round;
+  background: linear-gradient(90deg, var(--amber-d), var(--amber)); }
+.score-meter-val { font-family: var(--mono); font-size: 11.5px; color: var(--ink); text-align: right; white-space: nowrap; }
+
+.score-panel-empty { flex-direction: row; align-items: center; gap: 8px; padding: 10px 14px; }
+.score-empty-dot { width: 6px; height: 6px; border-radius: 50%; corner-shape: round; background: var(--faint); flex: none; }
+.score-empty-txt { font-size: 12px; color: var(--faint); }
 
 .card.rar-rare    { border-color: var(--rar-rare);    box-shadow: inset 0 0 0 1px var(--rar-rare),    0 0 16px -3px var(--rar-rare); }
 .card.rar-special { border-color: var(--rar-special); box-shadow: inset 0 0 0 1px var(--rar-special), 0 0 16px -3px var(--rar-special); }
