@@ -366,8 +366,12 @@ def get_score(rel: str) -> dict | None:
 # ---------------------------------------------------------------------------
 # 呼叫 waifu-score 評分服務（獨立 FastAPI 服務，使用者自己跑 run.bat 啟動，
 # 見 waifu-score/README.md）。位址寫死本機，這次沒有遠端部署需求。
+# 用 127.0.0.1 不要用 localhost：urllib.request 在這台機器上解析 "localhost"
+# 主機名要花將近 2 秒（Windows 常見的 IPv6/IPv4 雙棧解析延遲），跟三個模型
+# 實際算分時間無關，純粹是連線前的名稱解析拖慢的——實測直打 IP 從 2.2s/張
+# 降到 0.15s/張，14 倍差距。
 # ---------------------------------------------------------------------------
-SCORE_SERVICE_BASE = "http://localhost:8000"
+SCORE_SERVICE_BASE = "http://127.0.0.1:8000"
 SCORE_TIMEOUT = 30.0
 _score_sem = threading.Semaphore(1)   # 序列化評分請求，見下方說明
 
