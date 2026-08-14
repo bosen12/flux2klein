@@ -752,12 +752,39 @@ async function pollStatus(rel) {
           if (it) { it.has_image = true; it.image_mtime = Math.floor(Date.now() / 1000); }
           invalidateFolderStats();   // 「有圖」數變了，左欄的 have/total 與覆蓋率條要重算
           reloadThumb(rel); reloadModalImage(rel); buildRail();
+          pollScoreAfterGenerate(rel);   // 評分是背景另起的 thread，圖片完成當下分數通常還沒算完
         }
         break;
       }
       await sleep(1500);
     }
   } finally { pollers.delete(rel); }
+}
+
+// 瀏覽模式生成/重新生成完成後，分數通常還要再等幾秒（背景評分 thread 才剛起步），
+// 用單筆查詢（/api/score）輪詢幾輪把它追上，不用整份 /api/libs 重抓。跟 Task 13
+// （抽卡/生圖模式的 GEN_SCORE_WAIT_MAX）是同一套邏輯，只是資料來源換成這支
+// 專用端點——瀏覽模式的完成訊號走 /api/status 而不是 /api/gen-status，沒有現成
+// 欄位可以搭車帶出分數。等不到就放棄，不影響圖片本身已經生成完成。
+async function pollScoreAfterGenerate(rel) {
+  for (let i = 0; i < 10; i++) {
+    await sleep(500);
+    let score;
+    try {
+      score = (await fetch('/api/score?rel=' + encodeURIComponent(rel)).then(r => r.json())).score;
+    } catch (e) { continue; }
+    if (score) {
+      const it = itemOf(rel);
+      if (it) it.score = score;
+      reloadThumb(rel);
+      const inner = $('modal-inner');
+      if (inner && inner.dataset.rel === rel) {
+        const el = $('modal-score');
+        if (el) el.innerHTML = modalScoreRowsHTML(score);
+      }
+      return;
+    }
+  }
 }
 
 function reloadThumb(rel) {
@@ -1163,12 +1190,31 @@ async function startScoreBackfill() {
     btn.disabled = false; btn.textContent = '☆ 評分';
   }
 }
+// 補分跑到哪張就即時幫哪張補上分數徽章，不用等整輪跑完才整批 loadAll 重整。
+// 只在該卡片目前確實在畫面上（DOM 裡找得到）才重繪縮圖；找不到就只更新資料
+// 本身（it.score），下次它捲進視野或整批重整時自然是對的。
+function applyLiveScore(rel, score) {
+  if (!score) return;
+  const it = itemOf(rel);
+  if (it) it.score = score;
+  if (document.querySelector(`.card[data-rel="${cssAttr(rel)}"]`)) reloadThumb(rel);
+  const inner = $('modal-inner');
+  if (inner && inner.dataset.rel === rel) {
+    const el = $('modal-score');
+    if (el) el.innerHTML = modalScoreRowsHTML(score);
+  }
+}
 async function pollScoreBackfill() {
   const btn = $('score-backfill-btn');
+  let lastRel = null;
   try {
     while (true) {
       try {
         const st = await fetch('/api/score-backfill-status').then(r => r.json());
+        if (st.last_rel && st.last_rel !== lastRel) {
+          lastRel = st.last_rel;
+          applyLiveScore(lastRel, st.last_score);
+        }
         if (!st.running) break;
         btn.textContent = st.total ? `評分中 ${st.done}/${st.total}` : '評分中…';
       } catch (e) {

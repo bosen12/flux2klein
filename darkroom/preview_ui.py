@@ -356,6 +356,13 @@ def score_map() -> dict:
         return dict(_scores)
 
 
+def get_score(rel: str) -> dict | None:
+    """單筆查詢——給 /api/score 用，不用像 score_map() 那樣整份 dict 複製一次。
+    給前端在生成/補分完成後輪詢「這張到底評完了沒」用。"""
+    with _scores_lock:
+        return dict(_scores[rel]) if rel in _scores else None
+
+
 # ---------------------------------------------------------------------------
 # 呼叫 waifu-score 評分服務（獨立 FastAPI 服務，使用者自己跑 run.bat 啟動，
 # 見 waifu-score/README.md）。位址寫死本機，這次沒有遠端部署需求。
@@ -957,13 +964,15 @@ def run_score_backfill(progress_cb=None):
     todo = [it for it in items if it.get("has_image") and it["rel"] not in scores]
     total = len(todo)
     with STATE["score_backfill_lock"]:
-        STATE["score_backfill"] = {"running": True, "done": 0, "total": total}
+        STATE["score_backfill"] = {"running": True, "done": 0, "total": total,
+                                    "last_rel": None, "last_score": None}
     plog(f"[score-backfill] 開始 · 待評分 {total} 筆 · 清掉 {len(orphans)} 筆孤兒紀錄")
 
     done = 0
     try:
         for it in todo:
             rel = it["rel"]
+            result = None
             try:
                 py = py_of(rel)
                 img = find_image(py)
@@ -980,6 +989,12 @@ def run_score_backfill(progress_cb=None):
             done += 1
             with STATE["score_backfill_lock"]:
                 STATE["score_backfill"]["done"] = done
+                # 前端輪詢 last_rel／last_score 就能逐張即時更新卡片分數徽章，不用
+                # 等整輪跑完才整批重新整理——result 是 None（評分失敗/圖讀不到）
+                # 時故意不更新這兩個欄位，前端才不會誤把上一筆成功的結果套到這筆。
+                if result:
+                    STATE["score_backfill"]["last_rel"] = rel
+                    STATE["score_backfill"]["last_score"] = result
             if progress_cb:
                 progress_cb(done, total)
     finally:
@@ -1816,6 +1831,13 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if u.path == "/api/status":
                 self._send_json(get_job(qs.get("rel", [""])[0]))
+                return
+            if u.path == "/api/score":
+                # 給前端在瀏覽模式生成完成後短暫輪詢用：評分是 do_generate() 完成後
+                # 另起的背景 thread（見 _score_and_persist），job.status 變 done 的
+                # 當下分數通常還沒算完，這支端點讓前端不用整份 /api/libs 重抓就能
+                # 問「這張到底評完了沒」。單筆查表，成本可忽略。
+                self._send_json({"score": get_score(qs.get("rel", [""])[0])})
                 return
             if u.path == "/api/batch_status":
                 self._send_json(get_batch())
