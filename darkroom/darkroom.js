@@ -3,6 +3,7 @@ let CUR_FOLDER = null;      // 目前選中的資料夾;null = 尚未選
 let ALL_FOLDERS = false;    // 「全部」釘選項是否啟用（跨資料夾看全部詞庫，不靠搜尋）
 let VIEW = 'all';           // all | missing | have
 let RARITY_FILTER = 'all';  // all | untagged | common | rare | special | legendary
+let SCORE_FILTER = 'all';   // all | lt4 | mid | gte7（見 scoreBandOf，跟評分面板的區間門檻不同，這裡照使用者要求分 <4/4~7/>=7）
 let SEARCH = '';
 let RAIL_SEARCH = '';       // 資料夾側欄搜尋
 let TAG_QUERY = '';         // 標籤搜尋原始輸入（逗號分隔多個）
@@ -217,10 +218,24 @@ function baseList() {
   return list;
 }
 
+// 評分篩選用的區間門檻——使用者要求 <4 / 4~7 / >=7 / >=8，跟大圖 modal 評分
+// 面板上色用的 5.5/7.5 門檻是兩件事，各自獨立，不要混用。>=8 是 >=7 的子集
+// （不是互斥分段），刻意設計成獨立小旗標而非切分區間——使用者是額外要一顆
+// 「更嚴格」的快速篩選，不是要把 >=7 拆成兩段。
+const SCORE_BAND_PREDICATES = {
+  lt4:  s => s.final < 4,
+  mid:  s => s.final >= 4 && s.final < 7,
+  gte7: s => s.final >= 7,
+  gte8: s => s.final >= 8,
+};
+function scoreMatchesFilter(it, key) {
+  return !!it.score && typeof it.score.final === 'number' && SCORE_BAND_PREDICATES[key](it.score);
+}
 function currentList() {
   let list = baseList();
   if (VIEW === 'missing') list = list.filter(x => !x.has_image);
   else if (VIEW === 'have') list = list.filter(x => x.has_image);
+  if (SCORE_FILTER !== 'all') list = list.filter(x => scoreMatchesFilter(x, SCORE_FILTER));
   if (RARITY_FILTER === 'untagged') list = list.filter(x => !x.rarity);
   else if (RARITY_FILTER !== 'all') list = list.filter(x => x.rarity === RARITY_FILTER);
   return list;
@@ -254,6 +269,35 @@ function buildRarityBar() {
       b.addEventListener('mouseenter', () => showStatTip(b, `佔目前範圍 ${pct}%（${cnt[key]}／${base.length}）`));
       b.addEventListener('mouseleave', () => hideTwTip(b));
     }
+    bar.appendChild(b);
+  });
+  buildScoreBar(bar, base);
+}
+
+// 評分分布晶片，接在稀有度分布條同一排後面（使用者原話「這裡也要有分數」，
+// 指的就是這個條）。門檻跟 SCORE_BAND_PREDICATES 一致：<4 / 4~7 / >=7 / >=8，
+// 跟大圖 modal 評分面板上色用的 5.5/7.5 是兩件事，不要搞混。>=8 是 >=7 的子集
+// （見 SCORE_BAND_PREDICATES 註解），四顆晶片的數量因此不會剛好加總等於已評分
+// 總數，是預期行為，不是算錯。沒有分數的卡片不計入任何一桶。
+const SCORE_BAR_DEFS = [['lt4', '<4分'], ['mid', '4~7分'], ['gte7', '≥7分'], ['gte8', '≥8分']];
+function buildScoreBar(bar, base) {
+  const cnt = { lt4: 0, mid: 0, gte7: 0, gte8: 0 };
+  for (const x of base) {
+    for (const key in cnt) { if (scoreMatchesFilter(x, key)) cnt[key]++; }
+  }
+  if (SCORE_FILTER !== 'all' && !cnt[SCORE_FILTER]) SCORE_FILTER = 'all';
+  if (!cnt.lt4 && !cnt.mid && !cnt.gte7) return;   // 這個範圍完全沒有評分過的卡片，不顯示這排晶片
+  const sep = document.createElement('span'); sep.className = 'rc-sep'; sep.setAttribute('aria-hidden', 'true');
+  bar.appendChild(sep);
+  SCORE_BAR_DEFS.forEach(([key, label]) => {
+    if (!cnt[key]) return;
+    const b = document.createElement('button');
+    b.className = 'rar-chip sc-chip sc-' + key + (SCORE_FILTER === key ? ' on' : '');
+    b.innerHTML = `<span class="rc-dot"></span><span class="rc-label">${label}</span><span class="rc-count">${cnt[key]}</span>`;
+    b.onclick = () => withTransition(() => { SCORE_FILTER = (SCORE_FILTER === key ? 'all' : key); render(); });
+    const pct = base.length ? Math.round(cnt[key] / base.length * 100) : 0;
+    b.addEventListener('mouseenter', () => showStatTip(b, `佔目前範圍 ${pct}%（${cnt[key]}／${base.length}）`));
+    b.addEventListener('mouseleave', () => hideTwTip(b));
     bar.appendChild(b);
   });
 }

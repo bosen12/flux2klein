@@ -335,6 +335,21 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
 .rar-chip.rc-rare.on      { border-color: var(--rar-rare); box-shadow: 0 0 0 1px var(--rar-rare) inset; }
 .rar-chip.rc-special.on   { border-color: var(--rar-special); box-shadow: 0 0 0 1px var(--rar-special) inset; }
 .rar-chip.rc-legendary.on { border-color: #b47bff; box-shadow: 0 0 0 1px #b47bff inset; }
+/* 評分分布晶片，接在稀有度分布條同一排後面（buildScoreBar()）。細線分隔兩組
+   晶片，不用另起一排——晶片本身共用 .rar-chip，色碼跟大圖 modal 評分面板的
+   紅/黃/綠一致，不重新發明一組顏色。 */
+.rc-sep { width: 1px; align-self: stretch; min-height: 22px; background: var(--line); margin: 0 2px; }
+.sc-lt4  .rc-dot { background: #ff5f6d; }
+.sc-mid  .rc-dot { background: #ffb347; }
+.sc-gte7 .rc-dot { background: #42f5a1; }
+/* >=8 是 >=7 的子集，不是第四段區間（見 JS 端 SCORE_BAND_PREDICATES 註解），
+   用琥珀色（--amber，本專案「安全燈／已曝光＝值得注意」的品牌色）標出來，
+   刻意跟紅/黃/綠那組互斥分段的顏色語言分開，才不會誤讀成第四個等級。 */
+.sc-gte8 .rc-dot { background: var(--amber); }
+.rar-chip.sc-lt4.on  { border-color: #ff5f6d; box-shadow: 0 0 0 1px #ff5f6d inset; color: #ff5f6d; }
+.rar-chip.sc-mid.on  { border-color: #ffb347; box-shadow: 0 0 0 1px #ffb347 inset; color: #ffb347; }
+.rar-chip.sc-gte7.on { border-color: #42f5a1; box-shadow: 0 0 0 1px #42f5a1 inset; color: #42f5a1; }
+.rar-chip.sc-gte8.on { border-color: var(--amber); box-shadow: 0 0 0 1px var(--amber) inset; color: var(--amber); }
 .coverbar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--amber-d), var(--amber)); corner-shape: round; transition: width .35s; }
 
 /* 卡片牆 */
