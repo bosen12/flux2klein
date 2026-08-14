@@ -1296,6 +1296,14 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
   padding: 2px 7px; border-radius: 999px; corner-shape: round;
   background: rgba(18,19,28,.82); color: var(--amber); cursor: default; }
 
+/* 大圖 modal 的評分明細列沿用 .gi-row/.gi-k/.gi-v（openGalleryItem 既有樣式，
+   見該規則定義處），只有加權總分那個數字額外分段上色。三色直接借用
+   .rar-tag.legendary 漸層已經在用的色碼，不重新發明一組顏色。 */
+.gi-score { margin: 10px 0; }
+.score-final.low  { color: #ff5f6d; font-weight: 700; }
+.score-final.mid  { color: #ffb347; font-weight: 700; }
+.score-final.high { color: #42f5a1; font-weight: 700; }
+
 .card.rar-rare    { border-color: var(--rar-rare);    box-shadow: inset 0 0 0 1px var(--rar-rare),    0 0 16px -3px var(--rar-rare); }
 .card.rar-special { border-color: var(--rar-special); box-shadow: inset 0 0 0 1px var(--rar-special), 0 0 16px -3px var(--rar-special); }
 .card.rar-legendary { border-color: hsl(var(--rar-h) 90% 64%);

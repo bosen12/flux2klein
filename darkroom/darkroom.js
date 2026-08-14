@@ -505,6 +505,25 @@ function scoreDetailHTML(score) {
     <div class="score-tip-row"><span>Waifu Scorer</span><span>${score.waifu.toFixed(2)}</span></div>
     <div class="score-tip-row"><span>Kawai</span><span>${score.kawai_tier} · ${score.kawai_score.toFixed(2)}</span></div>`;
 }
+function scoreBand(final) {
+  if (typeof final !== 'number') return '';
+  if (final >= 7.5) return 'high';
+  if (final >= 5.5) return 'mid';
+  return 'low';
+}
+// openModal()／openGalleryItem() 共用：大圖 modal 的評分明細列，跟格線 hover
+// tooltip（scoreDetailHTML，上面）內容一樣，但用 .gi-row 這套既有的
+// key-value 列樣式（openGalleryItem 的 LoRA/seed/時間資訊欄本來就是這樣排的），
+// 加權總分那一列的數字額外套 scoreBand() 算出的顏色 class。
+function modalScoreRowsHTML(score) {
+  if (!score || typeof score.final !== 'number') {
+    return `<div class="gi-row"><span class="gi-k">評分</span><span class="gi-v">尚未評分</span></div>`;
+  }
+  return `<div class="gi-row"><span class="gi-k">加權總分</span><span class="gi-v score-final ${scoreBand(score.final)}">${score.final.toFixed(2)}</span></div>
+    <div class="gi-row"><span class="gi-k">Blackroot</span><span class="gi-v">${score.blackroot.toFixed(2)}</span></div>
+    <div class="gi-row"><span class="gi-k">Waifu Scorer</span><span class="gi-v">${score.waifu.toFixed(2)}</span></div>
+    <div class="gi-row"><span class="gi-k">Kawai</span><span class="gi-v">${score.kawai_tier} · ${score.kawai_score.toFixed(2)}</span></div>`;
+}
 let SCORE_TIP_EL = null;
 function ensureScoreTip() {
   if (SCORE_TIP_EL) return SCORE_TIP_EL;
@@ -879,6 +898,7 @@ function openModal(rel, resetNav = true) {
     <div>
       <div class="m-title" id="modal-title"></div>
       <div class="m-folder" id="modal-folder"></div>
+      <div class="gi-score" id="modal-score"></div>
       <div class="prompt-label">正向 Prompt</div>
       <div class="prompt-block" id="pos">載入中…</div>
       <div class="prompt-label">負向 Prompt</div>
@@ -894,6 +914,7 @@ function openModal(rel, resetNav = true) {
   if (idx < 0) { list = [item]; idx = 0; }
   $('m-stage-slot').replaceWith(buildModalStage(list, idx, renderLibSlide));
   $('modal-folder').textContent = item.folder || '(根目錄)';
+  $('modal-score').innerHTML = modalScoreRowsHTML(item.score);
   $('modal-gen').onclick = () => generate(rel);
   $('modal-close').onclick = dismissModal;
   $('modal').classList.add('open');
@@ -3335,6 +3356,7 @@ function openGalleryItem(gid) {
     const vv = document.createElement('span'); vv.className = 'gi-v'; vv.textContent = v;
     row.append(kk, vv); right.appendChild(row);
   }
+  if (g) right.insertAdjacentHTML('beforeend', modalScoreRowsHTML(g.score));
   inner.append(left, right);
   $('modal').classList.add('open');
 }
