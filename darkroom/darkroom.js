@@ -3585,7 +3585,7 @@ function triggerFinishFlourish(card) {
 function applyGenState(gid, s) {
   const g = GALLERY.find(x => x.id === gid);
   if (g) {
-    if (s.status === 'done') { g.done = true; g.seed = s.seed; }
+    if (s.status === 'done') { g.done = true; g.seed = s.seed; if (s.score) g.score = s.score; }
     else if (s.status === 'error' || s.status === 'cancelled') { g.err = true; }
   }
   const cards = document.querySelectorAll(`[data-gid="${cssAttr(gid)}"]`);
@@ -3596,6 +3596,10 @@ function applyGenState(gid, s) {
       card.classList.remove('pending');
       if (img) img.src = '/api/gen-result?id=' + gid;
       if (wasPending) triggerFinishFlourish(card);   // 「收成」瞬間：只在真的從生成中轉為完成時播
+      if (s.score && !card.querySelector('.score-badge')) {
+        const front = card.querySelector('.gen-front, .tarot-front, .gc-square');
+        if (front) front.insertAdjacentHTML('beforeend', scoreBadgeHTML(s.score));
+      }
     } else if (s.status === 'error' || s.status === 'cancelled') {
       card.classList.remove('pending'); card.classList.add('gr-err');
       const nm = card.querySelector('.gc-name, .gr-name, .tarot-name');
@@ -3612,6 +3616,10 @@ function applyGenState(gid, s) {
 // 前端這裡每 GEN_POLL_MS 抓一次 gen-status，pv 有增才換預覽圖。設 500ms（原本 2000ms）
 // 讓即時預覽幾乎追上 ComfyUI 的出幀速度——再快也超不過 ComfyUI 每步一幀的上限。
 const GEN_POLL_MS = 500;
+// 評分是生成完成後另起的背景任務，status 變 done 的當下分數通常還沒算完；
+// 多等幾輪（~5s）讓它有機會追上，等不到就放棄——不影響圖片本身已經顯示完成。
+const GEN_SCORE_WAIT_MAX = 10;
+const _genScoreWaits = new Map();   // gid -> 已經多等了幾輪
 function updateCancelAllBtn() {
   const btn = $('gallery-cancel-all'); if (btn) btn.disabled = !GEN_PENDING.size;
 }
@@ -3622,7 +3630,16 @@ async function _genTick() {
     for (const gid of [...GEN_PENDING]) {
       const s = st[gid]; if (!s) continue;
       applyGenState(gid, s);
-      if (s.status === 'done' || s.status === 'error' || s.status === 'cancelled') GEN_PENDING.delete(gid);
+      if (s.status === 'error' || s.status === 'cancelled') {
+        GEN_PENDING.delete(gid); _genScoreWaits.delete(gid);
+        continue;
+      }
+      if (s.status === 'done') {
+        if (s.score) { GEN_PENDING.delete(gid); _genScoreWaits.delete(gid); continue; }
+        const waits = (_genScoreWaits.get(gid) || 0) + 1;
+        if (waits >= GEN_SCORE_WAIT_MAX) { GEN_PENDING.delete(gid); _genScoreWaits.delete(gid); }
+        else _genScoreWaits.set(gid, waits);
+      }
     }
   } catch (e) { /* 暫時抓失敗就等下一輪 */ }
   updateCancelAllBtn();
