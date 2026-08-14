@@ -640,6 +640,8 @@ STATE = {
         "running_rels": [],         # 目前正在跑的項目(可能同時多個)
     },
     "batch_lock": threading.Lock(),
+    "score_backfill": {"running": False, "done": 0, "total": 0},
+    "score_backfill_lock": threading.Lock(),
 }
 
 
@@ -937,6 +939,53 @@ def scan_libraries(force: bool = False) -> list[dict]:
              score=(smap.get(it["rel"]) if it["has_image"] else None))
         for it in cached
     ]
+
+
+def run_score_backfill(progress_cb=None):
+    """掃 has_image=True 但側檔沒分數的卡片跑評分；has_image=False 但側檔仍有
+    孤兒分數紀錄的一併清掉（見設計文件「分數跟圖片存在性綁定」）。同步函式，
+    給 /api/score-backfill 的背景 thread 跟 backfill_scores.py 共用，不重複實作
+    掃描/評分邏輯。progress_cb(done, total) 是可選的外部回呼，CLI 腳本用來印
+    進度到 stdout。"""
+    items = scan_libraries()
+    scores = score_map()
+    by_rel = {it["rel"]: it for it in items}
+    orphans = [rel for rel in scores if not by_rel.get(rel, {}).get("has_image")]
+    for rel in orphans:
+        clear_score(rel)
+
+    todo = [it for it in items if it.get("has_image") and it["rel"] not in scores]
+    total = len(todo)
+    with STATE["score_backfill_lock"]:
+        STATE["score_backfill"] = {"running": True, "done": 0, "total": total}
+    plog(f"[score-backfill] 開始 · 待評分 {total} 筆 · 清掉 {len(orphans)} 筆孤兒紀錄")
+
+    done = 0
+    try:
+        for it in todo:
+            rel = it["rel"]
+            try:
+                py = py_of(rel)
+                img = find_image(py)
+                if img is None:
+                    continue
+                img_bytes = img.read_bytes()
+                with _score_sem:
+                    result = _score_image_bytes(img_bytes)
+                if result:
+                    result["at"] = time.time()
+                    set_score(rel, result)
+            except Exception as e:
+                plog(f"[score-backfill] {rel} 失敗：{type(e).__name__}: {e}")
+            done += 1
+            with STATE["score_backfill_lock"]:
+                STATE["score_backfill"]["done"] = done
+            if progress_cb:
+                progress_cb(done, total)
+    finally:
+        with STATE["score_backfill_lock"]:
+            STATE["score_backfill"]["running"] = False
+    plog(f"[score-backfill] 完成 · {done}/{total}")
 
 
 def _scan_note_image(rel: str, img: Path):
