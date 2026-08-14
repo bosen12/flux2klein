@@ -1462,6 +1462,7 @@ def _gen_one_worker(gid, rel, loras, trigger, wait_for=None, mark_started=None):
                     old = next(iter(_gen_results))
                     _gen_results.pop(old, None)
                     _gen_preview.pop(old, None)
+            threading.Thread(target=_score_gen_result, args=(gid, data), daemon=True).start()
             plog(f"[genmode] OK {rel} seed={seed}")
         except _GenCancelled:
             with _gen_lock:
@@ -1475,6 +1476,17 @@ def _gen_one_worker(gid, rel, loras, trigger, wait_for=None, mark_started=None):
                 if gid in _gen_status:
                     _gen_status[gid].update(status="error", err=f"{type(e).__name__}: {e}")
             plog(f"[genmode] ERR {rel} {type(e).__name__}: {e}")
+
+
+def _score_gen_result(gid: str, img_bytes: bytes):
+    """抽卡/生圖模式的背景評分：只附進 _gen_status[gid]["score"]，不寫側檔——
+    這條路徑的結果本來就只存在記憶體（_gen_results），評分自然也只是暫時的。"""
+    with _score_sem:
+        result = _score_image_bytes(img_bytes)
+    if result:
+        with _gen_lock:
+            if gid in _gen_status:
+                _gen_status[gid]["score"] = result
 
 
 def _convert_loras(loras_in):
