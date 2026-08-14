@@ -1303,6 +1303,17 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 .thumb .rar-tag        { top: 8px; left: 8px; }    /* 格線左上角（已移除生成狀態徽章） */
 .tarot-front .rar-tag  { top: 8px;  left: 8px; }
 
+/* 塔羅牌面（.tarot-front／.gen-front）把圖片跟名稱/資料夾文字放在同一個 flex
+   欄位裡（見 .tarot-front { display:flex; flex-direction:column } 那條），不像
+   .thumb／.gc-square 只包圖片本身——score-badge 的 bottom:8px 若直接掛在
+   .tarot-front 上，量的是「整張卡片」的底部，會貼到文字行上而不是圖片上（實測
+   量過 getBoundingClientRect 確認過這個位移）。這個 box 複製 .tarot-front.loading
+   ::before 微光疊層同一招（top:0+aspect-ratio:1/1 讓自己精準疊在正方形圖片區），
+   讓 score-badge 有一個「只等於圖片大小」的定位容器可以貼。pointer-events:none
+   讓下面的圖片仍可正常互動（點擊翻牌等），score-badge 自己再開回 auto（它要接
+   hover/click 顯示明細）。 */
+.tarot-badges { position: absolute; top: 0; left: 0; right: 0; aspect-ratio: 1 / 1; z-index: 3; pointer-events: none; }
+.tarot-badges .score-badge { pointer-events: auto; }
 /* 分數徽章：加權總分，圓角小標籤貼縮圖左下角（右上是 fav-btn/pick-box、左上是
    rar-tag，左下是唯一空著的角落）。膠囊形狀要明確標 corner-shape: round——squircle
    全域規則會讓它變兩端削平的橢圓，見檔案開頭 corner-shape 一節的例外說明。 */

@@ -1555,7 +1555,7 @@ function drawTarot(pool, label) {
     card.innerHTML =
       `<div class="tarot-inner">
          <div class="tarot-back"><span class="tarot-emblem">✦</span></div>
-         <div class="tarot-front${it.has_image ? ' loading' : ''}">${face}${it.rarity === 'legendary' ? sparklesHTML(9) : ''}${rarTag(it.rarity)}<div class="tarot-name"></div><div class="tarot-folder"></div><div class="tarot-glare"></div></div>
+         <div class="tarot-front${it.has_image ? ' loading' : ''}">${face}${it.rarity === 'legendary' ? sparklesHTML(9) : ''}${rarTag(it.rarity)}<div class="tarot-badges">${scoreBadgeHTML(it.score)}</div><div class="tarot-name"></div><div class="tarot-folder"></div><div class="tarot-glare"></div></div>
        </div>`;
     card.querySelector('.tarot-name').textContent = it.display_name || it.name;
     card.querySelector('.tarot-folder').textContent = it.folder || '(根目錄)';
@@ -3679,6 +3679,7 @@ function openGenTarot(items, picks, label) {
          <div class="tarot-front gen-front">
            <img class="gen-live" decoding="async" alt="" onload="this.classList.add('ld')">
            <div class="gen-spin"><i class="gen-loader"></i></div>
+           <div class="tarot-badges"></div>
            <div class="tarot-name"></div>
            <div class="tarot-folder"></div>
            <div class="tarot-glare"></div>
@@ -3736,8 +3737,14 @@ function applyGenState(gid, s) {
       if (img) img.src = '/api/gen-result?id=' + gid;
       if (wasPending) triggerFinishFlourish(card);   // 「收成」瞬間：只在真的從生成中轉為完成時播
       if (s.score && !card.querySelector('.score-badge')) {
+        // .gen-front/.tarot-front 把名稱/資料夾文字跟圖片放在同一個 flex 欄位裡，徽章要塞進
+        // .tarot-badges（跟圖片疊在一起、大小卡在同一個正方形區域，見該 class 的 CSS 註解），
+        // 不能直接塞進整個卡片最後面——那樣 bottom:8px 會貼齊「整張卡片」的底部，疊到文字
+        // 行上而不是圖片上。.gc-square 沒有這個問題（裡面只有圖片，文字是外面的手足元素），
+        // 找不到 .tarot-badges 就照舊塞進容器本身。
         const front = card.querySelector('.gen-front, .tarot-front, .gc-square');
-        if (front) front.insertAdjacentHTML('beforeend', scoreBadgeHTML(s.score));
+        const anchor = front && (front.querySelector('.tarot-badges') || front);
+        if (anchor) anchor.insertAdjacentHTML('beforeend', scoreBadgeHTML(s.score));
       }
     } else if (s.status === 'error' || s.status === 'cancelled') {
       card.classList.remove('pending'); card.classList.add('gr-err');
