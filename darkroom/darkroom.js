@@ -1119,9 +1119,14 @@ async function pollScoreBackfill() {
   const btn = $('score-backfill-btn');
   try {
     while (true) {
-      const st = await fetch('/api/score-backfill-status').then(r => r.json());
-      if (!st.running) break;
-      btn.textContent = st.total ? `評分中 ${st.done}/${st.total}` : '評分中…';
+      try {
+        const st = await fetch('/api/score-backfill-status').then(r => r.json());
+        if (!st.running) break;
+        btn.textContent = st.total ? `評分中 ${st.done}/${st.total}` : '評分中…';
+      } catch (e) {
+        /* 暫時抓失敗就等下一輪 */
+        console.error('評分狀態查詢失敗:', e);
+      }
       await sleep(1000);
     }
   } finally {
