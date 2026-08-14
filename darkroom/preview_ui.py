@@ -137,7 +137,7 @@ def _dataset_tag() -> str:
 
 
 def _meta_path(kind: str) -> Path:
-    """kind ∈ {flags, favorites, rarities}。回傳本 dataset 專屬的 json 路徑。"""
+    """kind ∈ {flags, favorites, rarities, scores}。回傳本 dataset 專屬的 json 路徑。"""
     return META_DIR / f"{kind}.{_dataset_tag()}.json"
 
 
@@ -303,6 +303,56 @@ def set_rarity(rel: str, key: str, name_has_prefix: bool = False) -> str:
 def rarity_map() -> dict:
     with _rarities_lock:
         return dict(_rarities)
+
+
+# ---------------------------------------------------------------------------
+# 卡片評分（waifu-score 三模型的加權分數）：結構同上面幾組側檔，但只有瀏覽模式
+# 生成（do_generate）落地的圖片才會寫進這份側檔，抽卡/生圖模式的暫時結果不落地，
+# 見 docs/superpowers/specs/2026-08-14-darkroom-model-scoring-design.md。
+# key 是詞庫 rel，value 是 waifu-score /api/darkroom-score 的原始回應 + "at" 時間戳。
+# ---------------------------------------------------------------------------
+_scores: dict = {}   # rel -> {blackroot, waifu, kawai_tier, kawai_score, kawai_norm, final, at}
+_scores_lock = threading.Lock()
+
+
+def _load_scores():
+    global _scores
+    path = _meta_path("scores")
+    if not path.is_file():
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        sc = d.get("scores") if isinstance(d, dict) else None
+        if isinstance(sc, dict):
+            _scores = sc
+        plog(f"[score] 載入 {len(_scores)} 筆分數")
+    except Exception as e:
+        plog(f"[score] 讀取失敗，從空白開始：{e}")
+
+
+def _save_scores_locked():
+    """呼叫端須已持有 _scores_lock。"""
+    _atomic_write_json(_meta_path("scores"), {"scores": _scores})
+
+
+def set_score(rel: str, data: dict) -> None:
+    with _scores_lock:
+        _scores[rel] = data
+        _save_scores_locked()
+
+
+def clear_score(rel: str) -> None:
+    """從側檔移除一筆——補分（run_score_backfill）清孤兒紀錄用。"""
+    with _scores_lock:
+        if rel in _scores:
+            _scores.pop(rel, None)
+            _save_scores_locked()
+
+
+def score_map() -> dict:
+    with _scores_lock:
+        return dict(_scores)
 
 
 # ---------------------------------------------------------------------------
@@ -2071,6 +2121,7 @@ def main():
     _load_flags()                 # 載入品質旗標黑名單（依 dataset 分檔）
     _load_favs()                  # 載入收藏清單（依 dataset 分檔）
     _load_rarities()              # 載入稀有度側檔（依 dataset 分檔）
+    _load_scores()                # 載入卡片評分側檔（依 dataset 分檔）
     srv = ThreadingHTTPServer((bind_host, port), Handler)
     # 開機就先在背景把詞庫掃一遍暖快取，第一次開頁的 /api/libs 才不用等 ~1s 掃描
     threading.Thread(target=lambda: scan_libraries(), daemon=True).start()
