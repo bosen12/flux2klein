@@ -1153,6 +1153,15 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
   transition: opacity var(--d-ui) var(--ease-out), transform var(--d-ui) var(--ease-spring); }
 .lora-preview-tip.show { opacity: 1; transform: none; }
 @media (prefers-reduced-motion: reduce) { .lora-preview-tip { transition: none; } }
+.score-tip { position: fixed; z-index: 200; pointer-events: none; opacity: 0;
+  transition: opacity var(--d-ui) var(--ease-out);
+  background: rgba(18,19,28,.94); border: 1px solid rgba(255,255,255,.08);
+  border-radius: 10px; padding: 8px 10px; font-size: 12px; min-width: 160px; }
+.score-tip.show { opacity: 1; }
+.score-tip-row { display: flex; justify-content: space-between; gap: 14px; padding: 2px 0; }
+.score-tip-row b:first-child { color: var(--txt-2, inherit); font-weight: 600; }
+.score-tip-row b:last-child { color: var(--amber); }
+@media (prefers-reduced-motion: reduce) { .score-tip { transition: none; } }
 .lpt-item { display: flex; flex-direction: column; align-items: center; gap: 5px; width: 200px; }
 .lpt-item img, .lpt-item video, .lpt-item .ph { width: 200px; height: 200px; border-radius: 10px;
   object-fit: cover; background: var(--sunk); flex: none; }

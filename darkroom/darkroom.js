@@ -499,6 +499,35 @@ const rarTag = (r) => r ? `<span class="rar-tag ${r}">${RARITY_LABEL[r] || ''}</
 const scoreBadgeHTML = (score) => (score && typeof score.final === 'number')
   ? `<span class="score-badge" tabindex="0" role="button" aria-label="評分明細：${score.final.toFixed(1)} 分">${score.final.toFixed(1)}</span>`
   : '';
+function scoreDetailHTML(score) {
+  return `<div class="score-tip-row"><b>加權總分</b><b>${score.final.toFixed(2)}</b></div>
+    <div class="score-tip-row"><span>Blackroot</span><span>${score.blackroot.toFixed(2)}</span></div>
+    <div class="score-tip-row"><span>Waifu Scorer</span><span>${score.waifu.toFixed(2)}</span></div>
+    <div class="score-tip-row"><span>Kawai</span><span>${score.kawai_tier} · ${score.kawai_score.toFixed(2)}</span></div>`;
+}
+let SCORE_TIP_EL = null;
+function ensureScoreTip() {
+  if (SCORE_TIP_EL) return SCORE_TIP_EL;
+  SCORE_TIP_EL = document.createElement('div');
+  SCORE_TIP_EL.className = 'score-tip';
+  document.body.appendChild(SCORE_TIP_EL);
+  return SCORE_TIP_EL;
+}
+function showScoreTip(anchor, score) {
+  if (!score) return;
+  const tip = ensureScoreTip();
+  tip.innerHTML = scoreDetailHTML(score);
+  const r = anchor.getBoundingClientRect();
+  const w = 180;
+  let left = r.left;
+  if (left + w > window.innerWidth) left = window.innerWidth - w - 8;
+  tip.style.left = Math.max(8, left) + 'px';
+  tip.style.top = (r.bottom + 8) + 'px';
+  tip.classList.add('show');
+}
+function hideScoreTip() {
+  if (SCORE_TIP_EL) SCORE_TIP_EL.classList.remove('show');
+}
 // 傳奇卡的閃爍火花層（Aceternity Sparkles 的 vanilla 版）：隨機位置＋延遲的小星點
 function sparklesHTML(n = 7) {
   let s = '';
@@ -537,6 +566,14 @@ function wireThumb(thumb, it) {
   };
   thumb.querySelector('.gen-btn').onclick = (e) => { e.stopPropagation(); generate(it.rel); };
   thumb.querySelector('.fav-btn').onclick = (e) => { e.stopPropagation(); toggleFav(it.rel); };
+  const badge = thumb.querySelector('.score-badge');
+  if (badge) {
+    badge.addEventListener('mouseenter', () => showScoreTip(badge, it.score));
+    badge.addEventListener('mouseleave', hideScoreTip);
+    badge.addEventListener('click', (e) => { e.stopPropagation(); showScoreTip(badge, it.score); });
+    badge.addEventListener('focus', () => showScoreTip(badge, it.score));
+    badge.addEventListener('blur', hideScoreTip);
+  }
 }
 
 function cardOf(it) {
