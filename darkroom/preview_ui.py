@@ -1869,6 +1869,10 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 self._send_cacheable(p["bytes"], p["ctype"], f"{gid}:{pv}")
                 return
+            if u.path == "/api/score-backfill-status":
+                with STATE["score_backfill_lock"]:
+                    self._send_json(dict(STATE["score_backfill"]))
+                return
             if u.path == "/api/lora-push":
                 # 前端每 ~1s 輪詢一次；帶 since 才回新資料，版本沒變就只回 ver（省流量）。
                 since = int(qs.get("since", ["0"])[0] or 0)
@@ -1935,6 +1939,18 @@ class Handler(BaseHTTPRequestHandler):
                 now = set_fav(rel, bool(data.get("favorited")))
                 plog(f"[fav] {'收藏' if now else '取消收藏'} {rel}")
                 self._send_json({"ok": True, "rel": rel, "favorited": now})
+                return
+            if u.path == "/api/score-backfill":
+                with STATE["score_backfill_lock"]:
+                    if STATE["score_backfill"]["running"]:
+                        self._send_json({"ok": True, "already_running": True})
+                        return
+                if not _score_service_available():
+                    self._send_json({"error": "waifu-score 服務未啟動，請先執行 run.bat"}, 400)
+                    return
+                threading.Thread(target=run_score_backfill, daemon=True).start()
+                plog("[score-backfill] 已由前端觸發")
+                self._send_json({"ok": True, "started": True})
                 return
             if u.path == "/api/rarity":
                 # 稀有度存側檔（不改檔名）。rarity ∈ common/rare/special/legendary 設定，
