@@ -40,6 +40,7 @@ import threading
 import time
 import traceback
 import urllib.parse
+import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -353,6 +354,52 @@ def clear_score(rel: str) -> None:
 def score_map() -> dict:
     with _scores_lock:
         return dict(_scores)
+
+
+# ---------------------------------------------------------------------------
+# 呼叫 waifu-score 評分服務（獨立 FastAPI 服務，使用者自己跑 run.bat 啟動，
+# 見 waifu-score/README.md）。位址寫死本機，這次沒有遠端部署需求。
+# ---------------------------------------------------------------------------
+SCORE_SERVICE_BASE = "http://localhost:8000"
+SCORE_TIMEOUT = 30.0
+_score_sem = threading.Semaphore(1)   # 序列化評分請求，見下方說明
+
+
+def _score_image_bytes(img_bytes: bytes) -> dict | None:
+    """POST 圖片 bytes 給 waifu-score 的合併端點，回傳 Task 1 定義的分數 dict；
+    連線失敗/timeout/非 200 一律安靜回 None（呼叫端負責 log），不拋例外——評分
+    是錦上添花的背景動作，不能因為服務沒開就影響生成本身。"""
+    boundary = f"----darkroomscore{uuid.uuid4().hex}"
+    body = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="file"; filename="card.webp"\r\n'
+        f"Content-Type: image/webp\r\n\r\n"
+    ).encode("utf-8") + img_bytes + f"\r\n--{boundary}--\r\n".encode("utf-8")
+    headers = {
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+        "User-Agent": "darkroom-preview-ui/1.0",
+    }
+    req = urllib.request.Request(f"{SCORE_SERVICE_BASE}/api/darkroom-score",
+                                 data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=SCORE_TIMEOUT) as resp:
+            raw = resp.read()
+        return json.loads(raw.decode("utf-8"))
+    except Exception as e:
+        plog(f"[score] 評分失敗：{type(e).__name__}: {e}")
+        return None
+
+
+def _score_service_available() -> bool:
+    """輕量健康檢查，給補分按鈕/腳本啟動前用。短 timeout，連不上直接回 False，
+    不拋例外。"""
+    req = urllib.request.Request(f"{SCORE_SERVICE_BASE}/api/health",
+                                 headers={"User-Agent": "darkroom-preview-ui/1.0"}, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------
