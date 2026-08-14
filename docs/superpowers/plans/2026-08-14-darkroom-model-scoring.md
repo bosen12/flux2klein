@@ -1520,6 +1520,244 @@ EOF
 
 ---
 
+### Task 15: darkroom 前端 — 大圖 modal 顯示評分明細（含分段上色）
+
+> 這個 task 是 Task 1-14 全部完成、通過審查之後，使用者追加的需求：點開大圖
+> （瀏覽模式格線卡片的 `openModal()`，跟抽卡/生圖模式結果的 `openGalleryItem()`）
+> 都要看得到各模型分數跟加權總分，加權總分要照分數區間上色（紅/黃/綠）。
+
+**Files:**
+- Modify: `darkroom.js`（`openModal()`、`openGalleryItem()`、新增共用 helper）、
+  `darkroom.css`（新增分段上色規則）
+
+**Interfaces:**
+- Consumes: `item.score` / `g.score`（Task 10 起前端就在用的同一個分數物件形狀：
+  `{blackroot, waifu, kawai_tier, kawai_score, kawai_norm, final, at}` 或 `null`）
+- Produces: `scoreBand(final) -> 'low'|'mid'|'high'|''`、`modalScoreRowsHTML(score) -> string`
+  （回傳一段 `<div class="gi-row">...</div>` 系列字串，openModal 跟
+  openGalleryItem 共用同一個函式，不要各寫一份）
+
+**分段門檻（使用者確認）**：`final < 5.5` → 紅（低分）；`5.5 <= final < 7.5` → 黃
+（中等）；`final >= 7.5` → 綠（高分）。三個顏色直接沿用 `.rar-tag.legendary`
+漸層已經在用的色碼（`#ff5f6d`／`#ffb347`／`#42f5a1`），不要另外發明新色，保持
+跟稀有度視覺語言一致。
+
+- [ ] **Step 1: 在 `darkroom.js` 加共用的分段判斷 + HTML 產生函式**
+
+放在 Task 11 的 `scoreDetailHTML` 定義附近：
+
+```js
+function scoreBand(final) {
+  if (typeof final !== 'number') return '';
+  if (final >= 7.5) return 'high';
+  if (final >= 5.5) return 'mid';
+  return 'low';
+}
+// openModal()／openGalleryItem() 共用：大圖 modal 的評分明細列，跟格線 hover
+// tooltip（scoreDetailHTML，Task 11）內容一樣，但用 .gi-row 這套既有的
+// key-value 列樣式（openGalleryItem 的 LoRA/seed/時間資訊欄本來就是這樣排的），
+// 加權總分那一列的數字額外套 scoreBand() 算出的顏色 class。
+function modalScoreRowsHTML(score) {
+  if (!score || typeof score.final !== 'number') {
+    return `<div class="gi-row"><span class="gi-k">評分</span><span class="gi-v">尚未評分</span></div>`;
+  }
+  return `<div class="gi-row"><span class="gi-k">加權總分</span><span class="gi-v score-final ${scoreBand(score.final)}">${score.final.toFixed(2)}</span></div>
+    <div class="gi-row"><span class="gi-k">Blackroot</span><span class="gi-v">${score.blackroot.toFixed(2)}</span></div>
+    <div class="gi-row"><span class="gi-k">Waifu Scorer</span><span class="gi-v">${score.waifu.toFixed(2)}</span></div>
+    <div class="gi-row"><span class="gi-k">Kawai</span><span class="gi-v">${score.kawai_tier} · ${score.kawai_score.toFixed(2)}</span></div>`;
+}
+```
+
+- [ ] **Step 2: `openGalleryItem()` 加分數列到既有的 `gi-row` 資訊欄**
+
+`darkroom.js` 的 `openGalleryItem()` 函式裡，找到這段（`rows` 陣列組完、
+for 迴圈跑完 `right.appendChild(row)` 之後、`inner.append(left, right)` 之前）：
+
+```js
+  for (const [k, v] of rows) {
+    const row = document.createElement('div'); row.className = 'gi-row';
+    const kk = document.createElement('span'); kk.className = 'gi-k'; kk.textContent = k;
+    const vv = document.createElement('span'); vv.className = 'gi-v'; vv.textContent = v;
+    row.append(kk, vv); right.appendChild(row);
+  }
+  inner.append(left, right);
+```
+
+改成（迴圈本身不動，`inner.append` 前插入分數列）：
+
+```js
+  for (const [k, v] of rows) {
+    const row = document.createElement('div'); row.className = 'gi-row';
+    const kk = document.createElement('span'); kk.className = 'gi-k'; kk.textContent = k;
+    const vv = document.createElement('span'); vv.className = 'gi-v'; vv.textContent = v;
+    row.append(kk, vv); right.appendChild(row);
+  }
+  if (g) right.insertAdjacentHTML('beforeend', modalScoreRowsHTML(g.score));
+  inner.append(left, right);
+```
+
+（`g` 可能是 `undefined`——`gi < 0`、清單裡找不到這筆的邊界情況，既有程式碼在
+這種情況下 `rows` 本來就是空陣列，同樣邏輯：沒有 `g` 就不顯示評分區塊。）
+
+- [ ] **Step 3: `openModal()` 加一個評分區塊**
+
+`darkroom.js` 的 `openModal()` 函式裡，找到這段 `inner.innerHTML` 樣板
+（`preview_ui.py` 無關，這是純前端字串樣板）：
+
+```js
+  inner.innerHTML = `
+    <div>
+      <div id="m-stage-slot"></div>
+      <div id="modal-status" data-rel="${escapeAttr(rel)}" class="status" style="margin-top:10px;padding:0;"></div>
+      <div style="margin-top:12px; display:flex; gap:8px;">
+        <button class="primary" id="modal-gen">${item.has_image ? '重新生成' : '生成'}</button>
+        <button id="modal-close">關閉 (Esc)</button>
+      </div>
+    </div>
+    <div>
+      <div class="m-title" id="modal-title"></div>
+      <div class="m-folder" id="modal-folder"></div>
+      <div class="prompt-label">正向 Prompt</div>
+      <div class="prompt-block" id="pos">載入中…</div>
+      <div class="prompt-label">負向 Prompt</div>
+      <div class="prompt-block" id="neg">載入中…</div>
+    </div>`;
+```
+
+改成（右欄 `<div class="m-folder">` 之後、Prompt 區塊之前插入一個
+`#modal-score` 容器，並在後面用 `modalScoreRowsHTML()` 填內容）：
+
+```js
+  inner.innerHTML = `
+    <div>
+      <div id="m-stage-slot"></div>
+      <div id="modal-status" data-rel="${escapeAttr(rel)}" class="status" style="margin-top:10px;padding:0;"></div>
+      <div style="margin-top:12px; display:flex; gap:8px;">
+        <button class="primary" id="modal-gen">${item.has_image ? '重新生成' : '生成'}</button>
+        <button id="modal-close">關閉 (Esc)</button>
+      </div>
+    </div>
+    <div>
+      <div class="m-title" id="modal-title"></div>
+      <div class="m-folder" id="modal-folder"></div>
+      <div class="gi-score" id="modal-score"></div>
+      <div class="prompt-label">正向 Prompt</div>
+      <div class="prompt-block" id="pos">載入中…</div>
+      <div class="prompt-label">負向 Prompt</div>
+      <div class="prompt-block" id="neg">載入中…</div>
+    </div>`;
+```
+
+然後在同一函式裡找到：
+
+```js
+  $('modal-folder').textContent = item.folder || '(根目錄)';
+```
+
+改成：
+
+```js
+  $('modal-folder').textContent = item.folder || '(根目錄)';
+  $('modal-score').innerHTML = modalScoreRowsHTML(item.score);
+```
+
+- [ ] **Step 4: 在 `darkroom.css` 加分段上色規則**
+
+放在 Task 10 新增的 `.score-badge` 規則附近：
+
+```css
+/* 大圖 modal 的評分明細列沿用 .gi-row/.gi-k/.gi-v（openGalleryItem 既有樣式，
+   見該規則定義處），只有加權總分那個數字額外分段上色。三色直接借用
+   .rar-tag.legendary 漸層已經在用的色碼，不重新發明一組顏色。 */
+.gi-score { margin: 10px 0; }
+.score-final.low  { color: #ff5f6d; font-weight: 700; }
+.score-final.mid  { color: #ffb347; font-weight: 700; }
+.score-final.high { color: #42f5a1; font-weight: 700; }
+```
+
+- [ ] **Step 5: 語法檢查**
+
+```bash
+cd "C:/projects/flux2klein/darkroom" && node --check darkroom.js
+```
+
+Expected: 無輸出。
+
+- [ ] **Step 6: 瀏覽器手動驗證**
+
+啟動/確認暗房伺服器在跑，開瀏覽器連 `http://localhost:7860/`。
+
+1. 找一張已評分的卡片（`.darkroom_meta/scores.<tag>.json` 裡任一筆），點開大圖
+   （`openModal`）。Expected：右欄「資料夾」下方出現評分區塊，「加權總分」數字
+   依分數帶對應顏色（`>=7.5` 綠、`5.5~7.5` 黃、`<5.5` 紅），下面三行列出
+   Blackroot／Waifu Scorer／Kawai 的原始分數。
+2. 找一張沒有分數（`has_image=False` 或還沒評分過）的卡片，點開大圖。
+   Expected：評分區塊顯示「評分：尚未評分」，不是空白或報錯。
+3. 切「生圖」模式套 LoRA 生成一張、等分數跑完（前面 Task 13 的輪詢邏輯讓
+   `GALLERY` 裡的項目在分數到齊前會多等幾輪），點開這張抽出來的圖（走
+   `openGalleryItem`）。Expected：跟一般卡片一樣，右側資訊欄（LoRA／強度／
+   seed／時間那個列表）最後面多出評分那幾列，加權總分一樣有顏色。
+
+- [ ] **Step 7: Commit**
+
+```bash
+cd "C:/projects/flux2klein"
+git add darkroom/darkroom.js darkroom/darkroom.css
+git commit -m "$(cat <<'EOF'
+新增：大圖 modal 顯示各模型評分明細，加權總分依區間上色
+
+點開格線卡片（openModal）跟抽卡/生圖結果（openGalleryItem）的大圖都能
+看到 Blackroot/Waifu Scorer/Kawai 三項原始分數，加權總分 >=7.5 綠、
+5.5~7.5 黃、<5.5 紅，色碼借用既有傳奇稀有度漸層，不重新發明一組顏色。
+EOF
+)"
+```
+
+---
+
+### Task 16: 文件更新（README.md + 進度.md，Task 15 追加需求）
+
+**Files:**
+- Modify: `README.md`（詞庫暗房章節，Task 14 加的那段評分說明後面）、`進度.md`
+
+**Interfaces:** 無（純文件）
+
+- [ ] **Step 1: 在 `README.md` 評分那段後面補一句**
+
+在 Task 14 加的評分說明段落結尾（`...也可以用 darkroom/backfill_scores.py
+跑，適合大批量離峰時間執行。` 之後）接著補一句：
+
+```markdown
+點開任一張卡片或抽卡結果的大圖，也能看到三個模型的原始分數，加權總分依
+分數區間上色（≥7.5 綠、5.5~7.5 黃、<5.5 紅）。
+```
+
+- [ ] **Step 2: 在 `進度.md` 最上方補一筆**
+
+`<hash>` 用 Task 15 的 commit hash：
+
+```markdown
+### 2026-08-14 HH:MM · <hash> 新增：大圖 modal 顯示評分明細，加權總分分段上色
+
+Task 1-14（暗房卡片評分功能主體）做完之後追加的需求：點開大圖（格線卡片跟
+抽卡/生圖結果）都要看到各模型分數，加權總分依區間上色。共用一個
+`modalScoreRowsHTML()` 產生評分列，`openModal()` 跟 `openGalleryItem()`
+都呼叫它，顏色借用既有傳奇稀有度漸層色碼（紅/黃/綠對應 <5.5/5.5~7.5/>=7.5）。
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+cd "C:/projects/flux2klein"
+git add README.md 進度.md
+git commit -m "$(cat <<'EOF'
+文件：補上大圖 modal 評分明細功能的 README 說明與進度紀錄
+EOF
+)"
+```
+
+---
+
 ## Self-Review
 
 **Spec coverage**：對照設計文件逐節檢查——
