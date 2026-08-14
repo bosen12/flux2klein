@@ -1102,6 +1102,34 @@ $('tag-search-clear').onclick = () => {
   clearTimeout(tagSearchTimer); runTagSearch('');
   $('tag-search').focus();
 };
+async function startScoreBackfill() {
+  const btn = $('score-backfill-btn');
+  btn.disabled = true; btn.textContent = '評分中…';
+  try {
+    const r = await fetch('/api/score-backfill', { method: 'POST' });
+    const j = await r.json();
+    if (j.error) { toast(j.error, true); btn.disabled = false; btn.textContent = '☆ 評分'; return; }
+    pollScoreBackfill();
+  } catch (e) {
+    toast('評分請求失敗：' + e, true);
+    btn.disabled = false; btn.textContent = '☆ 評分';
+  }
+}
+async function pollScoreBackfill() {
+  const btn = $('score-backfill-btn');
+  try {
+    while (true) {
+      const st = await fetch('/api/score-backfill-status').then(r => r.json());
+      if (!st.running) break;
+      btn.textContent = st.total ? `評分中 ${st.done}/${st.total}` : '評分中…';
+      await sleep(1000);
+    }
+  } finally {
+    btn.disabled = false; btn.textContent = '☆ 評分';
+    await loadAll(true);   // 補分完重新整理，新分數與清掉的孤兒紀錄才會反映在畫面上
+  }
+}
+$('score-backfill-btn').onclick = startScoreBackfill;
 $('rescan').onclick = () => loadAll(true);
 $('menu-btn').onclick = () => $('rail').classList.toggle('open');
 // 卡片聚光：游標在縮圖上移動時更新 --mx/--my（委派在 grid 上，只有 hover 的縮圖會算）
