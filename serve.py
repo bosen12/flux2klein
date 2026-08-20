@@ -154,6 +154,15 @@ def _in_cgnat(ip):
         return False
 
 
+def _client_allowed(ip):
+    """只放行本機（127.0.0.1／::1）與 Tailscale 來源（100.64.0.0/10）；
+    其餘一律拒絕——面板沒有登入驗證，綁 0.0.0.0 是為了讓 Tailscale 這類
+    虛擬網卡收得到封包，不代表要讓區網或公網任意連線進來。"""
+    if ip in ("127.0.0.1", "::1"):
+        return True
+    return _in_cgnat(ip)
+
+
 def tailscale_ip():
     """取本機 Tailscale IPv4（100.64.0.0/10）。先問 tailscale CLI，失敗再掃本機介面。
     沒裝或沒連 Tailscale 就回 None。"""
@@ -523,6 +532,12 @@ def serve_prompt_list(client):
         except OSError:
             counts[folder] = 0
             continue
+        # 判斷有沒有預覽圖，直接查 names 這個 set（已經是這次 listdir 的結果），
+        # 不要對每個 .py 各自再開一次 os.path.isfile()——資料夾在本機磁碟上這樣
+        # 寫沒差，但這支服務常常是透過 Docker bind mount／網路磁碟讀取
+        # PROMPTS_ROOT，每一次獨立的檔案系統呼叫都要跨一層掛載開銷，詞庫上萬個
+        # .py 檔案時，逐檔 isfile() 會讓這支 API 從幾百毫秒變成幾十秒。
+        name_set = set(names)
         n = 0
         for fn in names:
             if not fn.endswith(".py") or fn.startswith("__"):
@@ -532,7 +547,7 @@ def serve_prompt_list(client):
                 "folder": folder,
                 "file": fn,
                 "name": stem,
-                "preview": os.path.isfile(os.path.join(d, stem + ".webp")),
+                "preview": (stem + ".webp") in name_set,
             })
             n += 1
         counts[folder] = n
@@ -896,12 +911,18 @@ def main():
     if ssl_ctx:
         print("  （HTTPS 自簽憑證：手機第一次會跳「不安全」警告，選「繼續前往」即可；")
         print("    語音輸入等需要麥克風的功能只有 HTTPS 或 localhost 才可用；按 Ctrl+C 停止）")
-    else:
-        print("  （綁 0.0.0.0：同網路皆可連，無登入驗證；按 Ctrl+C 停止）")
+    print("  （綁 0.0.0.0，但只放行本機與 Tailscale（100.64.0.0/10）來源；")
+    print("    區網／公網其他 IP 連進來會被直接斷線、不回應；按 Ctrl+C 停止）")
     print("=" * 60)
     try:
         while True:
-            client, _ = srv.accept()
+            client, addr = srv.accept()
+            if not _client_allowed(addr[0]):
+                try:
+                    client.close()
+                except OSError:
+                    pass
+                continue
             threading.Thread(target=handle, args=(client, ssl_ctx), daemon=True).start()
     except KeyboardInterrupt:
         print("\n已停止。")
