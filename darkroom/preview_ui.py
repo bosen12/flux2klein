@@ -1815,8 +1815,8 @@ def _client_allowed(ip: str) -> bool:
     """只放行本機（127.0.0.1／::1）與 Tailscale 來源（100.64.0.0/10），跟主面板
     serve.py 的 _client_allowed 同一套邏輯——暗房沒有登入驗證，之前綁 0.0.0.0
     誰都能連，跟面板比起來風險不對稱（都能操控 ComfyUI 生圖），統一收斂成同一
-    條門檻。部署見 docker-compose.yml：跟面板共用同一個 Tailscale sidecar 的網路
-    命名空間，才能拿到真正的來源 IP（不是 Docker NAT 改寫過的）。"""
+    條門檻。原生直接在 Windows 上跑（不經 Docker），client_address 本來就是
+    Tailscale 介面給的真實來源 IP，不用另外處理。"""
     if ip in ("127.0.0.1", "::1"):
         return True
     return _in_cgnat(ip)
@@ -1831,6 +1831,20 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
         pass
+
+    _SLOW_REQUEST_LOG_SEC = 0.5   # 遠端連線的「有時候很卡」一直是猜的，沒有實際數字可查——
+                                   # 這裡包住 handle_one_request()（BaseHTTPRequestHandler
+                                   # 每個請求都會經過的單一入口，不用動 do_GET/do_POST 本體）
+                                   # 記下處理時間，超過門檻才印，之後真的卡的時候直接看記錄
+                                   # 就有「哪個來源 IP、哪個 path、卡了幾秒」可查，不用再猜。
+
+    def handle_one_request(self):
+        t0 = time.time()
+        super().handle_one_request()
+        dt = time.time() - t0
+        if dt >= self._SLOW_REQUEST_LOG_SEC:
+            plog(f"[慢請求] {self.client_address[0]} {getattr(self, 'command', '?')} "
+                 f"{getattr(self, 'path', '?')} — {dt:.2f}s")
 
     def _blocked(self) -> bool:
         """來源 IP 不在白名單就直接斷線、不回應（跟 serve.py 面板一致的行為，
