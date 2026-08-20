@@ -156,13 +156,46 @@ asyncio_logger.addFilter(ConnectionResetFilter())
 from py.config import config
 
 
+def _in_cgnat(ip: str) -> bool:
+    """是否落在 Tailscale 用的 100.64.0.0/10。"""
+    try:
+        parts = ip.split(".")
+        return parts[0] == "100" and 64 <= int(parts[1]) <= 127
+    except (ValueError, IndexError):
+        return False
+
+
+def _client_allowed(ip: str) -> bool:
+    """只放行本機（127.0.0.1／::1）與 Tailscale 來源（100.64.0.0/10），跟
+    ../serve.py、../darkroom/preview_ui.py 同一套邏輯——standalone 模式沒有
+    登入驗證，之前綁 0.0.0.0 誰都能連進來看/改 LoRA 檔案，統一收斂成同一條
+    門檻。部署見 ../docker-compose.yml：跟面板共用同一個 Tailscale sidecar 的
+    網路命名空間，才能拿到真正的來源 IP（不是 Docker NAT 改寫過的）。"""
+    if ip in ("127.0.0.1", "::1"):
+        return True
+    return _in_cgnat(ip)
+
+
+@web.middleware
+async def access_control(request: web.Request, handler):
+    """來源 IP 不在白名單就直接斷線、不回應，不回任何 body——沒有登入驗證的
+    服務，連「這裡有東西」都不該讓掃描者知道。"""
+    peer = request.transport.get_extra_info("peername") if request.transport else None
+    ip = peer[0] if peer else None
+    if not ip or not _client_allowed(ip):
+        if request.transport:
+            request.transport.close()
+        raise asyncio.CancelledError()
+    return await handler(request)
+
+
 class StandaloneServer:
     """Server implementation for standalone mode"""
 
     def __init__(self):
         self.app = web.Application(
             logger=logger,
-            middlewares=[api_json_error, cache_control],
+            middlewares=[access_control, api_json_error, cache_control],
             client_max_size=256 * 1024 * 1024,
             handler_args={
                 "max_field_size": HEADER_SIZE_LIMIT,

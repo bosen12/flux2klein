@@ -1787,6 +1787,26 @@ class _QuietThreadingHTTPServer(ThreadingHTTPServer):
 # ---------------------------------------------------------------------------
 # HTTP handler
 # ---------------------------------------------------------------------------
+def _in_cgnat(ip: str) -> bool:
+    """是否落在 Tailscale 用的 100.64.0.0/10。"""
+    try:
+        parts = ip.split(".")
+        return parts[0] == "100" and 64 <= int(parts[1]) <= 127
+    except (ValueError, IndexError):
+        return False
+
+
+def _client_allowed(ip: str) -> bool:
+    """只放行本機（127.0.0.1／::1）與 Tailscale 來源（100.64.0.0/10），跟主面板
+    serve.py 的 _client_allowed 同一套邏輯——暗房沒有登入驗證，之前綁 0.0.0.0
+    誰都能連，跟面板比起來風險不對稱（都能操控 ComfyUI 生圖），統一收斂成同一
+    條門檻。部署見 docker-compose.yml：跟面板共用同一個 Tailscale sidecar 的網路
+    命名空間，才能拿到真正的來源 IP（不是 Docker NAT 改寫過的）。"""
+    if ip in ("127.0.0.1", "::1"):
+        return True
+    return _in_cgnat(ip)
+
+
 class Handler(BaseHTTPRequestHandler):
     # HTTP/1.1 → 開 keep-alive：瀏覽器重用連線，不再每張縮圖/圖片都重開 TCP 握手。
     # 這是跟 Jellyfin/Stash 載入順暢度最大的差別（它們是 keep-alive/HTTP2）。所有回應
@@ -1796,6 +1816,18 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
         pass
+
+    def _blocked(self) -> bool:
+        """來源 IP 不在白名單就直接斷線、不回應（跟 serve.py 面板一致的行為，
+        不回 403 body 是刻意的——沒有登入驗證的服務，連「這裡有東西」都不該讓
+        掃描者知道)。回傳 True 時呼叫端要立刻 return，不要再往下處理。"""
+        if _client_allowed(self.client_address[0]):
+            return False
+        try:
+            self.connection.close()
+        except OSError:
+            pass
+        return True
 
     # 文字類回應壓縮：/api/libs 是 2.2MB 的 JSON，gzip 後只剩 9%（實測 0.19MB，
     # 壓縮成本 12ms）。對手機走 Tailscale 連是數量級差異。圖片已經是壓縮格式，
@@ -1853,6 +1885,8 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def do_GET(self):
+        if self._blocked():
+            return
         u = urllib.parse.urlparse(self.path)
         qs = urllib.parse.parse_qs(u.query)
         try:
@@ -1999,6 +2033,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"error": f"{type(e).__name__}: {e}"}, 500)
 
     def do_OPTIONS(self):
+        if self._blocked():
+            return
         # 只有 lora-push 需要跨源（LoRA Manager 站在自己的 port 7861，POST 這裡）。
         # application/json 的 POST 會先觸發瀏覽器的 CORS 預檢，這裡答覆放行。
         u = urllib.parse.urlparse(self.path)
@@ -2015,6 +2051,8 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
+        if self._blocked():
+            return
         u = urllib.parse.urlparse(self.path)
         length = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(length) if length else b""

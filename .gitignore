@@ -12,6 +12,9 @@ fake.log
 .DS_Store
 Thumbs.db
 
+# Docker（含 Tailscale auth key）
+.env
+
 # 本地設定（含 API key）
 config.js
 
