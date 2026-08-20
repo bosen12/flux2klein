@@ -1672,9 +1672,12 @@ function drawLoraTarot(pool, label) {
     const card = document.createElement('div');
     card.className = 'tarot-card';
     card.style.animationDelay = REDUCE ? '0ms' : (i * 48) + 'ms';
+    // 影片 src 故意先不填（存 data-src），等下面依發牌順序錯開才真的開始下載——
+    // 一次翻 8 張，若同時把 8 支影片的 src 都設好，瀏覽器會同時開 8 條下載，遠端走
+    // Tailscale（尤其中繼、非直連時）頻寬有限，擠在一起就是使用者感覺到的卡頓。
     const face = l.preview
       ? (isLoraPreviewVideo(l)
-          ? `<video muted loop autoplay playsinline src="${loraPreviewUrl(l)}"></video>`
+          ? `<video muted loop playsinline preload="none" data-src="${loraPreviewUrl(l)}"></video>`
           : `<img decoding="async" src="${loraPreviewUrl(l)}" alt="" onload="this.classList.add('ld');this.closest('.tarot-front').classList.remove('loading')" onerror="this.closest('.tarot-front').classList.remove('loading')">`)
       : `<div class="tarot-noimg">${ICON_EMPTY}<span>尚無預覽</span></div>`;
     card.innerHTML =
@@ -1693,12 +1696,30 @@ function drawLoraTarot(pool, label) {
   });
   $('tarot').classList.add('open');
   const cards = [...wrap.children];
-  if (REDUCE) { cards.forEach(c => c.classList.add('revealed')); return; }
+  if (REDUCE) {
+    // 沒有發牌動畫可以掛，直接把每張的影片 data-src 提前補上，不然這幾支影片
+    // 永遠不會開始下載（reduced-motion 使用者會看到一片空白）。
+    cards.forEach(c => {
+      const media = c.querySelector('.tarot-front video');
+      if (media && media.dataset.src) { media.src = media.dataset.src; delete media.dataset.src; media.play().catch(() => {}); }
+      c.classList.add('revealed');
+    });
+    return;
+  }
   const dealDone = n * 48 + 220;
   cards.forEach((c, i) => {
     const media = c.querySelector('.tarot-front img, .tarot-front video');
-    if (media && (media.tagName === 'VIDEO' || (media.complete && media.naturalWidth))) c.querySelector('.tarot-front').classList.remove('loading');
-    setTimeout(() => c.classList.add('revealed'), dealDone + i * 80);
+    setTimeout(() => {
+      if (media && media.tagName === 'VIDEO' && media.dataset.src) {
+        media.src = media.dataset.src;   // 這張輪到揭示了才真的開始下載，錯開 8 張的網路請求
+        delete media.dataset.src;
+        media.play().catch(() => {});    // autoplay 屬性拿掉了（怕還沒設 src 就被瀏覽器搶跑），這裡手動補播放
+      }
+      if (media && (media.tagName === 'VIDEO' || (media.complete && media.naturalWidth))) {
+        c.querySelector('.tarot-front').classList.remove('loading');
+      }
+      c.classList.add('revealed');
+    }, dealDone + i * 80);
   });
 }
 
@@ -2437,12 +2458,28 @@ function showStatTip(anchor, text) {
 // 有些 LoRA 的預覽檔是短片（.mp4/.webm）而不是圖片，要用 <video> 而不是 <img> 渲染。
 function isLoraPreviewVideo(l) { return /\.(mp4|webm)$/i.test(l.preview || ''); }
 
+// <img loading="lazy"> 瀏覽器原生就會捲到才載，但 <video> 沒有對應屬性——之前
+// autoplay+src 是一建立就立刻開始下載＋播放，LoRA 清單一頁最多 80 列，只要裡面有
+// 幾個影片預覽，翻頁那瞬間就會同時對好幾支影片開連線。遠端走 Tailscale（尤其中繼、
+// 非直連時）頻寬有限，這樣同時搶頻寬就是實際卡頓的原因。改成跟 <img loading="lazy">
+// 同樣效果：src 先不填，用同一個共用 IntersectionObserver 等真的捲進視窗才賦值。
+const _loraVideoIO = new IntersectionObserver((entries, obs) => {
+  for (const entry of entries) {
+    if (!entry.isIntersecting) continue;
+    const v = entry.target;
+    if (v.dataset.src) { v.src = v.dataset.src; delete v.dataset.src; }
+    obs.unobserve(v);
+  }
+}, { rootMargin: '300px' });   // 提前一點觸發，捲到剛好看到時影片已經在緩衝，不會又要等
+
 // 建一個 LoRA 預覽用的 <img> 或 <video>（依副檔名判斷），呼叫端自己 append 進要放的容器。
 function makeLoraPreviewEl(l) {
   if (isLoraPreviewVideo(l)) {
     const v = document.createElement('video');
     v.muted = true; v.loop = true; v.autoplay = true; v.playsInline = true;
-    v.src = loraPreviewUrl(l);
+    v.preload = 'none';
+    v.dataset.src = loraPreviewUrl(l);
+    _loraVideoIO.observe(v);
     return v;
   }
   const im = document.createElement('img'); im.loading = 'lazy';
