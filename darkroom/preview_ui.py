@@ -351,6 +351,14 @@ def clear_score(rel: str) -> None:
             _save_scores_locked()
 
 
+def _flush_scores() -> None:
+    """把 _scores 落地，但序列化/寫檔在鎖外做——只在鎖內複製一份，不讓其他請求
+    （例如 /api/libs 的 score_map()）在磁碟 I/O 期間排隊等鎖。"""
+    with _scores_lock:
+        snapshot = dict(_scores)
+    _atomic_write_json(_meta_path("scores"), {"scores": snapshot})
+
+
 def score_map() -> dict:
     with _scores_lock:
         return dict(_scores)
@@ -634,6 +642,7 @@ STATE = {
     "workflow_path": None,
     "template": None,
     "comfy_base": None,
+    "comfy_pref": None,   # 使用者原本指定的 --comfy，斷線後重新探測用
     "steps": 25,
     "checkpoint": None,   # 生圖模式的底模覆寫；None＝不覆寫，見 DARKROOM_CHECKPOINT_ROOT 說明
     "timeout": 600,
@@ -758,39 +767,48 @@ def make_thumb(src: Path, size: int = THUMB_MAX) -> tuple[bytes, str]:
     if cache_file.is_file():
         return cache_file.read_bytes(), '"' + etag + '"'
 
-    with _thumb_lock(etag):
-        if cache_file.is_file():  # 可能剛被別的執行緒建好
-            return cache_file.read_bytes(), '"' + etag + '"'
-        # 只有「真的要現場生成」才佔用併發額度;快取命中在上面就回了、不進這裡。
-        # method=1 比預設 4 快很多、檔案只大一點點(縮圖不在意)。
-        with _thumb_gen_sem:
-            t0 = time.time()
-            plog(f"[thumb] Pillow 縮圖 {src.parent.name}/{src.name}")
-            with Image.open(src) as im:
-                im = im.convert("RGB")
-                im.thumbnail((size, size), Image.LANCZOS)
-                buf = io.BytesIO()
-                im.save(buf, format="WEBP", quality=THUMB_QUALITY, method=1)
-            data = buf.getvalue()
-            plog(f"[thumb] 完成 {src.parent.name}/{src.name}  {time.time()-t0:.2f}s  {len(data)//1024}KB")
-        # data 已在上面取得。不能直接 write_bytes(cache_file)——open(mode='wb')
-        # 會先把檔案截斷成 0 位元組再開始寫，另一個請求若在這個空窗期打中上面
-        # 那個沒鎖保護的快速路徑（第 518 行 is_file() 快取命中判斷），就會讀到
-        # 一個還沒寫完（甚至是 0 位元組）的檔案，瀏覽器收到的縮圖就是破圖。
-        # 改成先寫到同目錄下的臨時檔，寫完再用 os.replace() 原子性地覆蓋成正式
-        # 檔名——os.replace 在 POSIX／Windows 都是單一系統呼叫，其他執行緒的
-        # is_file() 檢查只會看到「舊檔不存在」或「新檔已完整」兩種狀態之一，
-        # 不會看到寫到一半的中間狀態。
-        tmp_file = cache_file.with_name(f"{cache_file.name}.tmp-{os.getpid()}-{threading.get_ident()}")
+    lk = _thumb_lock(etag)
+    with lk:
         try:
-            tmp_file.write_bytes(data)
-            os.replace(tmp_file, cache_file)
-        except OSError:
+            if cache_file.is_file():  # 可能剛被別的執行緒建好
+                return cache_file.read_bytes(), '"' + etag + '"'
+            # 只有「真的要現場生成」才佔用併發額度;快取命中在上面就回了、不進這裡。
+            # method=1 比預設 4 快很多、檔案只大一點點(縮圖不在意)。
+            with _thumb_gen_sem:
+                t0 = time.time()
+                plog(f"[thumb] Pillow 縮圖 {src.parent.name}/{src.name}")
+                with Image.open(src) as im:
+                    im = im.convert("RGB")
+                    im.thumbnail((size, size), Image.LANCZOS)
+                    buf = io.BytesIO()
+                    im.save(buf, format="WEBP", quality=THUMB_QUALITY, method=1)
+                data = buf.getvalue()
+                plog(f"[thumb] 完成 {src.parent.name}/{src.name}  {time.time()-t0:.2f}s  {len(data)//1024}KB")
+            # data 已在上面取得。不能直接 write_bytes(cache_file)——open(mode='wb')
+            # 會先把檔案截斷成 0 位元組再開始寫，另一個請求若在這個空窗期打中上面
+            # 那個沒鎖保護的快速路徑（第 518 行 is_file() 快取命中判斷），就會讀到
+            # 一個還沒寫完（甚至是 0 位元組）的檔案，瀏覽器收到的縮圖就是破圖。
+            # 改成先寫到同目錄下的臨時檔，寫完再用 os.replace() 原子性地覆蓋成正式
+            # 檔名——os.replace 在 POSIX／Windows 都是單一系統呼叫，其他執行緒的
+            # is_file() 檢查只會看到「舊檔不存在」或「新檔已完整」兩種狀態之一，
+            # 不會看到寫到一半的中間狀態。
+            tmp_file = cache_file.with_name(f"{cache_file.name}.tmp-{os.getpid()}-{threading.get_ident()}")
             try:
-                tmp_file.unlink(missing_ok=True)
+                tmp_file.write_bytes(data)
+                os.replace(tmp_file, cache_file)
             except OSError:
-                pass
-        return data, '"' + etag + '"'
+                try:
+                    tmp_file.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            return data, '"' + etag + '"'
+        finally:
+            # etag 含來源 mtime,同一張圖重生成一次就是全新的 key——不清掉的話
+            # _thumb_locks 會隨「規模 × 重生成次數」無限增長。用完就丟,只要還是
+            # 同一把鎖物件才丟(避免誤刪掉別的執行緒剛建立、正在等的新鎖)。
+            with _thumb_locks_guard:
+                if _thumb_locks.get(etag) is lk:
+                    _thumb_locks.pop(etag, None)
 
 
 def get_tailscale_ip() -> str | None:
@@ -962,8 +980,13 @@ def run_score_backfill(progress_cb=None):
     scores = score_map()
     by_rel = {it["rel"]: it for it in items}
     orphans = [rel for rel in scores if not by_rel.get(rel, {}).get("has_image")]
-    for rel in orphans:
-        clear_score(rel)
+    if orphans:
+        # 一次性從記憶體清掉整批孤兒紀錄再落地一次，不要逐筆呼叫 clear_score()
+        # （逐筆＝逐筆都整份 dict 序列化寫檔，孤兒多的話一樣是 O(n²) I/O）。
+        with _scores_lock:
+            for rel in orphans:
+                _scores.pop(rel, None)
+        _flush_scores()
 
     todo = [it for it in items if it.get("has_image") and it["rel"] not in scores]
     total = len(todo)
@@ -972,7 +995,13 @@ def run_score_backfill(progress_cb=None):
                                     "last_rel": None, "last_score": None}
     plog(f"[score-backfill] 開始 · 待評分 {total} 筆 · 清掉 {len(orphans)} 筆孤兒紀錄")
 
+    # 逐筆評分還是逐筆更新記憶體（前端輪詢 last_rel／last_score 需要即時性），但
+    # 落地改成每隔一段時間才 flush 一次——補幾千~28000 筆時，寫檔成本不再隨已補
+    # 筆數線性增加成 O(n²)，且落地本身已搬到 _scores_lock 外面做（見 _flush_scores）。
+    _FLUSH_INTERVAL = 2.0
     done = 0
+    dirty = False
+    last_flush = time.time()
     try:
         for it in todo:
             rel = it["rel"]
@@ -987,7 +1016,9 @@ def run_score_backfill(progress_cb=None):
                     result = _score_image_bytes(img_bytes)
                 if result:
                     result["at"] = time.time()
-                    set_score(rel, result)
+                    with _scores_lock:
+                        _scores[rel] = result
+                    dirty = True
             except Exception as e:
                 plog(f"[score-backfill] {rel} 失敗：{type(e).__name__}: {e}")
             done += 1
@@ -1001,7 +1032,14 @@ def run_score_backfill(progress_cb=None):
                     STATE["score_backfill"]["last_score"] = result
             if progress_cb:
                 progress_cb(done, total)
+            now = time.time()
+            if dirty and now - last_flush >= _FLUSH_INTERVAL:
+                _flush_scores()
+                dirty = False
+                last_flush = now
     finally:
+        if dirty:
+            _flush_scores()
         with STATE["score_backfill_lock"]:
             STATE["score_backfill"]["running"] = False
     plog(f"[score-backfill] 完成 · {done}/{total}")
@@ -1162,8 +1200,24 @@ def do_batch(rels: list[str]):
     plog(f"[batch] {'已停止' if stopped else '完成'} · {b.get('done')}/{total} · ok {b.get('ok')} · fail {b.get('fail')}")
 
 
+def ensure_comfy_base():
+    """回傳目前可用的 ComfyUI base URL；若上次探測失敗，這裡會重新試一次。
+    啟動時 ComfyUI 還沒開會被 resolve_comfy_base 判定失敗、STATE["comfy_base"]
+    存成 None，過去這個 None 就永遠卡住，就算之後才把 ComfyUI 開起來也連不上、
+    只能重開暗房。改成每次要用到 comfy_base 而它是 None 時就重探測一次。"""
+    if STATE["comfy_base"]:
+        return STATE["comfy_base"]
+    pref = STATE.get("comfy_pref") or "http://127.0.0.1:8188"
+    try:
+        STATE["comfy_base"] = resolve_comfy_base(pref)
+        print(f"[comfy   ] 重新連上 → {STATE['comfy_base']}")
+    except Exception:
+        STATE["comfy_base"] = None
+    return STATE["comfy_base"]
+
+
 def do_generate(rel: str, seed: int | None = None, in_batch: bool = False):
-    if not STATE["comfy_base"]:
+    if not ensure_comfy_base():
         set_job(rel, "error", "ComfyUI 未連線")
         if not in_batch:
             plog(f"[gen] ERR {rel} — ComfyUI 未連線")
@@ -1274,6 +1328,21 @@ _gen_preview = {}      # gid -> {"bytes", "ctype"}（採樣中的即時預覽，
 _gen_status = {}       # gid -> {"status", "rel", "name", "err", "seed", "pv"}
 _gen_lock = threading.Lock()
 _GEN_MAX = 240         # 結果快取上限，超過砍最舊
+_GEN_STATUS_MAX = 500  # _gen_status 獨立上限——面板長開、抽卡/生成次數遠多於 _GEN_MAX
+                        # 能保留的圖片結果數，不能只靠 _gen_results 滿了才連帶清，否則
+                        # 無限增長（尤其是 error/cancelled 那些從不進 _gen_results 的紀錄）
+
+
+def _evict_gen_status_locked():
+    """呼叫端須已持有 _gen_lock。只清已結束的（pending 還在等前端輪詢/使用者取消，
+    不能清），FIFO 砍到剩 _GEN_STATUS_MAX 筆。"""
+    if len(_gen_status) <= _GEN_STATUS_MAX:
+        return
+    for gid in list(_gen_status.keys()):
+        if len(_gen_status) <= _GEN_STATUS_MAX:
+            break
+        if _gen_status[gid].get("status") in ("done", "error", "cancelled"):
+            _gen_status.pop(gid, None)
 
 # ---------------------------------------------------------------------------
 # 2026-08 lora-manager 整合：LoRA Manager（standalone、獨立埠，見 ../lora-manager/）
@@ -1476,7 +1545,7 @@ def _gen_one_worker(gid, rel, loras, trigger, wait_for=None, mark_started=None):
             plog(f"[genmode] 略過（已取消）{rel}")
             return
         try:
-            if not STATE["comfy_base"]:
+            if not ensure_comfy_base():
                 raise RuntimeError("ComfyUI 未連線")
             # rel 可以是空字串——Concepts 抽卡「不抽詞庫模板」時就是這樣：沒有場景模板，
             # positive 只有品質標籤（build_prompt([],[]）留下的固定開頭）+ LoRA 的 trigger，
@@ -1647,6 +1716,7 @@ def start_gen(jobs, client=""):
         with _gen_lock:
             _gen_status[gid] = {"status": "pending", "rel": rel, "name": name, "err": "",
                                 "pv": 0, "cancel": False, "pid": "", "client": client}
+            _evict_gen_status_locked()
         out.append({"id": gid, "rel": rel, "name": name})
         my_started = threading.Event()
         threading.Thread(target=_gen_one_worker,
@@ -1697,6 +1767,21 @@ def cancel_gen_ids(ids):
         return 0
     idset = set(ids)
     return _cancel_gen(lambda gid, s: gid in idset, f"指定的 {len(idset)} 筆生圖")
+
+
+class _QuietThreadingHTTPServer(ThreadingHTTPServer):
+    """跟 ThreadingHTTPServer 一樣,只是客戶端斷線（ConnectionReset/Aborted/BrokenPipe）
+    不印整串 traceback——手機瀏覽器切背景、網路切換、頁面關掉時中斷 keep-alive 連線
+    很常見,對面板本身無害（每個請求本來就在自己的 thread 裡處理,不影響其他連線),
+    但預設的 handle_error() 每次都會把完整 traceback 印到主控台,長時間掛機使用時
+    是最吵的雜訊來源。真正未預期的例外還是照樣印,只是換成不帶 traceback 的一行。"""
+
+    def handle_error(self, request, client_address):
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)):
+            plog(f"[serve] 連線中斷（{client_address[0]}）：{type(exc).__name__}")
+            return
+        super().handle_error(request, client_address)
 
 
 # ---------------------------------------------------------------------------
@@ -1782,7 +1867,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({
                     "items": scan_libraries(force=qs.get("force", [""])[0] == "1"),
                     "workflow": str(STATE["workflow_path"]),
-                    "comfy": STATE["comfy_base"],
+                    "comfy": ensure_comfy_base(),
                     "steps": STATE["steps"],
                     "special_dir": str(SPECIAL_DIR),
                 })
@@ -2251,13 +2336,14 @@ def main():
     print(f"[special ] {SPECIAL_DIR}")
     print(f"[輸出    ] 存為 {OUT_EXT}(舊 png 仍可顯示)")
     print(f"[並發    ] 一次最多 {STATE['concurrency']} 張")
+    STATE["comfy_pref"] = args.comfy
     print(f"[comfy   ] 探測 {args.comfy} ...")
     try:
         STATE["comfy_base"] = resolve_comfy_base(args.comfy)
         print(f"[comfy   ] OK → {STATE['comfy_base']}")
     except Exception as e:
         print(f"[comfy   ] 連不上:{e}")
-        print("[comfy   ] UI 仍會啟動,但按「生成」會失敗;確認 ComfyUI 啟動後可直接重試")
+        print("[comfy   ] UI 仍會啟動,之後 ComfyUI 開起來會自動接上,不用重開暗房")
         STATE["comfy_base"] = None
 
     port = args.port
@@ -2291,7 +2377,7 @@ def main():
     _load_favs()                  # 載入收藏清單（依 dataset 分檔）
     _load_rarities()              # 載入稀有度側檔（依 dataset 分檔）
     _load_scores()                # 載入卡片評分側檔（依 dataset 分檔）
-    srv = ThreadingHTTPServer((bind_host, port), Handler)
+    srv = _QuietThreadingHTTPServer((bind_host, port), Handler)
     # 開機就先在背景把詞庫掃一遍暖快取，第一次開頁的 /api/libs 才不用等 ~1s 掃描
     threading.Thread(target=lambda: scan_libraries(), daemon=True).start()
     # 標籤索引同一招暖快取：不暖的話，第一次有人用「搜尋標籤」要現場建索引
