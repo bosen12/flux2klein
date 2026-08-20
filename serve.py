@@ -21,6 +21,7 @@ import os
 import sys
 import socket
 import threading
+import time
 import mimetypes
 import datetime
 import gzip
@@ -324,6 +325,13 @@ def send_file(client, filename):
     client.sendall(header + body)
 
 
+_lora_list_cache = {"payload": None, "at": 0.0}
+_LORA_LIST_TTL = 300.0   # 跟 darkroom/preview_ui.py 的 list_loras() 同一套 TTL：LoRA
+                          # 很少變動，逐檔讀 metadata.json 本來就慢（本機約 5s，經
+                          # Docker bind mount 讀 PROMPTS_ROOT／LORA_ROOT 這種掛載更慢，
+                          # 實測 ~10s），沒快取的話每次打開選單都要重掃一次。
+
+
 def serve_lora_list(client):
     """列出各分類子夾（含任意深度的子資料夾）內每個 LoRA 的觸發詞與預覽圖，給 Illustrious
     面板選單用。LoRA Manager 允許在 style/Character/HENTAI/illus 底下建子資料夾整理
@@ -333,6 +341,9 @@ def serve_lora_list(client):
     用 "/" 分隔，送 ComfyUI 前要轉成 "\\"），"category" 才是頂層四分類（給左欄篩選
     晶片分組計數用，前端比對用這個欄位、不是 folder）。"""
     import json as _json
+    if _lora_list_cache["payload"] is not None and (time.time() - _lora_list_cache["at"]) < _LORA_LIST_TTL:
+        send_body(client, _lora_list_cache["payload"], "application/json")
+        return
     items = []
     counts = {}
     errs = []
@@ -386,8 +397,10 @@ def serve_lora_list(client):
     payload = {"items": items, "counts": counts, "folders": LORA_FOLDERS}
     if errs:
         payload["error"] = "；".join(errs)
-    send_body(client, _json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-              "application/json")
+    body = _json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    _lora_list_cache["payload"] = body
+    _lora_list_cache["at"] = time.time()
+    send_body(client, body, "application/json")
 
 
 def serve_lora_preview(client, raw_path):
