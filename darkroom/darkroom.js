@@ -644,8 +644,11 @@ function thumbInnerHTML(it) {
   // tarotShimmer 這個 keyframe，不重新定義一份。onload/onerror 都要收掉 loading
   // （失敗也不能讓微光一直轉，見 CLAUDE.md「hover 泡泡」那條同類型的教訓：載入
   // 狀態一定要有明確的收尾，不能只處理成功路徑）。
+  // src 故意不直接填（存 data-src），交給 wireThumb() 掛上跟 LoRA 預覽同一套併發
+  // 佇列（見 makeLoraPreviewEl 那則長註解）——單靠 <img loading="lazy"> 實測還是會在
+  // 虛擬捲動快速跳動、大量卡片一次進入緩衝範圍時同時觸發，把上傳頻寬擠爆。
   const media = it.has_image
-    ? `<img loading="lazy" decoding="async" width="360" height="360" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="" onload="this.classList.add('ld');this.closest('.thumb').classList.remove('loading')" onerror="this.closest('.thumb').classList.remove('loading')">`
+    ? `<img decoding="async" width="360" height="360" data-src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="" onload="this.classList.add('ld');this.closest('.thumb').classList.remove('loading')" onerror="this.closest('.thumb').classList.remove('loading')">`
     : `<div class="empty">${ICON_EMPTY}<span>尚無圖片</span></div>`;
   return `${media}` +
     (it.rarity === 'legendary' ? sparklesHTML() : '') +
@@ -658,6 +661,10 @@ function thumbInnerHTML(it) {
 }
 
 function wireThumb(thumb, it) {
+  // thumbInnerHTML() 把 img 的下載來源存在 data-src，這裡才真的掛上「捲到才排隊
+  // 下載」（跟 LoRA 預覽共用同一套 _loraPreviewIO／併發佇列，見 makeLoraPreviewEl）。
+  const thumbImg = thumb.querySelector('img[data-src]');
+  if (thumbImg) _loraPreviewIO.observe(thumbImg);
   // 點縮圖：打標模式＝選取；瀏覽的篩選模式＝標記紅叉；瀏覽平常＝開大圖。
   thumb.onclick = () => {
     if (MODE === 'tag' || MODE === 'gen') toggleSel(it.rel, thumb.closest('.card'));
@@ -4109,6 +4116,14 @@ function introBuildAtlas() {
 
 // 逐格載入縮圖。每到一張就標記 dirty，由幀迴圈**一幀最多重傳一次**材質——
 // 64 張各自觸發一次 texImage2D 會在網路密集回來時連續丟出幾十次十幾 MB 的上傳。
+//
+// 這裡曾經是實測抓到的真正卡頓元兇：開場動畫一開頁就對 INTRO_COLS×INTRO_ROWS
+// （8×8＝64 張）縮圖同時發出請求，完全沒有節流——不是 <img loading="lazy">，是
+// 畫布材質貼圖，連瀏覽器原生的捲動延遲載入都套用不上。伺服器端每張縮圖只要幾十
+// 毫秒，但 64 張同時搶同一條上傳頻寬，遠端連線量到單張要等好幾秒甚至幾十秒，
+// 而且每次開頁都會重演一次。改成跟 LoRA 預覽／主圖庫縮圖共用同一套併發佇列
+// （_previewEnqueue，見 makeLoraPreviewEl 的長註解），同時最多幾個真的在下載，
+// 其餘排隊，不再一次性擠爆。
 function introLoadCells() {
   if (!introAtlas || !introPool.length) return;
   const cell = introAtlas.cell;
@@ -4119,21 +4134,28 @@ function introLoadCells() {
     img.decoding = 'async';
     img.fetchPriority = 'low';
     img.onload = () => {
-      if (!introAtlas) return;
-      const cx = (i % INTRO_COLS) * cell, cy = Math.floor(i / INTRO_COLS) * cell;
-      const s = Math.min(img.width, img.height);      // cover 裁切自己算，drawImage 不做
-      introAtlas.ctx.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s,
-                               cx + 2, cy + 2, cell - 4, cell - 4);
-      introAtlas.dirty = true;
-      if (introAtlas.at[i] < 0) { introAtlas.at[i] = performance.now(); introAtlas.count++; }
-      introAtlas.fading = true;
+      if (introAtlas) {
+        const cx = (i % INTRO_COLS) * cell, cy = Math.floor(i / INTRO_COLS) * cell;
+        const s = Math.min(img.width, img.height);      // cover 裁切自己算，drawImage 不做
+        introAtlas.ctx.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s,
+                                 cx + 2, cy + 2, cell - 4, cell - 4);
+        introAtlas.dirty = true;
+        if (introAtlas.at[i] < 0) { introAtlas.at[i] = performance.now(); introAtlas.count++; }
+        introAtlas.fading = true;
+      }
+      if (img._releasePreviewSlot) img._releasePreviewSlot();
     };
     // 載入失敗的格子留空（底色），不影響其餘；標成哨兵值免得顯影迴圈一直等它
     img.onerror = () => {
       if (introAtlas && introAtlas.at[i] < 0) { introAtlas.at[i] = INTRO_CELL_FAILED; introAtlas.count++; }
+      if (img._releasePreviewSlot) img._releasePreviewSlot();
     };
-    // 這裡要的是「正好 cell 像素」的來源，不隨 DPR 再放大，所以不走 thumbURL(it, px)
-    img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}&w=${cell}`;
+    // 這裡要的是「正好 cell 像素」的來源，不隨 DPR 再放大，所以不走 thumbURL(it, px)。
+    // src 賦值本身（真正觸發網路請求）交給佇列排隊，輪到才做。
+    _previewEnqueue((done) => {
+      img._releasePreviewSlot = done;
+      img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}&w=${cell}`;
+    });
   }
 }
 
@@ -4234,7 +4256,17 @@ function introFallback() {
         img.classList.add('in');
         setTimeout(() => { img.style.transitionDelay = ''; }, lag + INTRO_FADE_MS + 60);
       }, { once: true });
-      img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}&w=${cell}`;
+      // 退化模式一次要跑 INTRO_COLS×INTRO_ROWS×2（8×8×2＝128 張），比 WebGL 版更多，
+      // 一樣不能不排隊直接發——見 introLoadCells() 那則長註解，同一個病根、同一套
+      // _previewEnqueue 佇列解法。src 賦值本身交給佇列，輪到才做；沒有另外的
+      // release 收尾動作要做（load/error 各自的效果已經在上面/下面接好了），所以
+      // 這裡的 done 直接掛在 load/error 上就好。
+      img.addEventListener('error', () => { if (img._releasePreviewSlot) img._releasePreviewSlot(); }, { once: true });
+      img.addEventListener('load', () => { if (img._releasePreviewSlot) img._releasePreviewSlot(); }, { once: true });
+      _previewEnqueue((done) => {
+        img._releasePreviewSlot = done;
+        img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}&w=${cell}`;
+      });
       inner.appendChild(img);
     }
     colEl.appendChild(inner);

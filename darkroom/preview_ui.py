@@ -1842,7 +1842,12 @@ class Handler(BaseHTTPRequestHandler):
         t0 = time.time()
         super().handle_one_request()
         dt = time.time() - t0
-        if dt >= self._SLOW_REQUEST_LOG_SEC:
+        # keep-alive 連線閒置等下一個請求、真的等到 self.timeout（30s）逾時關閉，也會
+        # 讓這個函式跑滿 30 秒——那不是「請求很慢」，是「根本沒有新請求進來」（等待期間
+        # socket.timeout 直接跳出，self.command/self.path 不會被更新到新值）。用「耗時
+        # 是不是卡在 timeout 邊界」濾掉這種誤報，不然每次連線閒置逾時都會被當成一筆假的
+        # 慢請求記錄下來，混淆真正的資料。
+        if self._SLOW_REQUEST_LOG_SEC <= dt < self.timeout - 0.5:
             plog(f"[慢請求] {self.client_address[0]} {getattr(self, 'command', '?')} "
                  f"{getattr(self, 'path', '?')} — {dt:.2f}s")
 
