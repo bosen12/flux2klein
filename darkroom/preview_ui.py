@@ -1922,6 +1922,13 @@ class Handler(BaseHTTPRequestHandler):
     # 都有 Content-Length（304 無 body），符合 keep-alive 的前提。
     protocol_version = "HTTP/1.1"
     timeout = 30          # 閒置的 keep-alive 連線 30s 後關掉，不長期佔著執行緒
+    # 關掉 Nagle 演算法（socketserver.StreamRequestHandler 內建的開關，設 True 就會在
+    # setup() 自動對這個連線的 socket 下 TCP_NODELAY）。縮圖這種「很多個小回應」的
+    # 場景最怕 Nagle——小封包會先攢著等湊滿或等對方 ACK 才送，跟 delayed ACK 疊在一起
+    # 每個請求平白多出幾十~上百毫秒。實測過縮圖檔案本身已經很小（16~30KB）、還是
+    # 快取命中（沒有重新生成的 log），卡的不是頻寬也不是伺服器處理，是這種固定延遲；
+    # 遠端連線（有真實 RTT，不像本機幾乎是 0）感覺特別明顯。
+    disable_nagle_algorithm = True
 
     def log_message(self, format, *args):
         pass

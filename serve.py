@@ -1055,6 +1055,15 @@ def main():
     try:
         while True:
             client, addr = srv.accept()
+            # 關掉 Nagle 演算法——小回應（LoRA 預覽縮圖等）一個個小封包若還要等湊滿
+            # 或等對方 ACK 才送，加上 delayed ACK，每個請求平白多出幾十~上百毫秒，
+            # 遠端連線（有真實 RTT）特別有感。見 darkroom/preview_ui.py 同一個修復
+            # 的說明（那邊用 http.server 內建的 disable_nagle_algorithm 開關，這裡是
+            # 手動管 socket，直接下 setsockopt）。
+            try:
+                client.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            except OSError:
+                pass
             if not _client_allowed(addr[0]):
                 try:
                     client.close()
