@@ -2014,10 +2014,22 @@ class Handler(BaseHTTPRequestHandler):
                 if p is None:
                     self._send_bytes(b"not found", "text/plain", 404)
                     return
-                ctype = mimetypes.guess_type(str(p))[0] or "image/png"
-                st = p.stat()
-                etag = hashlib.sha1(f"{p}|{int(st.st_mtime)}|{st.st_size}".encode("utf-8")).hexdigest()
-                self._send_cacheable(p.read_bytes(), ctype, etag)
+                # 這支端點以前直接把原始檔案整包送出去——「.preview.png」這種命名很
+                # 唬人，實際上很多是使用者從 CivitAI 存下來的原圖，3~7MB 稀鬆平常。
+                # 前端只拿去當小預覽格（列表縮圖、抽卡牌面、hover tip），沒有任何地方
+                # 需要原始解析度，實測遠端連線同時載幾個這種檔案就會把頻寬擠爆，個別
+                # 請求卡到 10~20 秒——真正瓶頸不是併發數，是檔案本身太大。跟暗房自己
+                # 圖庫縮圖共用 make_thumb()，縮完通常只剩幾十 KB。影片（.mp4/.webm）
+                # Pillow 縮不了，本來就不大（實測 ~700KB 級別），維持原樣直送。
+                if p.suffix.lower() in (".mp4", ".webm"):
+                    ctype = mimetypes.guess_type(str(p))[0] or "video/mp4"
+                    st = p.stat()
+                    etag = hashlib.sha1(f"{p}|{int(st.st_mtime)}|{st.st_size}".encode("utf-8")).hexdigest()
+                    self._send_cacheable(p.read_bytes(), ctype, etag)
+                    return
+                data, etag = make_thumb(p, thumb_size_for(qs.get("w", [""])[0]))
+                ctype = "image/webp" if _HAS_PIL else (mimetypes.guess_type(str(p))[0] or "image/png")
+                self._send_cacheable(data, ctype, etag)
                 return
             if u.path == "/api/gen-status":
                 ids = [x for x in (qs.get("ids", [""])[0]).split(",") if x]

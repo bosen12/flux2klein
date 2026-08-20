@@ -21,6 +21,7 @@ config.js
 # 詞庫暗房的本機設定（含機器相關路徑）與縮圖快取
 preview_config.json
 .thumb_cache/
+.lora_thumb_cache/
 
 # 詞庫（NSFW 內容，資料留在 animebot；萬一在此建立也不進版控）
 special_prompts/

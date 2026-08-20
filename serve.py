@@ -31,6 +31,12 @@ import ssl
 import shutil
 import subprocess
 
+try:
+    from PIL import Image
+    _HAS_PIL = True
+except Exception:
+    _HAS_PIL = False
+
 BASE = os.path.dirname(os.path.abspath(__file__))
 # 有些 Python 的 mimetypes 不認 .webp（guess_type 回 None）→ 預覽圖會被當 image/png
 # 送。明確註冊，讓 LoRA／詞庫的 .webp 預覽 Content-Type 正確。
@@ -403,6 +409,49 @@ def serve_lora_list(client):
     send_body(client, body, "application/json")
 
 
+_LORA_THUMB_DIR = os.path.join(BASE, ".lora_thumb_cache")
+_LORA_THUMB_MAX = 360   # 跟暗房 darkroom/preview_ui.py 的 THUMB_MAX 同一個級距，面板選單
+                         # 一樣是小格子，用不到更大的
+
+
+def _lora_thumb(path: str) -> tuple[bytes, str, str]:
+    """回傳 (bytes, content_type, etag)。實測抓到的真正瓶頸：LORA_ROOT 底下不少
+    「.preview.png」其實是使用者從 CivitAI 存下來的原圖，3~7MB 稀鬆平常，這支端點
+    以前直接整包送出去，遠端連線同時載幾個就會把頻寬擠爆，個別請求卡到 10~20 秒。
+    面板選單只拿去當小預覽格，用不到原始解析度，跟暗房共用同一套「Pillow 縮圖 +
+    磁碟快取」做法（cache key 含來源路徑/mtime/size，來源換了會自動重算，不用手動
+    清快取）。Pillow 不可用（沒裝）就退回送原圖，至少功能還在，只是沒省頻寬。"""
+    st = os.stat(path)
+    sig = f"{path}|{int(st.st_mtime)}|{st.st_size}|{_LORA_THUMB_MAX}"
+    etag = hashlib.sha1(sig.encode("utf-8")).hexdigest()
+    if not _HAS_PIL:
+        with open(path, "rb") as f:
+            return f.read(), mimetypes.guess_type(path)[0] or "image/png", etag
+    os.makedirs(_LORA_THUMB_DIR, exist_ok=True)
+    cache_file = os.path.join(_LORA_THUMB_DIR, etag + ".webp")
+    if os.path.isfile(cache_file):
+        with open(cache_file, "rb") as f:
+            return f.read(), "image/webp", etag
+    with Image.open(path) as im:
+        im = im.convert("RGB")
+        im.thumbnail((_LORA_THUMB_MAX, _LORA_THUMB_MAX), Image.LANCZOS)
+        import io as _io
+        buf = _io.BytesIO()
+        im.save(buf, format="WEBP", quality=72, method=1)
+    data = buf.getvalue()
+    tmp = cache_file + f".tmp-{os.getpid()}"
+    try:
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.replace(tmp, cache_file)
+    except OSError:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+    return data, "image/webp", etag
+
+
 def serve_lora_preview(client, raw_path):
     """送出單一 LoRA 的預覽圖。folder 現在可能帶子資料夾（如 "Character/Hanime"，見
     serve_lora_list()），驗證比照 darkroom/preview_ui.py 的 lora_preview_path()：第一段
@@ -428,9 +477,13 @@ def serve_lora_preview(client, raw_path):
     if not os.path.isfile(path):
         client.sendall(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
         return
-    ctype = mimetypes.guess_type(path)[0] or "image/png"
-    with open(path, "rb") as f:
-        body = f.read()
+    if fn.lower().endswith((".mp4", ".webm")):
+        # 影片 Pillow 縮不了，本來就不大（實測 ~700KB 級別），維持原樣直送。
+        ctype = mimetypes.guess_type(path)[0] or "video/mp4"
+        with open(path, "rb") as f:
+            body = f.read()
+    else:
+        body, ctype, _etag = _lora_thumb(path)
     header = (
         "HTTP/1.1 200 OK\r\n"
         f"Content-Type: {ctype}\r\n"
