@@ -1200,13 +1200,28 @@ def do_batch(rels: list[str]):
     plog(f"[batch] {'已停止' if stopped else '完成'} · {b.get('done')}/{total} · ok {b.get('ok')} · fail {b.get('fail')}")
 
 
+_COMFY_RETRY_COOLDOWN = 15.0   # 秒。resolve_comfy_base() 會試好幾個候選位址，每個
+                                # 都帶 timeout=3s，ComfyUI 沒開的時候一次探測可能要好
+                                # 幾秒——/api/libs 等好幾個地方每次都會呼叫這裡，若沒有
+                                # 冷卻時間，ComfyUI 關著的時候每一次請求都要重新完整
+                                # 探測一輪，暗房會變得非常慢（這是真的量到的回歸，不是
+                                # 錯覺：之前只在啟動時探測一次，這個修復讓它變成「沒接上
+                                # 就每次都探測」，忘記加冷卻時間）。
+STATE.setdefault("comfy_last_probe", 0.0)
+
+
 def ensure_comfy_base():
-    """回傳目前可用的 ComfyUI base URL；若上次探測失敗，這裡會重新試一次。
-    啟動時 ComfyUI 還沒開會被 resolve_comfy_base 判定失敗、STATE["comfy_base"]
-    存成 None，過去這個 None 就永遠卡住，就算之後才把 ComfyUI 開起來也連不上、
-    只能重開暗房。改成每次要用到 comfy_base 而它是 None 時就重探測一次。"""
+    """回傳目前可用的 ComfyUI base URL；若上次探測失敗，隔一段冷卻時間後才會重
+    試一次（不是每次呼叫都重探測，見 _COMFY_RETRY_COOLDOWN 說明）。啟動時
+    ComfyUI 還沒開會被 resolve_comfy_base 判定失敗、STATE["comfy_base"] 存成
+    None，過去這個 None 就永遠卡住，就算之後才把 ComfyUI 開起來也連不上、只能
+    重開暗房。改成 comfy_base 是 None、且距上次探測超過冷卻時間時才重探測一次。"""
     if STATE["comfy_base"]:
         return STATE["comfy_base"]
+    now = time.time()
+    if now - STATE["comfy_last_probe"] < _COMFY_RETRY_COOLDOWN:
+        return None
+    STATE["comfy_last_probe"] = now
     pref = STATE.get("comfy_pref") or "http://127.0.0.1:8188"
     try:
         STATE["comfy_base"] = resolve_comfy_base(pref)
