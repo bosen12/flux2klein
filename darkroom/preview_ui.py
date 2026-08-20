@@ -1933,22 +1933,30 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
-    _SLOW_REQUEST_LOG_SEC = 0.5   # 遠端連線的「有時候很卡」一直是猜的，沒有實際數字可查——
-                                   # 這裡包住 handle_one_request()（BaseHTTPRequestHandler
-                                   # 每個請求都會經過的單一入口，不用動 do_GET/do_POST 本體）
-                                   # 記下處理時間，超過門檻才印，之後真的卡的時候直接看記錄
-                                   # 就有「哪個來源 IP、哪個 path、卡了幾秒」可查，不用再猜。
+    _SLOW_REQUEST_LOG_SEC = 0.5   # 遠端連線的「有時候很卡」一直是猜的，沒有實際數字可查，
+                                   # 才裝這個計時器——但第一版有 bug，見 parse_request() 的
+                                   # 說明，這裡是修過的版本。
+
+    def parse_request(self):
+        """在這裡（不是 handle_one_request 最前面）記時間，是這次修 bug 的重點：
+        handle_one_request() 第一步是 self.rfile.readline()，在 keep-alive 連線上
+        會一直等到瀏覽器送下一個請求才返回——如果前端是輪詢（例如 /api/status 每
+        1.5 秒問一次，見 darkroom.js），這段「等下一次輪詢」的閒置時間會被算成
+        「處理這個請求花了多久」，做出一堆看起來很慢、其實只是輪詢間隔的假資料
+        （連本機 127.0.0.1 都會中招，因為量的根本不是網路或處理速度）。parse_request()
+        是 readline() 拿到請求列之後才會呼叫的，從這裡開始計時，量到的才是「真的在
+        處理這個請求」的時間，不含等待下一個請求的閒置期。"""
+        ok = super().parse_request()
+        self._req_t0 = time.time()
+        return ok
 
     def handle_one_request(self):
-        t0 = time.time()
         super().handle_one_request()
+        t0 = getattr(self, "_req_t0", None)
+        if t0 is None:
+            return   # 沒有真的解析出一個請求（例如 keep-alive 閒置逾時關閉），不計時
         dt = time.time() - t0
-        # keep-alive 連線閒置等下一個請求、真的等到 self.timeout（30s）逾時關閉，也會
-        # 讓這個函式跑滿 30 秒——那不是「請求很慢」，是「根本沒有新請求進來」（等待期間
-        # socket.timeout 直接跳出，self.command/self.path 不會被更新到新值）。用「耗時
-        # 是不是卡在 timeout 邊界」濾掉這種誤報，不然每次連線閒置逾時都會被當成一筆假的
-        # 慢請求記錄下來，混淆真正的資料。
-        if self._SLOW_REQUEST_LOG_SEC <= dt < self.timeout - 0.5:
+        if dt >= self._SLOW_REQUEST_LOG_SEC:
             plog(f"[慢請求] {self.client_address[0]} {getattr(self, 'command', '?')} "
                  f"{getattr(self, 'path', '?')} — {dt:.2f}s")
 
