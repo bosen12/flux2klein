@@ -1427,6 +1427,21 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
    語言，但內容分組呈現、進場加輕微 stagger，強調「這是一份可以慢慢看的清單」而不是
    要立刻操作的表單。 ---- */
 .icon-btn { width: 34px; padding: 7px 0; text-align: center; font-size: 15px; line-height: 1; }
+/* 按鈕裡的圖示 SVG（取代表情符號，統一走 line-icon 風格，見 darkroom.js 頂端的
+   ICON_* 常數）：統一大小、跟文字基線對齊；純圖示鈕（.icon-btn）置中、不用留
+   右邊距，帶文字的鈕才需要跟文字之間空一點。 */
+button svg.btn-svg { width: 15px; height: 15px; vertical-align: -3px; margin-right: 5px; flex: none; }
+.icon-btn svg.btn-svg { margin-right: 0; width: 16px; height: 16px; vertical-align: -3px; }
+/* 其餘原本放表情符號的地方（跟著各自舊有的 font-size 定字級走），現在改放 SVG，
+   SVG 不吃 font-size，這裡各自補上對應大小。 */
+.folder-idx svg { width: 11px; height: 11px; }
+.flag-x svg { width: 1em; height: 1em; }
+.m-nav svg { width: 22px; height: 22px; }
+.tarot-emblem svg { width: 26px; height: 26px; }
+.tarot-title svg { width: 15px; height: 15px; vertical-align: -2px; margin: 0 4px; }
+.gallery-head h2 svg { width: 17px; height: 17px; vertical-align: -2px; margin-right: 6px; }
+.shortcuts-emblem svg { width: 24px; height: 24px; }
+.concepts-lock svg { width: 10px; height: 10px; vertical-align: -1px; margin-right: 2px; }
 .shortcuts-overlay { position: fixed; inset: 0; z-index: 210; display: none;
   align-items: center; justify-content: center; padding: 24px;
   background: rgba(8,8,11,.82); backdrop-filter: blur(7px); }

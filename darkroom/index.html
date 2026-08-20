@@ -31,7 +31,7 @@
   <div class="boot-sub">沖洗中…</div>
 </div>
 <div class="topbar">
-  <button class="menu-btn ghost" id="menu-btn" aria-label="開關資料夾列">☰</button>
+  <button class="menu-btn ghost" id="menu-btn" aria-label="開關資料夾列"><svg class="btn-svg" style="margin-right:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg></button>
   <div class="brand">
     <svg class="brand-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-label="詞庫暗房"><circle cx="12" cy="12" r="10"/><line x1="14.31" y1="8" x2="20.05" y2="17.94"/><line x1="9.69" y1="8" x2="21.17" y2="8"/><line x1="7.38" y1="12" x2="13.12" y2="2.06"/><line x1="9.69" y1="16" x2="3.95" y2="6.06"/><line x1="14.31" y1="16" x2="2.83" y2="16"/><line x1="16.62" y1="12" x2="10.88" y2="21.94"/></svg>
     <h1>詞庫暗房</h1>
@@ -45,7 +45,7 @@
   <div class="search-wrap tag-search-wrap" title="搜尋詞庫的正向/負向標籤，逗號分隔多個，需同時符合全部標籤">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3.24L4 3a1 1 0 0 0-1 1l.24 5.59a2 2 0 0 0 .59 1.41l9.58 9.59a2 2 0 0 0 2.83 0l4.35-4.35a2 2 0 0 0 0-2.83Z"/><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/></svg>
     <input type="text" id="tag-search" placeholder="搜尋標籤，逗號分隔多個…" autocomplete="off">
-    <button id="tag-search-clear" aria-label="清除" title="清除" style="display:none;">✕</button>
+    <button id="tag-search-clear" aria-label="清除" title="清除" style="display:none;"><svg class="btn-svg" style="margin-right:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
   </div>
   <!-- 瀏覽專屬控制項放在 spacer 之前：切模式時它們出現/消失只改變 spacer 寬度，
        不會推動 spacer 之後靠右錨定的共用群組（模式切換/抽卡/重掃/連線），共用按鈕位置不動。 -->
@@ -53,11 +53,11 @@
     <span>步數</span>
     <input type="number" id="steps-input" min="1" max="150" step="1" value="25" inputmode="numeric">
   </label>
-  <button class="ghost browse-only" id="review-btn" title="進入選取模式：點卡片標記不優質（紅叉）">🚩 篩選<span id="flag-count" class="flag-count"></span></button>
+  <button class="ghost browse-only" id="review-btn" title="進入選取模式：點卡片標記不優質（紅叉）"><svg class="btn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4"/><path d="M5 4h13l-2.5 4L18 12H5"/></svg><span id="review-btn-label">篩選</span><span id="flag-count" class="flag-count"></span></button>
   <div class="spacer"></div>
   <!-- 以下為兩模式共用、位置固定：切模式時寬度不變、不位移 -->
   <!-- 生成圖庫：獨立於模式分段（放左邊、不混進分段）。本次生成、刷新即清空。 -->
-  <button class="ghost gallery-btn" id="gallery-btn" title="生成圖庫（本次生成的圖，刷新／關頁即清空）">🖼 圖庫<span class="gallery-n" id="gallery-n"></span></button>
+  <button class="ghost gallery-btn" id="gallery-btn" title="生成圖庫（本次生成的圖，刷新／關頁即清空）"><svg class="btn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="m21 15-5-5L5 21"/></svg>圖庫<span class="gallery-n" id="gallery-n"></span></button>
   <!-- Concepts 抽卡：每張卡各自隨機配一組 Character LoRA + concepts LoRA 直接生圖（塔羅牌面
        呈現，跟一般抽卡生圖同一套視覺）。放圖庫鈕旁邊、跟模式無關（不受瀏覽/打標/生圖模式
        限制），快捷鍵 C。鎖定機制：偵測 LoRA 大面板目前 LoRA1/LoRA2 選格是否已選到 Character
@@ -65,9 +65,9 @@
        darkroom.js lockedCharacterSlot()/lockedConceptSlot()。#concepts-lock 顯示目前偵測到
        的鎖定狀態，不然使用者不會知道抽出來的怎麼一直重複，以為壞掉。 -->
   <div class="concepts-group">
-    <button class="ghost" id="concepts-btn" title="Concepts 抽卡（快捷鍵 C）：隨機配對 Character LoRA + concepts LoRA 直接生圖">🧬 Concepts</button>
+    <button class="ghost" id="concepts-btn" title="Concepts 抽卡（快捷鍵 C）：隨機配對 Character LoRA + concepts LoRA 直接生圖"><svg class="btn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4c0 4 12 4 12 8s-12 4-12 8"/><path d="M18 4c0 4-12 4-12 8s12 4 12 8"/><line x1="7.5" y1="7.3" x2="16.5" y2="7.3"/><line x1="7.5" y1="16.7" x2="16.5" y2="16.7"/></svg>Concepts</button>
     <span class="concepts-lock" id="concepts-lock" title="目前偵測到的鎖定狀態，來自 LoRA 大面板 LoRA1/LoRA2 選格" role="status" aria-live="polite"></span>
-    <button class="ghost icon-btn" id="concepts-settings-btn" title="設定：一般 LoRA 抽取／Concepts 抽卡" aria-label="設定">⚙</button>
+    <button class="ghost icon-btn" id="concepts-settings-btn" title="設定：一般 LoRA 抽取／Concepts 抽卡" aria-label="設定"><svg class="btn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
   </div>
   <!-- LoRA 大面板：只在生圖模式顯示（用 visibility 而非 display，切模式時不擠動旁邊固定的
        圖庫/分段/抽卡/重掃/連線鈕——見 darkroom.css .lora-panel-btn）。圖示鈕、不帶文字，
@@ -77,14 +77,14 @@
   <button class="ghost lora-panel-btn" id="lora-panel-btn" title="LoRA 大面板：瀏覽並選擇（完整顯示每段觸發詞）" aria-label="LoRA 大面板"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAA/lJREFUWEeVV0trFEEQ/ubiRRQPInoTDwo+jhpRRAUR4wNFkywBEdw1ia+LBxUVRUHwIir4QPABIngTPHry5i/IWcFHdteYRCKJm5np7ZLu6Z7p6emenexhd7anp+urqq++qgnGv7cIAAIQCIG4lP8AuZz/iCW9xbuTAArUPvO6eJy0lADQxrRhy4oTkgON20bpqgEgMZr5rnDJZRNQb68Sh4pOmEhSV3UK5E35nOthY41InZ03kAIvnOEDkzgSjH9rEoIgB9rNgOpe9Y5AdpZKgfBeeyYcFJQs+/QAk95WFyXbg/HvTWXZJKI23tvrDGbJ3hygPKcMACkJHK6bHDDqzxUkGUmLgC5uKX+zFOQO0xWgDiLgwqX7aH/5AeIhunGEE7V+nGoM9GR7cmzigMmt5JqEDugUON1JJIoIpy89QOvrT+DvHMAXMDh8EGfODaeHV6g8J6kcEdDhzn5FVOuXH6P5ow3MzAJxiKHh/WiMDZUw1dILOzUyBSIC3xIpznRDM1f9igolQv3KU0y0p0CMIZifR+3wLjRGj7sBuIx5dCmJgElgB4kEgMbV55hoT4I4R9DpoHZgJ+pnjmbSKQQs7QHVNdlNQquiBICRay8w0ZoCUQyKGWr7tqHeOKI4ZjDfrkajAnIyL0IuHstJsY9JBIxcfyUBcGIgYhjq34nG8D43scxeKiIqKkCJrV1smRTbd6xmMnrjDX42pwAw8C7D4KE+NGoKwGL0yrRTjIBHjAgYvfkWrfY0OGcgzjBwsA/1ob1WBOwK6i3nnjLUZZEcKL7Hbr1Dsz2NgHNwFmHg0DacHtxdsQoc6qh89Sih7Rhh7O57tFrT4HEEdBm2blmL3X3rZRMj4jIqq1auwOaN6/xSbqSqOA842KurSvDo7L0PaP36A4oiUBwi4F10WQxiMTgLwaMQS8I5PHx0Ges3rPXEvtjoEyFyiYRkr8hAIsXnH35EszkjhYjCBZCIBGMyIpwtAFEEPjOFNauX48nL21i2bKmzB6TIdHXky1DdLugAcOHZJ0zO/pOeR9Oz4J0OKFoAOCkQISjsgDpz2L5jE+7cGlVNsWQ0k1WgJyJn0LKB4uLrz/g9O48AHOHkH/BOCEQhKBLp4LJD8lgAYujyGCMn92Pg2B6llHpKLhrxp8ASJS4Ika5Z7cOX8fK5NMmwMwW2InqHDCtluZ7iaHAZAdKb/nnAp26VVM/oqPZ0JEFkgiUjIINrHex5N6re5hw79RSU2FfvIXkSqtIz22olj7W1jLSpfWnHGvGM7X4lzBnu0etLWnDpO0JShmoi0vLvack6Tc62uojE2Kmt1gs0cYzcLcJm6dYCgAL5CqVVgRTOLVoUFM8UrP/DbkWRXoaOTQAAAABJRU5ErkJggg==" class="lora-logo" alt="LoRA Manager" width="17" height="17"></button>
   <div class="seg mode-seg" id="mode-seg" role="group" aria-label="模式">
     <span class="seg-pill" id="mode-pill" aria-hidden="true"></span>
-    <button data-mode="browse" class="on" title="瀏覽與生成預覽圖">✦ 瀏覽</button>
-    <button data-mode="tag" title="大量標稀有度">🏷 打標</button>
-    <button data-mode="gen" title="選詞庫＋LoRA 生圖">🎨 生圖</button>
+    <button data-mode="browse" class="on" title="瀏覽與生成預覽圖"><svg class="btn-svg" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><path d="M12 2c.6 3.6 2.2 6 6 6.6-3.8.6-5.4 3-6 6.6-.6-3.6-2.2-6-6-6.6 3.8-.6 5.4-3 6-6.6z"/></svg>瀏覽</button>
+    <button data-mode="tag" title="大量標稀有度"><svg class="btn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3.24L4 3a1 1 0 0 0-1 1l.24 5.59a2 2 0 0 0 .59 1.41l9.58 9.59a2 2 0 0 0 2.83 0l4.35-4.35a2 2 0 0 0 0-2.83Z"/><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/></svg>打標</button>
+    <button data-mode="gen" title="選詞庫＋LoRA 生圖"><svg class="btn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22a9.4 9.4 0 0 1 0-18.8A8.4 8.4 0 0 1 20.4 11.6c0 1.5-1.2 2.7-2.7 2.7h-1.5a1.7 1.7 0 0 0-1 3c.4.3.6.7.6 1.1 0 1.5-1.4 2.7-2.9 2.6z"/><circle cx="7.6" cy="10.2" r="1.1" fill="currentColor" stroke="none"/><circle cx="11.5" cy="6.8" r="1.1" fill="currentColor" stroke="none"/><circle cx="16" cy="8.5" r="1.1" fill="currentColor" stroke="none"/></svg>生圖</button>
   </div>
-  <button class="ghost" id="draw-cards" title="隨機抽卡（瀏覽=看圖；打標=逐張標稀有度；生圖=隨機生圖）">✦ 抽卡</button>
-  <button class="ghost" id="rescan" title="重新掃描">↻ 重掃</button>
-  <button class="ghost" id="score-backfill-btn" title="幫已有圖但還沒評分的卡片跑 waifu-score 評分">☆ 評分</button>
-  <button class="ghost icon-btn" id="shortcuts-btn" title="使用說明（按 ?）" aria-label="使用說明">⌨</button>
+  <button class="ghost" id="draw-cards" title="隨機抽卡（瀏覽=看圖；打標=逐張標稀有度；生圖=隨機生圖）"><svg class="btn-svg" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><path d="M12 2c.6 3.6 2.2 6 6 6.6-3.8.6-5.4 3-6 6.6-.6-3.6-2.2-6-6-6.6 3.8-.6 5.4-3 6-6.6z"/></svg>抽卡</button>
+  <button class="ghost" id="rescan" title="重新掃描"><svg class="btn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>重掃</button>
+  <button class="ghost" id="score-backfill-btn" title="幫已有圖但還沒評分的卡片跑 waifu-score 評分"><svg class="btn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.1l2.63 5.33 5.88.85-4.25 4.15 1 5.86L12 16.79 6.74 19.6l1-5.86L3.49 9.28l5.88-.85z"/></svg>評分</button>
+  <button class="ghost icon-btn" id="shortcuts-btn" title="使用說明（按 ?）" aria-label="使用說明"><svg class="btn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="6" y1="9" x2="6" y2="9.01"/><line x1="9.5" y1="9" x2="9.5" y2="9.01"/><line x1="13" y1="9" x2="13" y2="9.01"/><line x1="16.5" y1="9" x2="16.5" y2="9.01"/><line x1="6" y1="12.5" x2="6" y2="12.51"/><line x1="9.5" y1="12.5" x2="9.5" y2="12.51"/><line x1="13" y1="12.5" x2="13" y2="12.51"/><line x1="16.5" y1="12.5" x2="16.5" y2="12.51"/><path d="M7 16.5h10"/></svg></button>
   <div class="conn" id="conn"><span class="led"></span><span id="conn-text">…</span></div>
 </div>
 
@@ -94,9 +94,9 @@
      框——這個分頁存在的起因）。兩頁共用同一個疊層外觀、同一組開關方式，不新增按鈕。 -->
 <div class="shortcuts-overlay" id="shortcuts-overlay">
   <div class="shortcuts-panel" id="shortcuts-panel">
-    <button class="shortcuts-close" id="shortcuts-close" aria-label="關閉 (Esc)" title="關閉 (Esc)">✕</button>
+    <button class="shortcuts-close" id="shortcuts-close" aria-label="關閉 (Esc)" title="關閉 (Esc)"><svg class="btn-svg" style="margin-right:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     <div class="shortcuts-head">
-      <span class="shortcuts-emblem">⌨</span>
+      <span class="shortcuts-emblem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="6" y1="9" x2="6" y2="9.01"/><line x1="9.5" y1="9" x2="9.5" y2="9.01"/><line x1="13" y1="9" x2="13" y2="9.01"/><line x1="16.5" y1="9" x2="16.5" y2="9.01"/><line x1="6" y1="12.5" x2="6" y2="12.51"/><line x1="9.5" y1="12.5" x2="9.5" y2="12.51"/><line x1="13" y1="12.5" x2="13" y2="12.51"/><line x1="16.5" y1="12.5" x2="16.5" y2="12.51"/><path d="M7 16.5h10"/></svg></span>
       <div>
         <h2>使用說明</h2>
         <p>焦點不在輸入框、沒有其他疊層開著時皆可使用</p>
@@ -116,12 +116,12 @@
   <nav class="rail" id="rail" aria-label="資料夾">
     <div class="rail-head">
       <span>資料夾 · Chapters</span>
-      <button id="rail-sort" class="rail-sort" title="切換升冪／降冪排序">升冪 ↑</button>
+      <button id="rail-sort" class="rail-sort" title="切換升冪／降冪排序"><svg class="btn-svg" id="rail-sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg><span id="rail-sort-label">升冪</span></button>
     </div>
     <div class="rail-search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
       <input type="text" id="folder-search" placeholder="搜尋資料夾…" autocomplete="off">
-      <button id="folder-search-clear" aria-label="清除" title="清除" style="display:none;">✕</button>
+      <button id="folder-search-clear" aria-label="清除" title="清除" style="display:none;"><svg class="btn-svg" style="margin-right:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     </div>
     <div id="rail-list"></div>
     <div id="rail-empty" class="rail-empty" style="display:none;">找不到符合的資料夾</div>
@@ -130,7 +130,7 @@
   <main class="main" id="main">
     <div class="main-head">
       <div>
-        <div class="main-title"><span class="num" id="mt-num"></span><h2 id="mt-name">載入中…</h2><button class="ghost cat-draw-btn" id="draw-cat" title="從本分類抽卡（快捷鍵 E）" aria-label="從本分類抽卡">✦</button></div>
+        <div class="main-title"><span class="num" id="mt-num"></span><h2 id="mt-name">載入中…</h2><button class="ghost cat-draw-btn" id="draw-cat" title="從本分類抽卡（快捷鍵 E）" aria-label="從本分類抽卡"><svg class="btn-svg" style="margin-right:0" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><path d="M12 2c.6 3.6 2.2 6 6 6.6-3.8.6-5.4 3-6 6.6-.6-3.6-2.2-6-6-6.6 3.8-.6 5.4-3 6-6.6z"/></svg></button></div>
         <div class="main-sub" id="mt-sub"></div>
       </div>
       <div class="head-actions">
@@ -166,14 +166,14 @@
     <!-- 生成圖庫視圖（本次生成，新→舊）：由「🖼 圖庫」鈕切換，蓋掉詞庫格線 -->
     <div id="gallery-view" class="gallery-view">
       <div class="gallery-head">
-        <h2>🖼 生成圖庫</h2>
+        <h2><svg class="btn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="m21 15-5-5L5 21"/></svg>生成圖庫</h2>
         <span class="gallery-sub" id="gallery-sub"></span>
         <!-- 取消「目前所有」還在跑的生圖，跨批次——跟塔羅疊層那顆只取消當批不同（見
              darkroom.js cancelAllPending）。沒有任何生圖在途時停用（updateGalleryHead 管）。 -->
         <button class="danger gallery-cancel-all" id="gallery-cancel-all" disabled>取消全部生圖</button>
       </div>
       <div id="gallery-grid" class="gallery-grid"></div>
-      <div id="gallery-empty" class="gallery-empty">還沒有生成任何圖 —— 到「🎨 生圖」選詞庫按生圖，或按「✦ 抽卡」隨機生一批。<br>（圖庫是本次生成的暫存，刷新或關頁就清空）</div>
+      <div id="gallery-empty" class="gallery-empty">還沒有生成任何圖 —— 到「生圖」選詞庫按生圖，或按「抽卡」隨機生一批。<br>（圖庫是本次生成的暫存，刷新或關頁就清空）</div>
     </div>
   </main>
 </div>
@@ -194,7 +194,7 @@
   <span class="tagbar-count" id="gen-count">已選 0</span>
   <button class="ghost" id="lora-pick-btn" title="選一個 LoRA 套用（開大面板）"><span class="gen-pick-label">選 LoRA</span></button>
   <div class="spacer"></div>
-  <button class="primary" id="gen-run" disabled>🎨 生圖</button>
+  <button class="primary" id="gen-run" disabled><svg class="btn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22a9.4 9.4 0 0 1 0-18.8A8.4 8.4 0 0 1 20.4 11.6c0 1.5-1.2 2.7-2.7 2.7h-1.5a1.7 1.7 0 0 0-1 3c.4.3.6.7.6 1.1 0 1.5-1.4 2.7-2.9 2.6z"/><circle cx="7.6" cy="10.2" r="1.1" fill="currentColor" stroke="none"/><circle cx="11.5" cy="6.8" r="1.1" fill="currentColor" stroke="none"/><circle cx="16" cy="8.5" r="1.1" fill="currentColor" stroke="none"/></svg>生圖</button>
 </div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
@@ -210,9 +210,9 @@
 </div>
 
 <div id="modal" class="modal">
-  <button class="m-nav prev" id="m-prev" aria-label="上一個">‹</button>
+  <button class="m-nav prev" id="m-prev" aria-label="上一個"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg></button>
   <div class="modal-inner" id="modal-inner"></div>
-  <button class="m-nav next" id="m-next" aria-label="下一個">›</button>
+  <button class="m-nav next" id="m-next" aria-label="下一個"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg></button>
 </div>
 
 <!-- LoRA 大面板：搜尋/翻頁挑 LoRA + 完整顯示每段觸發詞（不截斷）+ 強度。選擇即時生效，
@@ -222,7 +222,7 @@
      「Concepts」（Concepts 抽卡強度/張數/模板鎖定，跟原本完全一樣，只是換了外殼）。 -->
 <div class="cs-modal" id="cs-modal">
   <div class="cs-modal-inner" id="cs-modal-inner">
-    <button class="cs-modal-close" id="cs-modal-close" aria-label="關閉" title="關閉 (Esc)">✕</button>
+    <button class="cs-modal-close" id="cs-modal-close" aria-label="關閉" title="關閉 (Esc)"><svg class="btn-svg" style="margin-right:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     <div class="seg cs-tab-seg" id="cs-tab-seg" role="group" aria-label="設定分頁">
       <span class="seg-pill" id="cs-tab-pill" aria-hidden="true"></span>
       <button data-tab="general" class="on">一般</button>
@@ -280,7 +280,7 @@
       <div class="cs-tpl-lock" id="cs-tpl-lock">
         <div class="cs-tpl-lock-current" id="cs-tpl-lock-current" hidden>
           <span id="cs-tpl-lock-name"></span>
-          <button type="button" id="cs-tpl-lock-clear" title="取消鎖定模板" aria-label="取消鎖定模板">✕</button>
+          <button type="button" id="cs-tpl-lock-clear" title="取消鎖定模板" aria-label="取消鎖定模板"><svg class="btn-svg" style="margin-right:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
         </div>
         <input type="text" id="cs-tpl-search" placeholder="搜尋要鎖定的模板…" autocomplete="off">
         <div class="cs-tpl-results" id="cs-tpl-results"></div>
@@ -293,9 +293,9 @@
      「分組標題＋說明列」讀物排版，不用另外設計一套。 -->
 <div class="lora-help-modal" id="lora-help-modal">
   <div class="lora-help-inner" id="lora-help-inner">
-    <button class="cs-modal-close" id="lora-help-close" aria-label="關閉" title="關閉 (Esc)">✕</button>
+    <button class="cs-modal-close" id="lora-help-close" aria-label="關閉" title="關閉 (Esc)"><svg class="btn-svg" style="margin-right:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     <div class="shortcuts-head">
-      <span class="shortcuts-emblem">🧬</span>
+      <span class="shortcuts-emblem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4c0 4 12 4 12 8s-12 4-12 8"/><path d="M18 4c0 4-12 4-12 8s12 4 12 8"/><line x1="7.5" y1="7.3" x2="16.5" y2="7.3"/><line x1="7.5" y1="16.7" x2="16.5" y2="16.7"/></svg></span>
       <div>
         <h2>Concepts 抽卡邏輯教學</h2>
         <p>「一般」分頁是全域控制面板，Concepts 抽卡完全照這裡的設定判斷</p>
@@ -360,7 +360,7 @@
 </div>
 <div id="lora-modal" class="lora-modal">
   <div class="lora-modal-inner">
-    <button class="lora-modal-close" id="lora-modal-close" aria-label="關閉 (Esc)" title="關閉 (Esc)">✕</button>
+    <button class="lora-modal-close" id="lora-modal-close" aria-label="關閉 (Esc)" title="關閉 (Esc)"><svg class="btn-svg" style="margin-right:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     <div class="lm-left">
       <div id="lm-cats" class="lm-cats"></div>
       <!-- 子資料夾晶片：只在選了非「全部」分類、且該分類底下真的有子資料夾（如
@@ -368,7 +368,7 @@
       <div id="lm-subcats" class="lm-subcats"></div>
       <!-- 隨機瀏覽：沿用詞庫抽卡同一套塔羅發牌/翻牌，改抽 LoRA。獨立一列（不塞進
            #lm-cats，那個 div 每次 renderLmCats() 都會整個重建，塞進去會被清掉）。 -->
-      <button class="ghost lm-random-btn" id="lm-random-btn" title="隨機瀏覽 LoRA（塔羅式呈現，點一張直接選中）">🎲 隨機瀏覽</button>
+      <button class="ghost lm-random-btn" id="lm-random-btn" title="隨機瀏覽 LoRA（塔羅式呈現，點一張直接選中）"><svg class="btn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.3" cy="8.3" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.7" cy="8.3" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="8.3" cy="15.7" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.7" cy="15.7" r="1.2" fill="currentColor" stroke="none"/></svg>隨機瀏覽</button>
       <div class="lm-search-wrap">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input type="text" id="lm-search" placeholder="搜尋 LoRA…" autocomplete="off">
@@ -389,7 +389,7 @@
 <div id="tarot" class="tarot-overlay">
   <div class="tarot-stage" id="tarot-stage">
     <div class="tarot-head">
-      <span class="tarot-title" id="tarot-title">✦ 抽選八張 ✦</span>
+      <span class="tarot-title" id="tarot-title">抽選八張</span>
       <span class="ttag-progress tag-only" id="ttag-progress"></span>
       <div class="tarot-actions">
         <!-- 只有抽卡生圖（openGenTarot）才會顯示：取消「這一批」還在跑的生圖，不影響

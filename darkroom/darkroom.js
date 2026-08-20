@@ -148,7 +148,7 @@ function buildRail() {
   allBtn.className = 'folder folder-all' + (ALL_FOLDERS && !SEARCH && !TAG_MATCH_SET ? ' active' : '');
   allBtn.innerHTML = `
     <div class="folder-top">
-      <span class="folder-idx">✦</span>
+      <span class="folder-idx">${ICON_SPARKLE}</span>
       <span class="folder-name">全部</span>
       <span class="folder-count">${haveAll}/${totalAll}</span>
     </div>
@@ -538,6 +538,27 @@ function appendPage() {
 
 const ICON_EMPTY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="m21 15-5-5L5 21"/></svg>';
 const ICON_STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.1l2.63 5.33 5.88.85-4.25 4.15 1 5.86L12 16.79 6.74 19.6l1-5.86L3.49 9.28l5.88-.85z"/></svg>';
+
+// 全站按鈕圖示——統一走這套 line-icon 風格（viewBox 0 0 24 24、stroke=currentColor、
+// stroke-width=2），不用表情符號：不同系統/字型算繪出來色調、粗細都不一致，跟
+// brand-logo 那個線條羅盤圖示放在一起會很突兀。這裡集中定義，按鈕/JS 動態文字
+// 都從這裡取用，不要各自散著寫字面 emoji。
+const ICON_MENU = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>';
+const ICON_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
+const ICON_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>';
+const ICON_FLAG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4"/><path d="M5 4h13l-2.5 4L18 12H5"/></svg>';
+const ICON_GALLERY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="m21 15-5-5L5 21"/></svg>';
+const ICON_DNA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4c0 4 12 4 12 8s-12 4-12 8"/><path d="M18 4c0 4-12 4-12 8s12 4 12 8"/><line x1="7.5" y1="7.3" x2="16.5" y2="7.3"/><line x1="7.5" y1="16.7" x2="16.5" y2="16.7"/></svg>';
+const ICON_SETTINGS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
+const ICON_SPARKLE = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><path d="M12 2c.6 3.6 2.2 6 6 6.6-3.8.6-5.4 3-6 6.6-.6-3.6-2.2-6-6-6.6 3.8-.6 5.4-3 6-6.6z"/></svg>';
+const ICON_TAG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3.24L4 3a1 1 0 0 0-1 1l.24 5.59a2 2 0 0 0 .59 1.41l9.58 9.59a2 2 0 0 0 2.83 0l4.35-4.35a2 2 0 0 0 0-2.83Z"/><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/></svg>';
+const ICON_PALETTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22a9.4 9.4 0 0 1 0-18.8A8.4 8.4 0 0 1 20.4 11.6c0 1.5-1.2 2.7-2.7 2.7h-1.5a1.7 1.7 0 0 0-1 3c.4.3.6.7.6 1.1 0 1.5-1.4 2.7-2.9 2.6z"/><circle cx="7.6" cy="10.2" r="1.1" fill="currentColor" stroke="none"/><circle cx="11.5" cy="6.8" r="1.1" fill="currentColor" stroke="none"/><circle cx="16" cy="8.5" r="1.1" fill="currentColor" stroke="none"/></svg>';
+const ICON_REFRESH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>';
+const ICON_STAR_OUTLINE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.1l2.63 5.33 5.88.85-4.25 4.15 1 5.86L12 16.79 6.74 19.6l1-5.86L3.49 9.28l5.88-.85z"/></svg>';
+const ICON_DICE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.3" cy="8.3" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.7" cy="8.3" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="8.3" cy="15.7" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.7" cy="15.7" r="1.2" fill="currentColor" stroke="none"/></svg>';
+const ICON_LOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+const ICON_ARROW_UP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>';
+const ICON_ARROW_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>';
 const RARITY_LABEL = { common: '普通', rare: '稀有', special: '特別', legendary: '傳奇' };
 const rarTag = (r) => r ? `<span class="rar-tag ${r}">${RARITY_LABEL[r] || ''}</span>` : '';
 // 徽章光環門檻——使用者原話「6.5到7.5用淺藍，7.5以上淺紫」，跟大圖 modal
@@ -656,7 +677,7 @@ function thumbInnerHTML(it) {
     scoreBadgeHTML(it.score) +
     `<button class="fav-btn" type="button" aria-label="收藏" aria-pressed="${it.favorited ? 'true' : 'false'}">${ICON_STAR}</button>` +
     `<span class="pick-box" aria-hidden="true"></span>` +
-    `<span class="flag-x" aria-hidden="true">✕</span>` +
+    `<span class="flag-x" aria-hidden="true">${ICON_CLOSE}</span>` +
     `<button class="gen-btn">${it.has_image ? '重新生成' : '生成'}</button>`;
 }
 
@@ -1244,11 +1265,11 @@ async function startScoreBackfill() {
   try {
     const r = await fetch('/api/score-backfill', { method: 'POST' });
     const j = await r.json();
-    if (j.error) { toast(j.error, true); btn.disabled = false; btn.textContent = '☆ 評分'; return; }
+    if (j.error) { toast(j.error, true); btn.disabled = false; btn.innerHTML = ICON_STAR_OUTLINE.replace('<svg ', '<svg class="btn-svg" ') + '評分'; return; }
     pollScoreBackfill();
   } catch (e) {
     toast('評分請求失敗：' + e, true);
-    btn.disabled = false; btn.textContent = '☆ 評分';
+    btn.disabled = false; btn.innerHTML = ICON_STAR_OUTLINE.replace('<svg ', '<svg class="btn-svg" ') + '評分';
   }
 }
 // 補分跑到哪張就即時幫哪張補上分數徽章，不用等整輪跑完才整批 loadAll 重整。
@@ -1285,7 +1306,7 @@ async function pollScoreBackfill() {
       await sleep(1000);
     }
   } finally {
-    btn.disabled = false; btn.textContent = '☆ 評分';
+    btn.disabled = false; btn.innerHTML = ICON_STAR_OUTLINE.replace('<svg ', '<svg class="btn-svg" ') + '評分';
     await loadAll(true);   // 補分完重新整理，新分數與清掉的孤兒紀錄才會反映在畫面上
   }
 }
@@ -1319,7 +1340,11 @@ $('grid').addEventListener('pointermove', e => spotlight(e, '.thumb'), { passive
 $('gallery-grid').addEventListener('pointermove', e => spotlight(e, '.gc-square'), { passive: true });
 // 資料夾排序方向切換（升冪 ↑ / 降冪 ↓），記住選擇
 function updateRailSortLabel() {
-  const b = $('rail-sort'); if (b) b.textContent = RAIL_DESC ? '降冪 ↓' : '升冪 ↑';
+  const b = $('rail-sort'); if (!b) return;
+  $('rail-sort-label').textContent = RAIL_DESC ? '降冪' : '升冪';
+  $('rail-sort-icon').innerHTML = RAIL_DESC
+    ? '<line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>'
+    : '<line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>';
 }
 updateRailSortLabel();
 $('rail-sort').onclick = () => {
@@ -1550,7 +1575,7 @@ function drawTarot(pool, label) {
   const picks = sampleN(pool, Math.min(want, pool.length));
   const n = picks.length;
   const title = document.querySelector('.tarot-title');
-  if (title) title.textContent = label ? `✦ ${label}　抽選${CN_NUM[n] || n}張 ✦` : `✦ 抽選${CN_NUM[n] || n}張 ✦`;
+  if (title) title.innerHTML = label ? `${ICON_SPARKLE}${label}　抽選${CN_NUM[n] || n}張${ICON_SPARKLE}` : `${ICON_SPARKLE}抽選${CN_NUM[n] || n}張${ICON_SPARKLE}`;
   const wrap = $('tarot-cards');
   wrap.classList.remove('ttag');                          // 瀏覽抽卡：清掉打標抽卡的 5×3 排版
   $('tarot-stage').classList.remove('ttag-stage');
@@ -1571,7 +1596,7 @@ function drawTarot(pool, label) {
       : `<div class="tarot-noimg">${ICON_EMPTY}<span>尚無圖</span></div>`;
     card.innerHTML =
       `<div class="tarot-inner">
-         <div class="tarot-back"><span class="tarot-emblem">✦</span></div>
+         <div class="tarot-back"><span class="tarot-emblem">${ICON_SPARKLE}</span></div>
          <div class="tarot-front${it.has_image ? ' loading' : ''}">${face}${it.rarity === 'legendary' ? sparklesHTML(9) : ''}${rarTag(it.rarity)}<div class="tarot-badges">${scoreBadgeHTML(it.score)}</div><div class="tarot-name"></div><div class="tarot-folder"></div><div class="tarot-glare"></div></div>
        </div>`;
     card.querySelector('.tarot-name').textContent = it.display_name || it.name;
@@ -1668,7 +1693,7 @@ function drawLoraTarot(pool, label) {
   const picks = sampleN(pool, Math.min(want, pool.length));
   const n = picks.length;
   const title = document.querySelector('.tarot-title');
-  if (title) title.textContent = label ? `✦ ${label} 隨機 ${CN_NUM[n] || n} 個 LoRA ✦` : `✦ 隨機瀏覽 ${CN_NUM[n] || n} 個 LoRA ✦`;
+  if (title) title.innerHTML = label ? `${ICON_SPARKLE}${label} 隨機 ${CN_NUM[n] || n} 個 LoRA${ICON_SPARKLE}` : `${ICON_SPARKLE}隨機瀏覽 ${CN_NUM[n] || n} 個 LoRA${ICON_SPARKLE}`;
   const wrap = $('tarot-cards');
   wrap.classList.remove('ttag');
   $('tarot-stage').classList.remove('ttag-stage');
@@ -1691,7 +1716,7 @@ function drawLoraTarot(pool, label) {
       : `<div class="tarot-noimg">${ICON_EMPTY}<span>尚無預覽</span></div>`;
     card.innerHTML =
       `<div class="tarot-inner">
-         <div class="tarot-back"><span class="tarot-emblem">✦</span></div>
+         <div class="tarot-back"><span class="tarot-emblem">${ICON_SPARKLE}</span></div>
          <div class="tarot-front${l.preview ? ' loading' : ''}">${face}<div class="tarot-name"></div><div class="tarot-folder"></div><div class="tarot-glare"></div></div>
        </div>`;
     card.querySelector('.tarot-name').textContent = l.title || l.name;
@@ -1775,7 +1800,7 @@ function renderCsSlotFixedState(slot) {
   // ✕ 直接清空這格——跟 LoRA 大面板分頁卡的清空鈕（.lm-slot-clear）是同一份
   // GEN_LORA_SLOTS，清了這裡大面板會跟著變空，反過來也一樣，不用另外同步。
   const clear = document.createElement('button'); clear.type = 'button'; clear.className = 'cs-locked-clear';
-  clear.title = `清空 LoRA ${slot + 1}`; clear.setAttribute('aria-label', `清空 LoRA ${slot + 1}`); clear.textContent = '✕';
+  clear.title = `清空 LoRA ${slot + 1}`; clear.setAttribute('aria-label', `清空 LoRA ${slot + 1}`); clear.innerHTML = ICON_CLOSE;
   clear.addEventListener('click', (e) => {
     e.stopPropagation();
     hideLoraPreviewTip();
@@ -1984,11 +2009,20 @@ function findLockedSlot(matchFn) { return GEN_LORA_SLOTS.find((s, i) => !GEN_LOR
 function lockedCharacterSlot() { return findLockedSlot(l => l.category === 'Character'); }
 function lockedConceptSlot() { return findLockedSlot(l => l.folder === 'HENTAI/concepts'); }
 // Concepts 按鈕旁的鎖定狀態文字，隨 LoRA1/LoRA2 選擇即時更新（見 renderGenCurrent）。
+// 純文字版給 title tooltip／變動偵測用（title 屬性不能塞 HTML）；HTML 版才是畫面
+// 顯示用的，鎖頭圖示換成 ICON_LOCK。
 function conceptsLockLabel() {
   const c = lockedCharacterSlot(), k = lockedConceptSlot();
   if (!c && !k) return '隨機 × 隨機';
-  const cText = c ? `🔒${c.lora.title || c.lora.name}` : '隨機';
-  const kText = k ? `🔒${k.lora.title || k.lora.name}` : '隨機';
+  const cText = c ? (c.lora.title || c.lora.name) : '隨機';
+  const kText = k ? (k.lora.title || k.lora.name) : '隨機';
+  return `${cText} × ${kText}`;
+}
+function conceptsLockLabelHTML() {
+  const c = lockedCharacterSlot(), k = lockedConceptSlot();
+  if (!c && !k) return '隨機 × 隨機';
+  const cText = c ? `${ICON_LOCK}${c.lora.title || c.lora.name}` : '隨機';
+  const kText = k ? `${ICON_LOCK}${k.lora.title || k.lora.name}` : '隨機';
   return `${cText} × ${kText}`;
 }
 
@@ -2033,7 +2067,7 @@ function drawTagTarot() {
   $('tarot-stage').classList.add('ttag-stage');
   $('tarot-cancel-gen').hidden = true;   // 抽卡打標不是生圖
   const title = document.querySelector('.tarot-title');
-  if (title) title.textContent = '✦ 抽卡打標 ✦';
+  if (title) title.innerHTML = `${ICON_SPARKLE}抽卡打標${ICON_SPARKLE}`;
   $('tarot-hint').textContent = '方向鍵移動焦點，1 普通・2 稀有・3 特別・4 傳奇打標（自動跳下一張），S 跳過・Z 復原・R 重抽；也可直接點卡片按鈕。隨標即時生效。';
   wrap.innerHTML = '';
   TAROT_HISTORY.length = 0;
@@ -2045,7 +2079,7 @@ function drawTagTarot() {
     const relEnc = encodeURIComponent(it.rel);
     card.innerHTML =
       `<div class="tarot-inner">
-         <div class="tarot-back"><span class="tarot-emblem">✦</span></div>
+         <div class="tarot-back"><span class="tarot-emblem">${ICON_SPARKLE}</span></div>
          <div class="tarot-front">
            <img decoding="async" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="">
            <div class="tarot-name"></div>
@@ -2190,8 +2224,14 @@ function updateReviewCount() {
 function setSelecting(on) {
   SELECTING = on;
   document.body.classList.toggle('selecting', on);
-  $('review-btn').classList.toggle('on', on);
-  $('review-btn').firstChild.textContent = on ? '✓ 篩選中' : '🚩 篩選';
+  const btn = $('review-btn');
+  btn.classList.toggle('on', on);
+  // 換的是 svg 內容（path），不是整個 svg 元素——那個元素本身的 class="btn-svg"
+  // 等屬性要留著，只換裡面畫的圖案。
+  btn.querySelector('svg').innerHTML = on
+    ? '<path d="M5 13l4 4L19 7"/>'
+    : '<path d="M5 21V4"/><path d="M5 4h13l-2.5 4L18 12H5"/>';
+  $('review-btn-label').textContent = on ? '篩選中' : '篩選';
 }
 
 $('review-btn').onclick = () => setSelecting(!SELECTING);
@@ -2751,7 +2791,7 @@ function renderLmSlotTabs() {
     }
     if (slot.lora) {
       const clear = document.createElement('button'); clear.type = 'button'; clear.className = 'lm-slot-clear';
-      clear.title = `清空 LoRA ${i + 1}`; clear.setAttribute('aria-label', `清空 LoRA ${i + 1}`); clear.textContent = '✕';
+      clear.title = `清空 LoRA ${i + 1}`; clear.setAttribute('aria-label', `清空 LoRA ${i + 1}`); clear.innerHTML = ICON_CLOSE;
       clear.addEventListener('click', (e) => {
         e.stopPropagation();
         // ✕ 在 tab 裡面，點下去滑鼠沒有真的離開 tab，mouseleave 不會觸發，預覽圖
@@ -2990,7 +3030,7 @@ const FEATURE_GROUPS = [
   ]},
   { title: '生圖', rows: [
     { desc: '<b>多選詞庫＋選 LoRA 生圖</b>——瀏覽格線點縮圖多選，右上「選 LoRA」開大面板挑 LoRA，genbar 按「生圖」送出' },
-    { desc: '<b>LoRA 大面板</b>——左欄分類/子資料夾篩選＋搜尋＋翻頁，右欄每段觸發詞各自一張完整文字卡（勾選要用哪幾段）＋強度滑桿＋參考圖；左欄下方「🎲 隨機瀏覽」疊一批塔羅卡讓你點選' },
+    { desc: '<b>LoRA 大面板</b>——左欄分類/子資料夾篩選＋搜尋＋翻頁，右欄每段觸發詞各自一張完整文字卡（勾選要用哪幾段）＋強度滑桿＋參考圖；左欄下方「隨機瀏覽」疊一批塔羅卡讓你點選' },
     { desc: '<b>雙 LoRA 疊加</b>——右欄「LoRA 1／LoRA 2」兩張分頁卡各自獨立選擇與強度，可疊加使用' },
     { desc: '<b>各格獨立抽取範圍</b>——LoRA1/LoRA2 各自獨立記住自己的分類/子資料夾抽取範圍，設定彈窗「一般」分頁跟大面板左欄晶片雙向同步；哪格已經放了固定 LoRA，範圍晶片會自動換成顯示那顆 LoRA（含縮圖，滑鼠移上去有預覽）' },
     { desc: '<b>Concepts 參與判斷</b>——設定彈窗「一般」分頁 LoRA1/LoRA2 各有一顆「參與判斷／已跳過」切換（預設跳過），只有切成參與的格子才會影響 <b>Concepts</b> 抽卡的角色/情境判斷，點旁邊「？ 詳細教學」看完整說明' },
@@ -3519,9 +3559,10 @@ updateConceptsTemplateLockUI();
 function updateConceptsLockLabel() {
   const el = $('concepts-lock'); if (!el) return;
   const label = conceptsLockLabel();
-  if (label === el.textContent) return;
-  el.textContent = label;
-  el.title = label;   // CSS 會截斷過長的 LoRA 標題（見 darkroom.css .concepts-lock），完整內容靠原生 hover tooltip 補回來
+  if (label === el.dataset.plain) return;
+  el.dataset.plain = label;
+  el.innerHTML = conceptsLockLabelHTML();   // 畫面顯示用，鎖頭圖示是 SVG
+  el.title = label;   // CSS 會截斷過長的 LoRA 標題（見 darkroom.css .concepts-lock），完整內容靠原生 hover tooltip 補回來；title 不能塞 HTML，用純文字版
   // class 加減重啟動畫不可靠（見 CLAUDE.md），改用 element.animate() 直接播放
   el.animate(
     [{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }],
@@ -3750,7 +3791,7 @@ function openGenTarot(items, picks, label) {
   const n = items.length;
   CUR_GEN_TAROT_IDS = items.map(it => it.id);
   const title = document.querySelector('.tarot-title');
-  if (title) title.textContent = label ? `✦ ${label}　抽選${CN_NUM[n] || n}張生圖 ✦` : `✦ 抽選${CN_NUM[n] || n}張生圖 ✦`;
+  if (title) title.innerHTML = label ? `${ICON_SPARKLE}${label}　抽選${CN_NUM[n] || n}張生圖${ICON_SPARKLE}` : `${ICON_SPARKLE}抽選${CN_NUM[n] || n}張生圖${ICON_SPARKLE}`;
   const wrap = $('tarot-cards');
   wrap.classList.remove('ttag');
   $('tarot-stage').classList.remove('ttag-stage');
@@ -3769,7 +3810,7 @@ function openGenTarot(items, picks, label) {
     card.style.animationDelay = REDUCE ? '0ms' : (i * 48) + 'ms';
     card.innerHTML =
       `<div class="tarot-inner">
-         <div class="tarot-back"><span class="tarot-emblem">✦</span></div>
+         <div class="tarot-back"><span class="tarot-emblem">${ICON_SPARKLE}</span></div>
          <div class="tarot-front gen-front">
            <img class="gen-live" decoding="async" alt="" onload="this.classList.add('ld')">
            <div class="gen-spin"><i class="gen-loader"></i></div>
