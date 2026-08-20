@@ -1,0 +1,108 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", "Microsoft JhengHei", sans-serif;
+  background: #14161c;
+  color: #e6e6ea;
+}
+header {
+  padding: 24px 28px 8px;
+}
+h1 {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+.hint {
+  margin: 0;
+  color: #9a9aa5;
+  font-size: 13px;
+}
+main {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  padding: 20px 28px 40px;
+}
+.card {
+  background: #1c1f27;
+  border: 1px solid #2a2e38;
+  border-radius: 12px;
+  padding: 18px;
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.card-head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.badge {
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+.badge.on { background: #1f4d33; color: #6fe3a0; }
+.badge.off { background: #3a2222; color: #f08a8a; }
+.badge.ext { background: #4d3d1f; color: #e3c06f; }
+.meta {
+  color: #9a9aa5;
+  font-size: 12px;
+  margin: 4px 0 14px;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+button {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  font-weight: 600;
+}
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-start { background: #2e7d51; color: #fff; }
+.btn-stop { background: #8a2f2f; color: #fff; }
+.btn-open { background: #2a2e38; color: #e6e6ea; }
+.btn-log { background: #2a2e38; color: #e6e6ea; }
+.log-panel {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+.log-head {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  background: #1c1f27;
+}
+.log-body-wrap { display: none; }
+#logBody {
+  background: #0e0f13;
+  color: #b7f0c1;
+  width: min(900px, 92vw);
+  height: min(70vh, 600px);
+  overflow: auto;
+  padding: 44px 16px 16px;
+  margin: 0;
+  font-size: 12px;
+  border-radius: 10px;
+  white-space: pre-wrap;
+}
+#logClose {
+  background: #2a2e38;
+  color: #e6e6ea;
+}

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flux2 Klein 管理後台</title>
+<link rel="stylesheet" href="/dashboard.css">
+</head>
+<body>
+  <header>
+    <h1>Flux2 Klein 管理後台</h1>
+    <p class="hint">啟動/停止各服務，不會跳出 cmd 視窗。每 3 秒自動刷新狀態。</p>
+  </header>
+  <main id="cards"></main>
+  <footer>
+    <div class="log-panel" id="logPanel" hidden>
+      <div class="log-head">
+        <span id="logTitle">記錄</span>
+        <button id="logClose">關閉</button>
+      </div>
+      <pre id="logBody"></pre>
+    </div>
+  </footer>
+  <script src="/dashboard.js"></script>
+</body>
+</html>
