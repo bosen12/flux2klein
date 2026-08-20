@@ -452,6 +452,76 @@ def _lora_thumb(path: str) -> tuple[bytes, str, str]:
     return data, "image/webp", etag
 
 
+def _lower_thread_priority_background():
+    """把目前這個執行緒切到 Windows 的「背景模式」（THREAD_MODE_BACKGROUND_BEGIN）——
+    CPU、磁碟 I/O、記憶體優先權一起降低，讓排程器自動把前景應用擺在前面，這個
+    背景暖快取任務盡量不去搶。不用另外恢復——執行緒跑完就結束，優先權設定跟著
+    消失。只在 Windows 有效，失敗就當沒這回事，不影響功能。"""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        THREAD_MODE_BACKGROUND_BEGIN = 0x00010000
+        ctypes.windll.kernel32.SetThreadPriority(
+            ctypes.windll.kernel32.GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN)
+    except Exception:
+        pass
+
+
+def _warm_lora_thumbs():
+    """開機背景任務：LORA_ROOT 底下所有 LoRA 的預覽圖先跑過 _lora_thumb() 一輪，
+    快取全部先建好——理由跟暗房那邊一樣：不預熱的話「誰先點開 LoRA 選單誰倒楣」，
+    要付冷快取生成的成本，遠端連線碰上又疊加傳輸延遲。_lora_thumb() 本身有磁碟
+    快取，重複呼叫（例如上次已經暖過的）幾乎零成本，每次開機重跑不是浪費，是
+    自我修復——手動加了新 LoRA 也會自動補上。副檔名優先序跟 serve_lora_list()
+    保持一致，不然兩邊「這顆 LoRA 的預覽圖是哪一張」對不上。
+
+    順便清掉 .lora_thumb_cache 裡的孤兒縮圖（來源 LoRA 被刪掉/改名，快取檔案
+    永遠不會自動消失，見暗房 darkroom/preview_ui.py 的 _warm_all_thumbs() 同一套
+    做法）：把目前所有還存在的預覽圖該有的 etag 算出來，資料夾裡不在這份清單的
+    就是孤兒，刪掉。"""
+    _lower_thread_priority_background()
+    n = 0
+    live_etags = set()
+    for category in LORA_FOLDERS:
+        base = os.path.join(LORA_ROOT, category)
+        if not os.path.isdir(base):
+            continue
+        for dirpath, _dirnames, filenames in os.walk(base):
+            names = set(filenames)
+            for fn in filenames:
+                if not fn.lower().endswith(".safetensors"):
+                    continue
+                stem = fn[: -len(".safetensors")]
+                for ext in (".preview.png", ".preview.jpeg", ".preview.jpg", ".preview.webp",
+                            ".png", ".jpg", ".jpeg", ".webp"):
+                    if (stem + ext) in names:
+                        full = os.path.join(dirpath, stem + ext)
+                        try:
+                            _, _, etag = _lora_thumb(full)
+                            live_etags.add(etag)
+                            n += 1
+                        except Exception:
+                            pass
+                        break
+    removed = 0
+    try:
+        if os.path.isdir(_LORA_THUMB_DIR):
+            for name in os.listdir(_LORA_THUMB_DIR):
+                if not name.endswith(".webp"):
+                    continue
+                if name[: -len(".webp")] not in live_etags:
+                    try:
+                        os.remove(os.path.join(_LORA_THUMB_DIR, name))
+                        removed += 1
+                    except OSError:
+                        pass
+    except Exception as e:
+        print(f"[warm] 清孤兒縮圖失敗：{type(e).__name__}: {e}", flush=True)
+    print(f"[warm] LoRA 預覽縮圖預熱完成：{n} 張"
+          + (f"，清掉 {removed} 個孤兒快取" if removed else ""), flush=True)
+
+
 def serve_lora_preview(client, raw_path):
     """送出單一 LoRA 的預覽圖。folder 現在可能帶子資料夾（如 "Character/Hanime"，見
     serve_lora_list()），驗證比照 darkroom/preview_ui.py 的 lora_preview_path()：第一段
@@ -980,6 +1050,8 @@ def main():
     print("  （綁 0.0.0.0，但只放行本機與 Tailscale（100.64.0.0/10）來源；")
     print("    區網／公網其他 IP 連進來會被直接斷線、不回應；按 Ctrl+C 停止）")
     print("=" * 60)
+    # 開機就先在背景把所有 LoRA 預覽圖縮圖跑過一輪暖快取，見 _warm_lora_thumbs() 說明。
+    threading.Thread(target=_warm_lora_thumbs, daemon=True).start()
     try:
         while True:
             client, addr = srv.accept()

@@ -811,6 +811,100 @@ def make_thumb(src: Path, size: int = THUMB_MAX) -> tuple[bytes, str]:
                     _thumb_locks.pop(etag, None)
 
 
+def _lower_thread_priority_background():
+    """把目前這個執行緒切到 Windows 的「背景模式」（THREAD_MODE_BACKGROUND_BEGIN）——
+    CPU、磁碟 I/O、記憶體優先權一起降低，讓排程器自動把前景應用（不管是你自己在
+    用電腦，還是遠端連進來的人在瀏覽）擺在前面，這個背景暖快取任務盡量不去搶。
+    不用另外呼叫 THREAD_MODE_BACKGROUND_END 恢復——這個執行緒的唯一工作就是暖
+    快取，跑完就結束，優先權設定跟著執行緒一起消失，不影響其他執行緒。只在
+    Windows 有效（這專案本來就是 Windows 專用），失敗就當沒這回事，不影響功能。"""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        THREAD_MODE_BACKGROUND_BEGIN = 0x00010000
+        ctypes.windll.kernel32.SetThreadPriority(
+            ctypes.windll.kernel32.GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN)
+    except Exception:
+        pass
+
+
+def _warm_all_thumbs():
+    """開機背景任務：圖庫縮圖／LoRA 預覽縮圖全部先跑過一輪，快取全部建好。
+    不這麼做的話，永遠是「誰先點到誰倒楣」——第一個瀏覽某張圖/某個 LoRA 的人
+    要付冷快取生成的成本，遠端連線碰上這個又疊加傳輸延遲，就是我們這幾輪抓到
+    的那種「感覺卡」。開機後不管是本機還是遠端，第一次點開永遠都是暖快取（幾
+    毫秒），不用等。用既有的 _thumb_gen_sem（同時最多 2 張現場生成，見上面）
+    自然節流，不會把 CPU/上傳頻寬榨乾，背景慢慢跑完就好，不趕時間、不卡主執行緒。
+    make_thumb() 本身有磁碟快取，重複呼叫（例如上次開機已經暖過的）幾乎零成本，
+    每次開機重跑這個不是浪費，是自我修復——手動加了新圖/新 LoRA 也會自動補上。
+
+    順便清掉 .thumb_cache 裡的孤兒縮圖：make_thumb() 只會「生成/命中」，從來不會
+    反向偵測「來源已經被刪掉了」，刪詞庫/刪圖不會連帶清掉對應的快取檔，快取只會
+    越長越大、永遠不會瘦身。做法：把「目前所有還存在的來源，在每一種合法尺寸級距
+    下」該有的 etag 全部先算出來（不用真的重新生成——mtime/size 沒變就是同一把
+    etag），跟資料夾實際內容比對，不在這份「合法清單」裡的就是孤兒，刪掉。"""
+    _lower_thread_priority_background()
+    n_gallery = n_lora = 0
+    live_etags: set[str] = set()
+    try:
+        items = scan_libraries()
+    except Exception as e:
+        plog(f"[warm] 掃描詞庫失敗，略過圖庫縮圖預熱：{type(e).__name__}: {e}")
+        items = []
+    for it in items:
+        if not it.get("has_image"):
+            continue
+        try:
+            img = find_image(py_of(it["rel"]))
+            if img is None:
+                continue
+            make_thumb(img, THUMB_MAX)
+            n_gallery += 1
+            # 這張圖在「所有」合法尺寸級距下都算活的，不是只有這次現場生成的
+            # THUMB_MAX——不然開場動畫等地方用到的其他尺寸快取會被孤兒清理誤刪。
+            st = img.stat()
+            for sz in THUMB_SIZES:
+                sig = f"{img}|{int(st.st_mtime)}|{st.st_size}|{sz}"
+                live_etags.add(hashlib.sha1(sig.encode("utf-8")).hexdigest())
+        except Exception:
+            pass
+    try:
+        loras = list_loras().get("items", [])
+    except Exception as e:
+        plog(f"[warm] 掃描 LoRA 失敗，略過 LoRA 預覽縮圖預熱：{type(e).__name__}: {e}")
+        loras = []
+    for l in loras:
+        preview = l.get("preview")
+        if not preview or preview.lower().endswith((".mp4", ".webm")):
+            continue   # 影片 Pillow 縮不了，不用預熱，也不算進活清單
+        try:
+            p = lora_preview_path(l["folder"], preview)
+            if p is None:
+                continue
+            make_thumb(p, THUMB_MAX)
+            n_lora += 1
+            st = p.stat()
+            sig = f"{p}|{int(st.st_mtime)}|{st.st_size}|{THUMB_MAX}"
+            live_etags.add(hashlib.sha1(sig.encode("utf-8")).hexdigest())
+        except Exception:
+            pass
+    removed = 0
+    try:
+        if THUMB_DIR.is_dir():
+            for f in THUMB_DIR.glob("*.webp"):
+                if f.stem not in live_etags:
+                    try:
+                        f.unlink()
+                        removed += 1
+                    except OSError:
+                        pass
+    except Exception as e:
+        plog(f"[warm] 清孤兒縮圖失敗：{type(e).__name__}: {e}")
+    plog(f"[warm] 縮圖預熱完成：圖庫 {n_gallery} 張、LoRA 預覽 {n_lora} 張"
+         + (f"，清掉 {removed} 個孤兒快取" if removed else ""))
+
+
 def get_tailscale_ip() -> str | None:
     """回傳本機 Tailscale IPv4(100.64.0.0/10),找不到則 None。"""
     exes = [
@@ -2462,8 +2556,9 @@ def main():
     _load_rarities()              # 載入稀有度側檔（依 dataset 分檔）
     _load_scores()                # 載入卡片評分側檔（依 dataset 分檔）
     srv = _QuietThreadingHTTPServer((bind_host, port), Handler)
-    # 開機就先在背景把詞庫掃一遍暖快取，第一次開頁的 /api/libs 才不用等 ~1s 掃描
-    threading.Thread(target=lambda: scan_libraries(), daemon=True).start()
+    # 開機就先在背景把詞庫掃一遍暖快取（第一次開頁的 /api/libs 才不用等 ~1s 掃描），
+    # 順便把圖庫縮圖／LoRA 預覽縮圖也全部跑過一輪暖好，見 _warm_all_thumbs() 說明。
+    threading.Thread(target=_warm_all_thumbs, daemon=True).start()
     # 標籤索引同一招暖快取：不暖的話，第一次有人用「搜尋標籤」要現場建索引
     # （25744 個檔案實測約 3.3~4.8s），使用者會覺得標籤搜尋「第一次特別慢」。
     threading.Thread(target=lambda: get_tag_index(), daemon=True).start()
