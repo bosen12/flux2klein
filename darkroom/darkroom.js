@@ -1311,6 +1311,37 @@ async function pollScoreBackfill() {
   }
 }
 $('score-backfill-btn').onclick = startScoreBackfill;
+async function startTagBackfill() {
+  const btn = $('tag-backfill-btn');
+  btn.disabled = true; btn.textContent = '打標中…';
+  try {
+    const r = await fetch('/api/tag-backfill', { method: 'POST' });
+    const j = await r.json();
+    if (j.error) { toast(j.error, true); btn.disabled = false; btn.innerHTML = ICON_TAG.replace('<svg ', '<svg class="btn-svg" ') + '打標'; return; }
+    pollTagBackfill();
+  } catch (e) {
+    toast('打標請求失敗：' + e, true);
+    btn.disabled = false; btn.innerHTML = ICON_TAG.replace('<svg ', '<svg class="btn-svg" ') + '打標';
+  }
+}
+async function pollTagBackfill() {
+  const btn = $('tag-backfill-btn');
+  try {
+    while (true) {
+      try {
+        const st = await fetch('/api/tag-backfill-status').then(r => r.json());
+        if (!st.running) break;
+        btn.textContent = st.total ? `打標中 ${st.done}/${st.total}` : '打標中…';
+      } catch (e) {
+        console.error('打標狀態查詢失敗:', e);
+      }
+      await sleep(1000);
+    }
+  } finally {
+    btn.disabled = false; btn.innerHTML = ICON_TAG.replace('<svg ', '<svg class="btn-svg" ') + '打標';
+  }
+}
+$('tag-backfill-btn').onclick = startTagBackfill;
 $('rescan').onclick = () => loadAll(true);
 $('menu-btn').onclick = () => $('rail').classList.toggle('open');
 // 卡片聚光：游標在縮圖上移動時更新 --mx/--my（委派在 grid 上，只有 hover 的縮圖會算）

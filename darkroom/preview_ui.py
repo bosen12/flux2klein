@@ -433,6 +433,108 @@ def _score_and_persist(rel: str, img_bytes: bytes):
 
 
 # ---------------------------------------------------------------------------
+# 呼叫 wd-tagger 自動標籤服務（獨立 FastAPI 服務，見 wd-tagger/run.bat）。跟
+# waifu-score 同一套呼叫模式（_score_image_bytes 的姊妹函式），差別是落地位置
+# 不是側檔快取，是詞庫旁邊「同檔名」的 sidecar json（見 _write_visual_tags）。
+# 只有瀏覽模式 do_generate() 換掉代表圖時才會呼叫——抽卡是純前端從既有清單抽樣、
+# 「生圖」模式的 _gen_one_worker 結果不落地也不覆蓋詞庫圖，兩者都不會走到這裡，
+# 天然就不會被打標，不需要另外判斷排除。
+# ---------------------------------------------------------------------------
+TAG_SERVICE_BASE = "http://127.0.0.1:8001"
+TAG_TIMEOUT = 30.0
+TAG_MODEL_NAME = "wd-eva02-large-tagger-v3"
+_tag_sem = threading.Semaphore(1)
+
+
+def _tag_image_bytes(img_bytes: bytes) -> dict | None:
+    """POST 圖片 bytes 給 wd-tagger 的 /api/tag，回傳 {"rating","rating_scores","tags"}；
+    連不上/逾時/非 200 一律安靜回 None——打標是背景動作，不能因為服務沒開就卡住生成。"""
+    try:
+        boundary = f"----darkroomtag{uuid.uuid4().hex}"
+        body = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="card.webp"\r\n'
+            f"Content-Type: image/webp\r\n\r\n"
+        ).encode("utf-8") + img_bytes + f"\r\n--{boundary}--\r\n".encode("utf-8")
+        headers = {
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "User-Agent": "darkroom-preview-ui/1.0",
+        }
+        req = urllib.request.Request(f"{TAG_SERVICE_BASE}/api/tag",
+                                     data=body, headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=TAG_TIMEOUT) as resp:
+            raw = resp.read()
+        return json.loads(raw.decode("utf-8"))
+    except Exception as e:
+        plog(f"[tag] 打標失敗：{type(e).__name__}: {e}")
+        return None
+
+
+def _tag_service_available() -> bool:
+    req = urllib.request.Request(f"{TAG_SERVICE_BASE}/api/health",
+                                 headers={"User-Agent": "darkroom-preview-ui/1.0"}, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+def _write_visual_tags(py: Path, source_name: str, result: dict) -> None:
+    """整份覆寫 py 同檔名的 json——不是在舊格式（series/intro/手打 tags）上加欄位，
+    是完全砍掉重寫成「這張圖實際上有什麼」，見設計提案的 Schema 畫布。原子寫入
+    （tmp → os.replace），中斷不會留下半份壞掉的 json。"""
+    path = py.with_suffix(".json")
+    payload = {
+        "source": source_name,
+        "tagged_at": time.time(),
+        "model": TAG_MODEL_NAME,
+        "rating": result.get("rating"),
+        "tags": result.get("tags") or [],
+    }
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _read_visual_tags(py: Path) -> list[str]:
+    """讀同檔名 json 裡的標籤名稱清單，給標籤搜尋索引用；json 不存在/格式不對就回
+    空清單（新建但還沒生過圖、或還沒打過標的詞庫都是這樣）。"""
+    path = py.with_suffix(".json")
+    if not path.is_file():
+        return []
+    try:
+        d = json.loads(path.read_text(encoding="utf-8"))
+        return [str(t.get("name", "")).strip() for t in (d.get("tags") or []) if t.get("name")]
+    except Exception:
+        return []
+
+
+def _needs_tagging(py: Path) -> bool:
+    """json 不存在，或存在但不是目前這個模型打的（舊格式手寫 tags、或換過模型版本）
+    →需要（重新）打標。回填腳本／按鈕用這個判斷跳過已經是最新格式的筆數。"""
+    path = py.with_suffix(".json")
+    if not path.is_file():
+        return True
+    try:
+        d = json.loads(path.read_text(encoding="utf-8"))
+        return d.get("model") != TAG_MODEL_NAME
+    except Exception:
+        return True
+
+
+def _tag_and_persist(rel: str, img_bytes: bytes, py: Path, img_name: str):
+    """瀏覽模式生成/重新生成成功後的背景打標：分析剛寫出的代表圖，整份覆寫同檔名
+    json。見 do_generate() 裡的呼叫點，跟 _score_and_persist 同一套模式（背景執行緒、
+    共用剛寫出的圖片 bytes，不重讀檔案）。"""
+    with _tag_sem:
+        result = _tag_image_bytes(img_bytes)
+    if result:
+        _write_visual_tags(py, img_name, result)
+        _tag_index_note(rel, [t.get("name", "") for t in result.get("tags") or []])
+
+
+# ---------------------------------------------------------------------------
 # LoRA（給「生圖」模式用）：讀 ComfyUI 的 loras 資料夾，列出每個 .safetensors 的觸發詞
 # 與預覽圖。沿用主面板 serve.py 的做法與路徑（可用環境變數 LORA_ROOT 覆寫）。這些檔在
 # ComfyUI 磁碟上、不透過 ComfyUI API，直接讀資料夾。
@@ -662,6 +764,8 @@ STATE = {
     "batch_lock": threading.Lock(),
     "score_backfill": {"running": False, "done": 0, "total": 0},
     "score_backfill_lock": threading.Lock(),
+    "tag_backfill": {"running": False, "done": 0, "total": 0},
+    "tag_backfill_lock": threading.Lock(),
 }
 
 
@@ -1139,6 +1243,52 @@ def run_score_backfill(progress_cb=None):
     plog(f"[score-backfill] 完成 · {done}/{total}")
 
 
+def run_tag_backfill(progress_cb=None):
+    """一次性搬遷／補標：掃 has_image=True 但 json 還不是目前模型版本的卡片（含完全
+    沒有 json、跟舊版手寫 series/intro/tags 格式），整份刪除重寫成 wd-tagger 的視覺
+    標籤。同步函式，給 /api/tag-backfill 的背景 thread 跟 retag_special_prompts.py
+    共用，跟 run_score_backfill() 同一套模式，差別是落地位置是同檔名 sidecar json
+    不是側檔快取，所以不用處理孤兒紀錄——json 本來就跟著 .py/.webp 檔案本身走。"""
+    items = scan_libraries()
+    todo = [it for it in items if it.get("has_image") and _needs_tagging(py_of(it["rel"]))]
+    total = len(todo)
+    with STATE["tag_backfill_lock"]:
+        STATE["tag_backfill"] = {"running": True, "done": 0, "total": total,
+                                  "last_rel": None, "last_tags": None}
+    plog(f"[tag-backfill] 開始 · 待打標 {total} 筆")
+
+    done = 0
+    try:
+        for it in todo:
+            rel = it["rel"]
+            result = None
+            try:
+                py = py_of(rel)
+                img = find_image(py)
+                if img is None:
+                    continue
+                img_bytes = img.read_bytes()
+                with _tag_sem:
+                    result = _tag_image_bytes(img_bytes)
+                if result:
+                    _write_visual_tags(py, img.name, result)
+                    _tag_index_note(rel, [t.get("name", "") for t in result.get("tags") or []])
+            except Exception as e:
+                plog(f"[tag-backfill] {rel} 失敗：{type(e).__name__}: {e}")
+            done += 1
+            with STATE["tag_backfill_lock"]:
+                STATE["tag_backfill"]["done"] = done
+                if result:
+                    STATE["tag_backfill"]["last_rel"] = rel
+                    STATE["tag_backfill"]["last_tags"] = result.get("tags")
+            if progress_cb:
+                progress_cb(done, total)
+    finally:
+        with STATE["tag_backfill_lock"]:
+            STATE["tag_backfill"]["running"] = False
+    plog(f"[tag-backfill] 完成 · {done}/{total}")
+
+
 def _scan_note_image(rel: str, img: Path):
     """生成成功後就地更新快取裡那一筆，免得為了一張圖重掃整棵樹。"""
     with _scan_lock:
@@ -1159,6 +1309,9 @@ def _scan_note_image(rel: str, img: Path):
 # 首次請求同步建（實測 25744 個檔案 ast 解析約 3.3s），之後吃快取秒回，
 # 超過 TTL 只在背景重建。用 ast（parse_lib_ast）不用 load_lib 的 importlib
 # exec_module——建索引要一次掃全部詞庫，exec 每個檔案太重。
+# 標籤來源有兩份，合併進同一個 frozenset：詞庫 .py 的 REQUIRED_POSITIVE/POSITIVE/
+# NEGATIVE（prompt 內容）+ 同檔名 .json 的 wd-tagger 視覺標籤（_read_visual_tags，
+# 見打標提案）——使用者不用分開想「查 prompt 還是查圖片內容」，搜尋框一律都找得到。
 _tag_index = {"items": None, "at": 0.0, "refreshing": False}
 _tag_index_lock = threading.Lock()
 
@@ -1170,11 +1323,28 @@ def _build_tag_index() -> dict[str, frozenset[str]]:
         try:
             req, pos, neg = parse_lib_ast(py)
         except Exception:
-            continue
-        tags = split_tags(req) + split_tags(pos) + split_tags(neg)
+            req, pos, neg = [], [], []
+        tags = split_tags(req) + split_tags(pos) + split_tags(neg) + _read_visual_tags(py)
         idx[rel_of(py)] = frozenset(t.lower() for t in tags)
     plog(f"[tagidx] 建立標籤索引 {len(idx)} 筆 · {time.time() - t0:.2f}s")
     return idx
+
+
+def _tag_index_note(rel: str, visual_tags: list[str]):
+    """單筆即時更新——打標完成後不用整棵樹重建索引才搜得到，見 _tag_and_persist()／
+    run_tag_backfill() 的呼叫點。索引還沒建過（items is None）就跳過，等第一次
+    /api/tag-search 觸發完整建置時自然吃到最新的 json。"""
+    with _tag_index_lock:
+        items = _tag_index["items"]
+        if items is None:
+            return
+        try:
+            py = py_of(rel)
+            req, pos, neg = parse_lib_ast(py)
+        except Exception:
+            req, pos, neg = [], [], []
+        prompt_tags = split_tags(req) + split_tags(pos) + split_tags(neg)
+        items[rel] = frozenset(t.lower() for t in prompt_tags + visual_tags)
 
 
 def _tag_index_refresh_bg():
@@ -1368,6 +1538,8 @@ def do_generate(rel: str, seed: int | None = None, in_batch: bool = False):
                     pass
             _scan_note_image(rel, out_img)
             threading.Thread(target=_score_and_persist, args=(rel, img_bytes),
+                             daemon=True).start()
+            threading.Thread(target=_tag_and_persist, args=(rel, img_bytes, py, out_img.name),
                              daemon=True).start()
             dt = time.time() - t0
             set_job(
@@ -2173,6 +2345,10 @@ class Handler(BaseHTTPRequestHandler):
                 with STATE["score_backfill_lock"]:
                     self._send_json(dict(STATE["score_backfill"]))
                 return
+            if u.path == "/api/tag-backfill-status":
+                with STATE["tag_backfill_lock"]:
+                    self._send_json(dict(STATE["tag_backfill"]))
+                return
             if u.path == "/api/lora-push":
                 # 前端每 ~1s 輪詢一次；帶 since 才回新資料，版本沒變就只回 ver（省流量）。
                 since = int(qs.get("since", ["0"])[0] or 0)
@@ -2254,6 +2430,18 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 threading.Thread(target=run_score_backfill, daemon=True).start()
                 plog("[score-backfill] 已由前端觸發")
+                self._send_json({"ok": True, "started": True})
+                return
+            if u.path == "/api/tag-backfill":
+                with STATE["tag_backfill_lock"]:
+                    if STATE["tag_backfill"]["running"]:
+                        self._send_json({"ok": True, "already_running": True})
+                        return
+                if not _tag_service_available():
+                    self._send_json({"error": "wd-tagger 服務未啟動，請先執行 wd-tagger 的 run.bat"}, 400)
+                    return
+                threading.Thread(target=run_tag_backfill, daemon=True).start()
+                plog("[tag-backfill] 已由前端觸發")
                 self._send_json({"ok": True, "started": True})
                 return
             if u.path == "/api/rarity":
