@@ -1072,7 +1072,7 @@ function openModal(rel, resetNav = true) {
     $('pos').textContent = j.positive || '(空)';
     $('neg').textContent = j.negative || '(空)';
     const tagsEl = $('modal-tags');
-    if (tagsEl) tagsEl.innerHTML = modalTagsHTML(j.visual_tags);
+    if (tagsEl) { tagsEl.innerHTML = modalTagsHTML(j.visual_tags); wireModalTagTranslate(tagsEl); }
   }).catch(e => { $('pos').textContent = String(e); });
 }
 
@@ -1167,13 +1167,24 @@ function modalTagsHTML(vt) {
     </div>`;
   }
   const rating = vt.rating
-    ? `<span class="tag-chip tag-chip-rating">${escapeHtml(vt.rating)}</span>` : '';
+    ? `<span class="tag-chip tag-chip-rating" data-name="${escapeAttr(vt.rating)}">${escapeHtml(vt.rating)}</span>` : '';
   const chips = vt.tags.map(t => {
     const pct = Math.round((t.conf || 0) * 100);
     const dim = pct < 70 ? ' tag-chip-dim' : '';
-    return `<span class="tag-chip${dim}">${escapeHtml(t.name)}<b>${pct}%</b></span>`;
+    return `<span class="tag-chip${dim}" data-name="${escapeAttr(t.name)}">${escapeHtml(t.name)}<b>${pct}%</b></span>`;
   }).join('');
   return rating + chips;
+}
+// 標籤 chip hover 送 Google 翻譯——跟 LoRA 觸發詞卡（renderLoraDetail 裡的
+// lm-tw-item）共用同一套 showTwTip/hideTwTip/translateTriggerWord，這裡是
+// innerHTML 插入的靜態字串，沒有現成的 DOM 節點可以在建立時掛監聽，所以
+// 插入後另外掃一次 .tag-chip 補上 hover 事件，不是重寫一套翻譯機制。
+function wireModalTagTranslate(container) {
+  container.querySelectorAll('.tag-chip[data-name]').forEach(chip => {
+    const name = chip.dataset.name;
+    chip.addEventListener('mouseenter', () => showTwTip(chip, name));
+    chip.addEventListener('mouseleave', () => hideTwTip(chip));
+  });
 }
 function cssAttr(s) { return String(s).replace(/["\\]/g, '\\$&'); }
 
