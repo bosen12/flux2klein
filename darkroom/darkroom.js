@@ -589,13 +589,18 @@ function scoreBand(final) {
 }
 // 光度計風格的單一子分數列：標籤 + 細長度量條（0~10 對應 0~100%）+ 數值。
 // track 一律用安全燈琥珀色（跟三個子分數本身的高低無關，那是總分光環的事），
-// 呼應暗房既有的曝光表視覺語言。
-function scoreMeterRowHTML(label, val10, displayText) {
-  const pct = Math.max(0, Math.min(100, (Number(val10) || 0) / 10 * 100));
+// 呼應暗房既有的曝光表視覺語言。三列的數值欄一律是同一種 0~10 格式的數字
+// （對齊、等寬），Kawai 額外的分級（tier）用獨立的小徽章附在數字後面，不
+// 混進數值本身——原本 Kawai 那列顯示「B · -0.35」，跟另外兩列的純數字格式
+// 不一樣，掃視起來像是三列裡「壞掉的那一列」，其實只是資訊塞太多。
+function scoreMeterRowHTML(label, val10, tier) {
+  const v = Number(val10) || 0;
+  const pct = Math.max(0, Math.min(100, v / 10 * 100));
+  const tierBadge = tier ? `<span class="score-meter-tier">${tier}</span>` : '';
   return `<div class="score-meter">
     <span class="score-meter-lbl">${label}</span>
     <span class="score-meter-track"><span class="score-meter-fill" style="width:${pct}%"></span></span>
-    <span class="score-meter-val">${displayText}</span>
+    <span class="score-meter-val">${v.toFixed(2)}${tierBadge}</span>
   </div>`;
 }
 // openModal()／openGalleryItem() 共用：大圖 modal 的評分明細面板——「光度計」造型，
@@ -612,18 +617,22 @@ function modalScoreRowsHTML(score) {
   }
   const band = scoreBand(score.final);
   const pct = Math.max(0, Math.min(100, score.final / 10 * 100));
+  // 儀表板佈局：大光環在左（一眼看到加權總分），右邊是小標題＋三條細量條，
+  // 取代原本「光環+標籤」一列、量條另起一段的上下堆疊——那個版本兩塊視覺上
+  // 各自獨立，看不出主從關係，現在光環直接錨定整個面板左側，右邊三條線是
+  // 從屬細節，一眼就懂「一個總分，三個子分數撐出來的」。
   return `<div class="score-panel score-panel-${band}" style="--score-pct:${pct}%">
-    <div class="score-dial-row">
-      <span class="score-dial" aria-hidden="true">
-        <span class="score-dial-ring"></span>
-        <span class="score-dial-num">${score.final.toFixed(2)}</span>
-      </span>
-      <span class="score-dial-lbl">加權總分</span>
-    </div>
-    <div class="score-meters">
-      ${scoreMeterRowHTML('Blackroot', score.blackroot, score.blackroot.toFixed(2))}
-      ${scoreMeterRowHTML('Waifu', score.waifu, score.waifu.toFixed(2))}
-      ${scoreMeterRowHTML('Kawai', score.kawai_norm, `${score.kawai_tier} · ${score.kawai_score.toFixed(2)}`)}
+    <span class="score-dial" aria-hidden="true">
+      <span class="score-dial-ring"></span>
+      <span class="score-dial-num">${score.final.toFixed(2)}</span>
+    </span>
+    <div class="score-body">
+      <div class="score-dial-lbl">加權總分</div>
+      <div class="score-meters">
+        ${scoreMeterRowHTML('Blackroot', score.blackroot)}
+        ${scoreMeterRowHTML('Waifu', score.waifu)}
+        ${scoreMeterRowHTML('Kawai', score.kawai_norm, score.kawai_tier)}
+      </div>
     </div>
   </div>`;
 }
