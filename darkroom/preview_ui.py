@@ -1270,6 +1270,13 @@ def run_tag_backfill(progress_cb=None):
                                   "last_rel": None, "last_tags": None}
     plog(f"[tag-backfill] 開始 · 待打標 {total} 筆 · 節流 {_TAG_BACKFILL_PACE_SEC}s/張")
 
+    # 30,582 筆節流跑要 70+ 分鐘，只有「開始」「完成」兩行 log 完全看不出跑到哪、
+    # 有沒有卡住。跟 [score-backfill] 的 _FLUSH_INTERVAL 同一種節流思路，但這裡
+    # 是節流「印 log」本身——每筆都印會洗版，固定每隔一段時間印一次目前進度、
+    # 速率、預估剩餘時間。
+    _LOG_INTERVAL = 30.0
+    t_start = time.time()
+    last_log = t_start
     done = 0
     try:
         for it in todo:
@@ -1296,6 +1303,13 @@ def run_tag_backfill(progress_cb=None):
                     STATE["tag_backfill"]["last_tags"] = result.get("tags")
             if progress_cb:
                 progress_cb(done, total)
+            now = time.time()
+            if now - last_log >= _LOG_INTERVAL:
+                rate = done / (now - t_start) if now > t_start else 0.0
+                remain = (total - done) / rate if rate > 0 else 0.0
+                plog(f"[tag-backfill] 進度 {done}/{total} ({done/total*100:.1f}%) · "
+                     f"{rate:.2f} 張/s · 預估剩餘 {remain/60:.1f} 分鐘")
+                last_log = now
             time.sleep(_TAG_BACKFILL_PACE_SEC)
     finally:
         with STATE["tag_backfill_lock"]:
