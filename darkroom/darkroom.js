@@ -199,19 +199,20 @@ function buildRail() {
 }
 
 // 只套資料夾／搜尋範圍（不含 view 與稀有度篩選）——稀有度分布數就是算這個
+//
+// 名稱搜尋／標籤搜尋都改成「跟著左欄目前選的資料夾走」：選了某個資料夾就只在
+// 該資料夾裡搜，點「全部」才是跨資料夾搜尋。左欄選資料夾／點「全部」本來就會
+// 清空搜尋框，所以「先選範圍、再輸入關鍵字」是既有操作順序，這裡只是讓搜尋
+// 真的尊重那個選擇，而不是不管選了什麼都跨資料夾。
 function baseList() {
   const key = SEARCH + '\u0000' + CUR_FOLDER + '\u0000' + (ALL_FOLDERS ? '1' : '0');
   if (_baseCache && _baseKey === key && _baseTagSet === TAG_MATCH_SET) return _baseCache;
-  let list;
+  let list = (!ALL_FOLDERS && CUR_FOLDER !== null)
+    ? ALL.filter(x => (x.folder || '(根目錄)') === CUR_FOLDER)
+    : ALL;
   if (SEARCH) {
     const q = SEARCH.toLowerCase();
-    list = ALL.filter(x => x._lname.includes(q) || x._lfolder.includes(q));
-  } else if (TAG_MATCH_SET) {
-    list = ALL;   // 標籤搜尋跨資料夾，不受目前選的資料夾限制（跟名稱搜尋一樣）
-  } else if (ALL_FOLDERS) {
-    list = ALL;   // 點了左欄釘選的「全部」，不篩資料夾
-  } else {
-    list = ALL.filter(x => (x.folder || '(根目錄)') === CUR_FOLDER);
+    list = list.filter(x => x._lname.includes(q) || x._lfolder.includes(q));
   }
   if (TAG_MATCH_SET) list = list.filter(x => TAG_MATCH_SET.has(x.rel));
   _baseCache = list; _baseKey = key; _baseTagSet = TAG_MATCH_SET;
