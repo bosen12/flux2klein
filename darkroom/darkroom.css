@@ -442,14 +442,23 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
 .modal { position: fixed; inset: 0; background: rgba(8,8,11,.8); backdrop-filter: blur(6px);
          display: none; align-items: center; justify-content: center; z-index: 130; padding: 24px; }   /* 高於抽卡覆蓋層(120)：抽卡點卡片時大圖疊在牌上、關掉回到那批牌 */
 .modal.open { display: flex; animation: fadeIn var(--d-pop) var(--ease-out); }
-.modal-inner { max-width: 1040px; width: 100%; max-height: 92vh; overflow: auto; overscroll-behavior: contain; box-shadow: var(--shadow);
+/* 視窗本身固定高度，不跟著右欄內容長短變大變小——原本 overflow:auto 是整個
+   .modal-inner 一起捲，提示詞/標籤長的那張連圖片跟關閉鈕都一起捲不見了，換上
+   一張又是完全不同的視窗尺寸，切著切著視窗一直跳動。改成右欄自己捲、左邊圖片
+   /按鈕固定不動，跟大部分看圖軟體「圖固定、資訊面板捲」的慣例一致。 */
+.modal-inner { max-width: 1040px; width: 100%; height: min(88vh, 780px); overflow: hidden; box-shadow: var(--shadow);
                background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 22px;
-               display: grid; grid-template-columns: minmax(0,1.05fr) minmax(0,1fr); gap: 22px;
-               /* 兩欄版面，捲軸一出現欄寬就變——用上一張/下一張連續看圖時（提示詞長短不同，
-                  有的要捲有的不用）大圖會一張一個尺寸。永遠預留捲軸位置。 */
-               scrollbar-gutter: stable; }
+               display: grid; grid-template-columns: minmax(0,1.05fr) minmax(0,1fr); gap: 22px; }
 .modal.open .modal-inner { animation: modalPop var(--d-pop) var(--ease-out) both; }
 .modal-inner img { max-width: 100%; border-radius: 10px; background: #000; display: block; }
+/* 左欄（圖＋狀態＋按鈕）：內容本身高度由 .m-stage 的 aspect-ratio 決定，通常
+   撐不滿整個固定高度的欄位，用 flex 讓按鈕列貼齊底部，不要浮在中間一截空白。 */
+.modal-inner > div:first-child { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.modal-inner > div:first-child > div:last-child { margin-top: auto; padding-top: 12px; }
+/* 右欄（標題／分數／標籤／prompt）：真正會捲的地方，永遠預留捲軸位置，不然
+   捲軸一出現欄寬就變窄，文字跟著重排晃一下。 */
+.modal-inner > div:last-child { min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+                                 padding-right: 6px; scrollbar-gutter: stable; }
 
 /* ── 大圖的橫向卡片列 ─────────────────────────────────────────────
    一列橫向卡片，左右鄰卡露邊；按 ←/→ 整列滑一格、緩動吸附回中央。
@@ -535,7 +544,11 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
 @media (max-width: 860px) {
   .rail { position: fixed; z-index: 30; height: 100%; left: 0; top: 0; box-shadow: var(--shadow); transform: translateX(-100%); transition: transform .2s; }
   .rail.open { transform: none; }
-  .modal-inner { grid-template-columns: 1fr; }
+  /* 手機單欄上下排列，圖片跟資訊本來就會一起捲，維持整個視窗自然捲動即可，
+     不需要桌面版「圖固定、右欄獨立捲」那套（見上面 .modal-inner 的說明）。 */
+  .modal-inner { grid-template-columns: 1fr; height: auto; max-height: 92vh; overflow: auto; }
+  .modal-inner > div:first-child,
+  .modal-inner > div:last-child { overflow: visible; }
   .menu-btn { display: inline-flex !important; }
 }
 .menu-btn { display: none; }
