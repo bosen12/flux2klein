@@ -114,7 +114,12 @@ button.danger { color: #ffd9d3; border-color: #5a2e2a; background: #2a1a18; }
 body[data-mode="browse"] .select-only { display: none !important; }
 .mode-seg { flex: 0 0 auto; }
 .mode-seg button { padding: 6px 12px; font-size: 13px; white-space: nowrap; }
-input[type=text] { background: var(--sunk); color: var(--ink); border: 1px solid var(--line);
+/* macOS Safari 對 input[type=text] 預設會保留原生 -webkit-appearance:textfield
+   （自己的圓角內縮邊框＋陰影），疊在這裡自訂的 border/border-radius 之上，變成
+   邊框錯位/雙重邊框的樣子——沒有 appearance:none 明確關掉的話只有 Mac 上會這樣，
+   Windows/Chrome 本來就沒有這層原生 chrome，一直沒發現。 */
+input[type=text] { appearance: none; -webkit-appearance: none;
+                   background: var(--sunk); color: var(--ink); border: 1px solid var(--line);
                    padding: 8px 12px 8px 30px; border-radius: 8px; font-size: 13px; }
 input[type=text]::placeholder { color: var(--faint); }
 
