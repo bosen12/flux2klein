@@ -442,22 +442,38 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
 .modal { position: fixed; inset: 0; background: rgba(8,8,11,.8); backdrop-filter: blur(6px);
          display: none; align-items: center; justify-content: center; z-index: 130; padding: 24px; }   /* 高於抽卡覆蓋層(120)：抽卡點卡片時大圖疊在牌上、關掉回到那批牌 */
 .modal.open { display: flex; animation: fadeIn var(--d-pop) var(--ease-out); }
-/* 視窗本身固定高度，不跟著右欄內容長短變大變小——原本 overflow:auto 是整個
-   .modal-inner 一起捲，提示詞/標籤長的那張連圖片跟關閉鈕都一起捲不見了，換上
-   一張又是完全不同的視窗尺寸，切著切著視窗一直跳動。改成右欄自己捲、左邊圖片
-   /按鈕固定不動，跟大部分看圖軟體「圖固定、資訊面板捲」的慣例一致。 */
-.modal-inner { max-width: 1040px; width: 100%; height: min(88vh, 780px); overflow: hidden; box-shadow: var(--shadow);
-               background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 22px;
-               display: grid; grid-template-columns: minmax(0,1.05fr) minmax(0,1fr); gap: 22px; }
+/* 視窗尺寸從「詞庫預覽都是 1:1 正方形」這個事實直接算出來，不是先訂一個看
+   起來順眼的高度再讓圖去擠——.m-stage 沒設寬度，是靠 aspect-ratio 從欄寬
+   反推高度（見上面 ── 大圖的橫向卡片列 那段說明），所以只要左欄寬度固定，
+   正方形的邊長跟著就定了；--chrome 是狀態列/按鈕列＋上下 padding 大概要的
+   高度（.modal-inner 是 box-sizing:border-box，height 已經含 padding，
+   算的時候要連 padding 一起算進去，不然正方形會被 flex-shrink 擠扁），窗高＝
+   正方形邊長＋這個固定量，不是憑感覺抓的 88vh。右欄（資訊面板）是獨立寬度
+   的伴隨欄，不跟正方形按比例分——比例分法在圖比較小的螢幕上會讓正方形跟著
+   資訊欄一起縮水，兩者其實沒有必然關聯。 */
+.modal-inner {
+  --sq: min(62vh, 42vw, 600px);
+  --chrome: 118px;
+  display: flex; align-items: stretch; gap: 22px;
+  width: fit-content; max-width: calc(100vw - 48px);
+  height: calc(var(--sq) + var(--chrome)); max-height: calc(100vh - 48px);
+  overflow: hidden; box-shadow: var(--shadow);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 22px;
+}
 .modal.open .modal-inner { animation: modalPop var(--d-pop) var(--ease-out) both; }
 .modal-inner img { max-width: 100%; border-radius: 10px; background: #000; display: block; }
-/* 左欄（圖＋狀態＋按鈕）：內容本身高度由 .m-stage 的 aspect-ratio 決定，通常
-   撐不滿整個固定高度的欄位，用 flex 讓按鈕列貼齊底部，不要浮在中間一截空白。 */
-.modal-inner > div:first-child { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+/* 左欄＝正方形本身，寬度就是 --sq，.m-stage 靠 aspect-ratio 把高度長成一樣。
+   狀態列/按鈕列通常撐不滿 --chrome 那個高度，用 flex 讓按鈕列貼齊底部。
+   三個子項都要 flex:none——實測 .m-stage 沒設這個時，就算高度明明還有空間，
+   瀏覽器的 flex 演算法還是會讓 aspect-ratio 算出來的高度比寬度矮個幾 px
+   （flex-shrink 預設是 1，aspect-ratio box 在 flex 版面下的已知取整/協商
+   誤差），畫面上看起來像是「差一點點的正方形」，肉眼就能看出來歪了。 */
+.modal-inner > div:first-child { flex: none; width: var(--sq); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.modal-inner > div:first-child > * { flex: none; }
 .modal-inner > div:first-child > div:last-child { margin-top: auto; padding-top: 12px; }
-/* 右欄（標題／分數／標籤／prompt）：真正會捲的地方，永遠預留捲軸位置，不然
+/* 右欄（標題／分數／標籤／prompt）：獨立固定寬度的資訊面板，真正會捲的地方，永遠預留捲軸位置，不然
    捲軸一出現欄寬就變窄，文字跟著重排晃一下。 */
-.modal-inner > div:last-child { min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+.modal-inner > div:last-child { flex: none; width: 380px; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
                                  padding-right: 6px; scrollbar-gutter: stable; }
 
 /* ── 大圖的橫向卡片列 ─────────────────────────────────────────────
@@ -545,10 +561,13 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
   .rail { position: fixed; z-index: 30; height: 100%; left: 0; top: 0; box-shadow: var(--shadow); transform: translateX(-100%); transition: transform .2s; }
   .rail.open { transform: none; }
   /* 手機單欄上下排列，圖片跟資訊本來就會一起捲，維持整個視窗自然捲動即可，
-     不需要桌面版「圖固定、右欄獨立捲」那套（見上面 .modal-inner 的說明）。 */
-  .modal-inner { grid-template-columns: 1fr; height: auto; max-height: 92vh; overflow: auto; }
+     不需要桌面版「正方形固定寬度＋右欄獨立捲」那套（見上面 .modal-inner 的
+     說明）——欄寬也要跟著改回 100%，不然桌面版算出來的 --sq／380px 在單欄
+     排列下會把手機畫面撐出邊界。 */
+  .modal-inner { flex-direction: column; width: 100%; max-width: calc(100vw - 48px);
+                  height: auto; max-height: 92vh; overflow: auto; }
   .modal-inner > div:first-child,
-  .modal-inner > div:last-child { overflow: visible; }
+  .modal-inner > div:last-child { width: 100%; overflow: visible; }
   .menu-btn { display: inline-flex !important; }
 }
 .menu-btn { display: none; }
