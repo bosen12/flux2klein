@@ -1243,19 +1243,32 @@ def run_score_backfill(progress_cb=None):
     plog(f"[score-backfill] 完成 · {done}/{total}")
 
 
+# GPU 版 wd-tagger 一張只要 ~70ms，不節流的話這個背景迴圈會用最高速率連續打
+# 磁碟 I/O（讀圖）+ 寫 json + HTTP 呼叫，紧接著的 Python 處理（JSON 序列化/
+# 反序列化）在 GIL 底下頻繁搶執行權，實測跑起來遠端縮圖請求（/api/thumb）會
+# 卡到 30s 逾時、甚至被斷線——這是真的量到的回歸，不是臆測（見開發紀錄）。
+# 固定間隔把吞吐量壓在一個遠端瀏覽感覺不到的範圍：30,582 筆全部跑完抓
+# 30582*0.15 ≈ 76 分鐘，比不節流的 ~40 分鐘慢，但這是背景一次性搬遷，不是
+# 使用者在等的操作，換遠端不卡才划算。
+_TAG_BACKFILL_PACE_SEC = 0.15
+
+
 def run_tag_backfill(progress_cb=None):
     """一次性搬遷／補標：掃 has_image=True 但 json 還不是目前模型版本的卡片（含完全
     沒有 json、跟舊版手寫 series/intro/tags 格式），整份刪除重寫成 wd-tagger 的視覺
     標籤。同步函式，給 /api/tag-backfill 的背景 thread 跟 retag_special_prompts.py
     共用，跟 run_score_backfill() 同一套模式，差別是落地位置是同檔名 sidecar json
-    不是側檔快取，所以不用處理孤兒紀錄——json 本來就跟著 .py/.webp 檔案本身走。"""
+    不是側檔快取，所以不用處理孤兒紀錄——json 本來就跟著 .py/.webp 檔案本身走。
+    跑在背景低優先權執行緒（_lower_thread_priority_background）+ 固定節流間隔，
+    見 _TAG_BACKFILL_PACE_SEC 說明——不節流會拖慢遠端縮圖請求。"""
+    _lower_thread_priority_background()
     items = scan_libraries()
     todo = [it for it in items if it.get("has_image") and _needs_tagging(py_of(it["rel"]))]
     total = len(todo)
     with STATE["tag_backfill_lock"]:
         STATE["tag_backfill"] = {"running": True, "done": 0, "total": total,
                                   "last_rel": None, "last_tags": None}
-    plog(f"[tag-backfill] 開始 · 待打標 {total} 筆")
+    plog(f"[tag-backfill] 開始 · 待打標 {total} 筆 · 節流 {_TAG_BACKFILL_PACE_SEC}s/張")
 
     done = 0
     try:
@@ -1283,6 +1296,7 @@ def run_tag_backfill(progress_cb=None):
                     STATE["tag_backfill"]["last_tags"] = result.get("tags")
             if progress_cb:
                 progress_cb(done, total)
+            time.sleep(_TAG_BACKFILL_PACE_SEC)
     finally:
         with STATE["tag_backfill_lock"]:
             STATE["tag_backfill"]["running"] = False
