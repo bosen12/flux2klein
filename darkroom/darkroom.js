@@ -1036,6 +1036,8 @@ function openModal(rel, resetNav = true) {
       <div class="m-title" id="modal-title"></div>
       <div class="m-folder" id="modal-folder"></div>
       <div class="gi-score" id="modal-score"></div>
+      <div class="prompt-label">自動標籤</div>
+      <div class="tag-chip-list" id="modal-tags">載入中…</div>
       <div class="prompt-label">正向 Prompt</div>
       <div class="prompt-block" id="pos">載入中…</div>
       <div class="prompt-label">負向 Prompt</div>
@@ -1060,6 +1062,8 @@ function openModal(rel, resetNav = true) {
     if (j.error) { $('pos').textContent = j.error; return; }
     $('pos').textContent = j.positive || '(空)';
     $('neg').textContent = j.negative || '(空)';
+    const tagsEl = $('modal-tags');
+    if (tagsEl) tagsEl.innerHTML = modalTagsHTML(j.visual_tags);
   }).catch(e => { $('pos').textContent = String(e); });
 }
 
@@ -1137,6 +1141,31 @@ function closeModalWithMorph() {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function escapeAttr(s) { return String(s).replace(/"/g, '&quot;'); }
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// 大圖 modal 的自動標籤區塊——wd-tagger 分析代表圖產生的視覺標籤，跟正向/負向
+// prompt 是兩回事（prompt 是「要生成什麼」，這裡是「圖片實際長怎樣」，見打標
+// 提案）。信心分數高的（>=70%）視覺上強調一點，低的淡化，但不砍掉，使用者
+// 自己判斷準不準。rating 是 wd-tagger 對整張圖的分級（general/sensitive/
+// questionable/explicit），放在標籤列最前面當一個小標籤。
+function modalTagsHTML(vt) {
+  if (!vt || !vt.tagged || !(vt.tags || []).length) {
+    return `<div class="score-panel score-panel-empty">
+      <span class="score-empty-dot" aria-hidden="true"></span>
+      <span class="score-empty-txt">尚未打標</span>
+    </div>`;
+  }
+  const rating = vt.rating
+    ? `<span class="tag-chip tag-chip-rating">${escapeHtml(vt.rating)}</span>` : '';
+  const chips = vt.tags.map(t => {
+    const pct = Math.round((t.conf || 0) * 100);
+    const dim = pct < 70 ? ' tag-chip-dim' : '';
+    return `<span class="tag-chip${dim}">${escapeHtml(t.name)}<b>${pct}%</b></span>`;
+  }).join('');
+  return rating + chips;
+}
 function cssAttr(s) { return String(s).replace(/["\\]/g, '\\$&'); }
 
 /* 篩選段 */

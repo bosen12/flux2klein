@@ -504,6 +504,18 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
 .m-folder { font-family: var(--mono); font-size: 12px; color: var(--amber); margin-top: 4px; }
 .prompt-label { font-family: var(--mono); font-size: 10px; color: var(--faint); margin: 14px 0 5px;
                 text-transform: uppercase; letter-spacing: 1px; }
+/* 大圖 modal 的自動標籤（wd-tagger）——跟正向/負向 prompt 的純文字區塊不同，這裡
+   是一串可掃視的小 chip，信心分數當附註，不是重點；低分的用 tag-chip-dim 弱化但
+   不隱藏，讓使用者自己判斷模型準不準。*/
+.tag-chip-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag-chip { display: inline-flex; align-items: baseline; gap: 5px; padding: 4px 8px;
+            border-radius: 6px; background: var(--sunk); border: 1px solid var(--line);
+            font-family: var(--mono); font-size: 11.5px; color: var(--ink); }
+.tag-chip b { font-weight: 600; color: var(--amber); font-size: 10px; }
+.tag-chip-dim { color: var(--dim); border-style: dashed; opacity: .72; }
+.tag-chip-dim b { color: var(--faint); }
+.tag-chip-rating { background: var(--amber-soft, rgba(234,173,87,.14)); border-color: var(--amber-d);
+                    color: var(--amber); text-transform: uppercase; letter-spacing: .04em; }
 .prompt-block { font-size: 12px; line-height: 1.6; color: #d4d0c8; background: var(--sunk); border: 1px solid var(--line); overscroll-behavior: contain;
                 padding: 11px; border-radius: 8px; white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto; }
 .m-nav { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(19,19,24,.7);

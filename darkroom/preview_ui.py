@@ -510,6 +510,22 @@ def _read_visual_tags(py: Path) -> list[str]:
         return []
 
 
+def _read_visual_tags_full(py: Path) -> dict:
+    """給大圖 modal 顯示用：回傳完整 {rating, tags:[{name,conf,category}], tagged}——
+    跟 _read_visual_tags() 只回名稱陣列不同，這裡要連信心分數/分類一起帶出去顯示。
+    沒有 json（還沒打過標）回 tagged:false，前端可以據此顯示「尚未打標」而不是空白。"""
+    path = py.with_suffix(".json")
+    if not path.is_file():
+        return {"tagged": False, "rating": None, "tags": []}
+    try:
+        d = json.loads(path.read_text(encoding="utf-8"))
+        if d.get("model") != TAG_MODEL_NAME:
+            return {"tagged": False, "rating": None, "tags": []}   # 舊版手寫格式，不當作已打標
+        return {"tagged": True, "rating": d.get("rating"), "tags": d.get("tags") or []}
+    except Exception:
+        return {"tagged": False, "rating": None, "tags": []}
+
+
 def _needs_tagging(py: Path) -> bool:
     """json 不存在，或存在但不是目前這個模型打的（舊格式手寫 tags、或換過模型版本）
     →需要（重新）打標。回填腳本／按鈕用這個判斷跳過已經是最新格式的筆數。"""
@@ -2293,6 +2309,7 @@ class Handler(BaseHTTPRequestHandler):
                     "required": req,
                     "positive_list": pos,
                     "negative_list": neg,
+                    "visual_tags": _read_visual_tags_full(py),
                 })
                 return
             if u.path == "/api/status":
