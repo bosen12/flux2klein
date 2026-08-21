@@ -2566,21 +2566,45 @@ function _previewEnqueue(job) {
 // src 先存 data-src，捲進視窗（或抽卡等一定會顯示的情境直接呼叫）才透過上面的併發
 //佇列排隊真正賦值下載；img/video 共用同一套，load/loadeddata/error 任一個觸發都算
 // 「這個名額騰出來了」，輪到下一個排隊的。
+//
+// 遠端連線偶爾會瞬斷（Tailscale 兩端 peering 有時候會掉幾個封包，是量到過的真實
+// 現象，不是臆測），以前失敗一次縮圖就永遠是空白格子，要整批重新整理才會補回來。
+// 改成有限次數、間隔遞增的重試——只有第一次嘗試會佔用併發佇列名額（settleOnce
+// 在第一次 load/error 就釋放），重試是對已經失敗那格的獨立掛起，不能再讓它占著
+// 隊伍名額卡住其他還沒下載過的縮圖。
+const _PREVIEW_RETRY_DELAYS_MS = [600, 1800, 4500];
+
 function _previewStart(el, done) {
   const src = el.dataset.src;
   delete el.dataset.src;
   if (!src) { done(); return; }
-  const onSettled = () => {
-    el.removeEventListener('load', onSettled);
-    el.removeEventListener('loadeddata', onSettled);
-    el.removeEventListener('error', onSettled);
-    done();
+  let settled = false;
+  const settleOnce = () => { if (!settled) { settled = true; done(); } };
+  const attemptLoad = (attempt) => {
+    const onSettled = () => {
+      el.removeEventListener('load', onSettled);
+      el.removeEventListener('loadeddata', onSettled);
+      el.removeEventListener('error', onError);
+      settleOnce();
+    };
+    const onError = () => {
+      el.removeEventListener('load', onSettled);
+      el.removeEventListener('loadeddata', onSettled);
+      el.removeEventListener('error', onError);
+      settleOnce();
+      if (attempt < _PREVIEW_RETRY_DELAYS_MS.length) {
+        setTimeout(() => attemptLoad(attempt + 1), _PREVIEW_RETRY_DELAYS_MS[attempt]);
+      }
+    };
+    el.addEventListener('load', onSettled);
+    el.addEventListener('loadeddata', onSettled);
+    el.addEventListener('error', onError);
+    // 重試才加 cache-busting query，避免瀏覽器/中介 proxy 對失敗回應做負面快取，
+    // 重試打到的是同一個快取住的失敗結果。第一次嘗試維持原始 URL 不變。
+    el.src = attempt === 0 ? src : src + (src.includes('?') ? '&' : '?') + '_retry=' + attempt;
+    if (el.tagName === 'VIDEO') el.play().catch(() => {});
   };
-  el.addEventListener('load', onSettled);
-  el.addEventListener('loadeddata', onSettled);
-  el.addEventListener('error', onSettled);
-  el.src = src;
-  if (el.tagName === 'VIDEO') el.play().catch(() => {});
+  attemptLoad(0);
 }
 
 const _loraPreviewIO = new IntersectionObserver((entries, obs) => {
