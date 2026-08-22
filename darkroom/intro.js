@@ -301,6 +301,11 @@ void main() {
 
   function fmt(n) { return Number(n).toLocaleString('en-US'); }
 
+  function nameOf(it) {
+    const rel = String(it.rel || '').replace(/\\/g, '/');
+    return rel.split('/').pop().replace(/\.py$/i, '');
+  }
+
   function thumb(it, w) {
     const img = document.createElement('img');
     img.alt = '';
@@ -312,21 +317,9 @@ void main() {
 
   function fillStats(data) {
     const kicker = $('intro-kicker');
-    if (kicker) kicker.textContent = data.folder || '';
-    const stats = $('intro-stats');
+    if (kicker) kicker.textContent = data.folder || 'CONTACT SHEET';
     const total = data.total || 0, have = data.developed || 0, folders = data.folders || 0;
     const cover = (total && have >= total) ? '100%' : fmt(have);
-    if (stats) {
-      stats.innerHTML = '';
-      for (const [v, k] of [[fmt(total), '詞庫'], [fmt(folders), '資料夾'], [cover, '已顯影']]) {
-        const box = document.createElement('div');
-        box.className = 'stat';
-        const nv = document.createElement('span'); nv.className = 'stat-n'; nv.textContent = v;
-        const kv = document.createElement('span'); kv.className = 'stat-k'; kv.textContent = k;
-        box.append(nv, kv);
-        stats.appendChild(box);
-      }
-    }
     document.querySelectorAll('[data-stat]').forEach((el) => {
       const key = el.dataset.stat;
       if (key === 'total') el.textContent = fmt(total);
@@ -335,45 +328,117 @@ void main() {
     });
   }
 
+  const MODE_CAP = {
+    browse: '點格子看名稱。進工具以後，點開是大圖與正向／負向。',
+    tag: '角上的點是稀有／特別的記號。真的標記寫在側檔，不改檔名。',
+    gen: '亮的幾格正在顯影。單張生成會插隊到批次前面。',
+    draw: '抽出 8 張。R 全庫、E 本分類、C 是 Concepts。'
+  };
+
+  function applyMode(mode) {
+    const wall = $('wall-grid');
+    const cap = $('mode-cap');
+    if (!wall) return;
+    wall.dataset.mode = mode;
+    document.querySelectorAll('.mode-rail [role="tab"]').forEach((btn) => {
+      const on = btn.dataset.mode === mode;
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+      btn.tabIndex = on ? 0 : -1;
+    });
+    if (cap) cap.textContent = MODE_CAP[mode] || MODE_CAP.browse;
+    const frames = [...wall.querySelectorAll('.frame')];
+    frames.forEach((el, i) => {
+      el.classList.toggle('dev', mode === 'gen' && i % 7 === 0);
+      el.classList.toggle('picked', mode === 'draw' && i < 8);
+      if (mode === 'draw' && i < 8) {
+        el.style.setProperty('--tilt', ((i % 2 ? 1 : -1) * (1.2 + (i % 5) * 0.6)) + 'deg');
+      } else {
+        el.style.removeProperty('--tilt');
+      }
+    });
+  }
+
+  function bindModeRail() {
+    const rail = document.querySelector('.mode-rail');
+    if (!rail) return;
+    rail.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-mode]');
+      if (!btn) return;
+      applyMode(btn.dataset.mode);
+    });
+    rail.addEventListener('keydown', (e) => {
+      const tabs = [...rail.querySelectorAll('[role="tab"]')];
+      const i = tabs.indexOf(document.activeElement);
+      if (i < 0) return;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+        next.focus();
+        applyMode(next.dataset.mode);
+      }
+    });
+  }
+
   function fillWall(sample) {
     const wall = $('wall-grid');
     if (!wall || !sample.length) return;
-    const n = Math.min(36, sample.length);
+    const n = Math.min(40, sample.length);
     const frag = document.createDocumentFragment();
-    for (let i = 0; i < n; i++) frag.appendChild(thumb(sample[i], 192));
+    for (let i = 0; i < n; i++) {
+      const it = sample[i];
+      const fig = document.createElement('figure');
+      fig.className = 'frame';
+      const cap = document.createElement('figcaption');
+      cap.textContent = nameOf(it);
+      fig.append(thumb(it, 192), cap);
+      frag.appendChild(fig);
+    }
     wall.appendChild(frag);
-  }
-
-  function fillMosaics(sample) {
-    if (!sample.length) return;
-    document.querySelectorAll('[data-mosaic]').forEach((box) => {
-      const offset = Number(box.dataset.mosaic) || 0;
-      const count = box.classList.contains('mosaic-6') ? 6 : 9;
-      const frag = document.createDocumentFragment();
-      for (let i = 0; i < count; i++) frag.appendChild(thumb(sample[(offset + i) % sample.length], 256));
-      box.appendChild(frag);
-    });
+    applyMode('browse');
   }
 
   function fillStrips(sample) {
     if (!sample.length) return;
-    document.querySelectorAll('.strip-film').forEach((film, si) => {
-      const offset = Number(film.dataset.offset) || si * 16;
+    document.querySelectorAll('.bath-strip').forEach((film) => {
+      const offset = Number(film.dataset.offset) || 0;
       const run = document.createElement('div');
       run.className = 'strip-run';
-      run.style.setProperty('--dur', (46 + si * 7) + 's');
-      const w = film.classList.contains('tall') ? 192 : 128;
-      const px = film.classList.contains('tall') ? 160 : 88;
       const frames = [];
-      for (let i = 0; i < 16; i++) frames.push(sample[(offset + i) % sample.length]);
+      for (let i = 0; i < 14; i++) frames.push(sample[(offset + i) % sample.length]);
       const add = (it) => {
-        const img = thumb(it, w);
-        img.width = px; img.height = px;
+        const img = thumb(it, 192);
+        img.width = 140; img.height = 140;
         run.appendChild(img);
       };
       frames.forEach(add);
       frames.forEach(add);
       film.appendChild(run);
+    });
+  }
+
+  function bindKeys() {
+    const hint = $('hand-hint');
+    const flash = (key) => {
+      const card = document.querySelector('.key-card[data-key="' + key + '"]');
+      if (!card) return;
+      card.classList.add('is-hot');
+      setTimeout(() => card.classList.remove('is-hot'), 280);
+    };
+    document.querySelectorAll('.key-card').forEach((card) => {
+      card.addEventListener('click', () => {
+        flash(card.dataset.key);
+        applyMode('draw');
+        if (hint) hint.textContent = '進工具按 ' + card.dataset.key.toUpperCase() + ' 才會真的抽。';
+      });
+    });
+    window.addEventListener('keydown', (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      const k = e.key.toLowerCase();
+      if (k !== 'r' && k !== 'e' && k !== 'c') return;
+      flash(k);
+      applyMode('draw');
     });
   }
 
@@ -397,7 +462,7 @@ void main() {
         }
       }
     }, { threshold: 0.18 });
-    document.querySelectorAll('.chapter').forEach((el) => io.observe(el));
+    document.querySelectorAll('.sheet, .plate, .quiet').forEach((el) => io.observe(el));
   }
 
   function watchNav() {
@@ -430,6 +495,8 @@ void main() {
     page.hidden = false;
     watchNav();
     revealChapters();
+    bindModeRail();
+    bindKeys();
     try {
       const r = await fetch('/api/intro');
       if (!r.ok) throw new Error('intro ' + r.status);
@@ -437,7 +504,6 @@ void main() {
       fillStats(data);
       introPool = data.sample || [];
       fillWall(introPool);
-      fillMosaics(introPool);
       fillStrips(introPool);
       startSheet();
       watchHero();

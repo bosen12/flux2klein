@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#08090d">
+<meta name="theme-color" content="#07060a">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>詞庫暗房 · 介紹</title>
+<title>詞庫暗房</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23eaad57' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='14.31' y1='8' x2='20.05' y2='17.94'/%3E%3Cline x1='9.69' y1='8' x2='21.17' y2='8'/%3E%3Cline x1='7.38' y1='12' x2='13.12' y2='2.06'/%3E%3Cline x1='9.69' y1='16' x2='3.95' y2='6.06'/%3E%3Cline x1='14.31' y1='16' x2='2.83' y2='16'/%3E%3Cline x1='16.62' y1='12' x2='10.88' y2='21.94'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/intro.css">
 </head>
 <body>
-<a class="skip" href="#manifest">跳到介紹</a>
+<a class="skip" href="#sheet">跳到印樣</a>
 
 <div id="age-gate">
   <div class="age-gate-card">
@@ -28,163 +28,102 @@
   <nav class="nav" id="nav">
     <a class="nav-brand" href="#hero" translate="no">詞庫暗房</a>
     <div class="nav-links">
-      <a href="#wall">牆</a>
-      <a href="#browse">瀏覽</a>
-      <a href="#tag">打標</a>
-      <a href="#gen">生圖</a>
-      <a href="#draw">抽卡</a>
+      <a href="#sheet">印樣</a>
+      <a href="#mark">打標</a>
+      <a href="#bath">生圖</a>
+      <a href="#hand">抽卡</a>
     </div>
-    <a class="nav-cta" href="/">進入暗房</a>
+    <a class="nav-go" href="/">進入暗房</a>
   </nav>
 
-  <header class="hero" id="hero" aria-label="詞庫暗房">
+  <header class="hero" id="hero">
     <canvas class="intro-gl" id="intro-gl" aria-hidden="true"></canvas>
     <div class="intro-fallback" id="intro-fallback" hidden aria-hidden="true"></div>
-    <div class="intro-copy">
-      <p class="intro-kicker" id="intro-kicker"></p>
-      <h1>詞庫暗房</h1>
-      <p class="intro-lede">本機詞庫的接觸印樣。瀏覽、打標、生圖。</p>
-      <div class="intro-stats" id="intro-stats"></div>
-      <a class="intro-enter-btn" href="/">進入暗房</a>
-      <a class="intro-more" href="#manifest">往下看介紹</a>
+    <div class="hero-scrim" aria-hidden="true"></div>
+    <div class="hero-type">
+      <p class="hero-edge" id="intro-kicker">CONTACT SHEET</p>
+      <h1>詞庫<br>暗房</h1>
+      <p class="hero-line">本機詞庫的接觸印樣。不上傳。</p>
+      <div class="hero-actions">
+        <a class="go" href="/">進入暗房</a>
+        <a class="pull" href="#sheet">抽這張印樣</a>
+      </div>
     </div>
   </header>
 
-  <main>
-    <section class="manifest" id="manifest">
-      <p class="kicker">這是什麼</p>
-      <h2>三萬張詞庫，印成接觸印樣。</h2>
-      <p class="lede">詞庫暗房跑在你自己的電腦上。它讀 <span translate="no">special_prompts</span> 裡每一個詞庫，透過 ComfyUI 沖出預覽圖，讓你在牆上找、標、抽、生。圖跟詞庫都不上傳。</p>
-      <dl class="pulldown">
-        <div>
-          <dt data-stat="total">—</dt>
-          <dd>詞庫</dd>
-        </div>
-        <div>
-          <dt data-stat="folders">—</dt>
-          <dd>資料夾</dd>
-        </div>
-        <div>
-          <dt data-stat="developed">—</dt>
-          <dd>已顯影</dd>
-        </div>
-      </dl>
-    </section>
+  <div class="table">
+    <aside class="rebate" aria-hidden="true"><span>KLEIN · DARKROOM · SPECIAL PROMPTS</span></aside>
 
-    <section class="wall-sec" id="wall">
-      <header class="sec-head">
-        <p class="kicker">你的詞庫</p>
-        <h2>這就是牆</h2>
-        <p>左邊資料夾、中間卡片。搜名稱或搜標籤。點開是大圖與正向／負向。下面這些格子是你現在這份詞庫裡抽來的接觸印樣，不是示意素材。</p>
+    <section class="sheet" id="sheet">
+      <header class="sheet-head">
+        <p class="frame-no">12</p>
+        <div>
+          <h2>一張印樣，四種看法</h2>
+          <p>左邊資料夾、中間卡片。下面是你現在這份詞庫抽來的格，不是示意素材。切模式只改這張紙上的記號，圖還是同一批。</p>
+        </div>
+        <dl class="grease">
+          <div><dt data-stat="total">—</dt><dd>詞庫</dd></div>
+          <div><dt data-stat="folders">—</dt><dd>資料夾</dd></div>
+          <div><dt data-stat="developed">—</dt><dd>已顯影</dd></div>
+        </dl>
       </header>
-      <div class="wall" id="wall-grid" aria-hidden="true"></div>
+
+      <div class="mode-rail" role="tablist" aria-label="印樣看法">
+        <button type="button" role="tab" aria-selected="true" data-mode="browse">瀏覽</button>
+        <button type="button" role="tab" aria-selected="false" data-mode="tag">打標</button>
+        <button type="button" role="tab" aria-selected="false" data-mode="gen">生圖</button>
+        <button type="button" role="tab" aria-selected="false" data-mode="draw">抽卡</button>
+      </div>
+      <p class="mode-cap" id="mode-cap">點格子看名稱。進工具以後，點開是大圖與正向／負向。</p>
+      <div class="sheet-wall" id="wall-grid" data-mode="browse"></div>
     </section>
 
-    <section class="chapter" id="browse">
-      <div class="chapter-copy">
-        <p class="kicker">模式 · 瀏覽</p>
-        <h2>兩萬多張也能滑</h2>
-        <p>覆蓋率條、稀有度晶片、分數徽章都釘在牆上。點縮圖會平滑放大成大圖，左右切無縫接回另一端。收藏是右上角那顆星，只記錄、不影響抽卡。</p>
-        <ul class="facts">
-          <li>搜名稱跟著左欄資料夾；搜標籤跨資料夾，逗號分隔要同時命中。</li>
-          <li>大圖記得自己從哪份清單開的：格線、圖庫、抽卡各走各的。</li>
-          <li>「全部」視圖是整份詞庫，不是幾百筆。介面按這個規模寫。</li>
-        </ul>
+    <section class="plate" id="mark">
+      <p class="frame-no">13</p>
+      <div class="plate-copy">
+        <h2>稀有度寫在紙邊，不改檔名</h2>
+        <p>普通、稀有、特別、傳奇。點了立刻亮。抽 15 張還沒標的，按 1 到 4 標、S 跳過、Z 復原、R 重抽。兩份詞庫的側檔分開。</p>
       </div>
-      <div class="chapter-stage">
-        <div class="mosaic" data-mosaic="0"></div>
-      </div>
+      <ol class="grades">
+        <li class="g g-n"><b>普通</b><span>看過了，別再抽到</span></li>
+        <li class="g g-r"><b>稀有</b><span>黃光</span></li>
+        <li class="g g-s"><b>特別</b><span>藍光</span></li>
+        <li class="g g-l"><b>傳奇</b><span>彩色光暈</span></li>
+      </ol>
     </section>
 
-    <section class="chapter alt" id="tag">
-      <div class="chapter-copy">
-        <p class="kicker">模式 · 打標</p>
-        <h2>稀有度寫在側檔，不改檔名</h2>
-        <p>普通、稀有、特別、傳奇。點了立刻亮光環。抽卡打標一次發 15 張還沒標的，按 1 到 4 就標、S 跳過、Z 復原、R 重抽。</p>
-        <ul class="facts">
-          <li>側檔依詞庫資料夾分檔。兩份 bat 互不干擾。</li>
-          <li>左欄進度條是各分類已打標比例，可把未標多的排前面。</li>
-          <li>舊檔名若還帶「傳奇版」前綴，顯示時會去掉，側檔為準。</li>
-        </ul>
+    <section class="plate" id="bath">
+      <p class="frame-no">14</p>
+      <div class="plate-copy">
+        <h2>詞庫加上 LoRA，丟進藥液</h2>
+        <p>多選詞庫，打開 LoRA 大面板挑觸發詞。底模只影響生圖，瀏覽裡重新生成縮圖仍走原本 workflow。單張會插隊到批次前面。圖庫是這次開啟的暫存，刷新即清空。</p>
       </div>
-      <div class="chapter-stage">
-        <ol class="rarity-board">
-          <li class="rarity r-n"><span>普通</span><small>看過、確認、別再抽到</small></li>
-          <li class="rarity r-r"><span>稀有</span><small>黃光</small></li>
-          <li class="rarity r-s"><span>特別</span><small>藍光</small></li>
-          <li class="rarity r-l"><span>傳奇</span><small>彩色光暈</small></li>
-        </ol>
-      </div>
+      <div class="bath-strip" data-offset="8"></div>
     </section>
 
-    <section class="chapter" id="gen">
-      <div class="chapter-copy">
-        <p class="kicker">模式 · 生圖</p>
-        <h2>詞庫加上 LoRA，送進 ComfyUI</h2>
-        <p>多選詞庫，打開 LoRA 大面板挑觸發詞與強度。底模只影響生圖，瀏覽裡「重新生成」縮圖仍走原本的 workflow。單張生成會插隊到批次前面。</p>
-        <ul class="facts">
-          <li>LoRA 清單直接讀 ComfyUI 的 loras 資料夾，跟 KLEIN 面板同一批。</li>
-          <li>生成圖庫是這次開啟的暫存。刷新或關頁就清空。</li>
-          <li>牌面可以邊採樣邊看預覽——ComfyUI 要開預覽才有中途畫面。</li>
-        </ul>
+    <section class="plate" id="hand">
+      <p class="frame-no">15</p>
+      <div class="plate-copy">
+        <h2>抽卡是發牌，不是清單亂跳</h2>
+        <p>同一套鍵，三種模式做對應的事：瀏覽看圖、打標逐張標、生圖直接沖。</p>
       </div>
-      <div class="chapter-stage">
-        <div class="strip-film tall" data-offset="16"></div>
+      <div class="hand-keys">
+        <button type="button" class="key-card" data-key="r"><kbd>R</kbd><span>全庫</span></button>
+        <button type="button" class="key-card" data-key="e"><kbd>E</kbd><span>本分類</span></button>
+        <button type="button" class="key-card" data-key="c"><kbd>C</kbd><span>Concepts</span></button>
       </div>
+      <p class="hand-hint" id="hand-hint">在這頁按 R、E、C 也會亮。進工具才真的抽。</p>
     </section>
 
-    <section class="chapter alt" id="draw">
-      <div class="chapter-copy">
-        <p class="kicker">抽卡</p>
-        <h2>塔羅牌面，不是清單亂跳</h2>
-        <p><kbd>R</kbd> 從全庫抽。<kbd>E</kbd> 只抽目前資料夾。<kbd>C</kbd> 是 Concepts：每張卡自己配 Character 與情境 LoRA。鎖定其中一格，另一格繼續隨機。</p>
-        <ul class="facts">
-          <li>瀏覽抽卡是看圖；生圖抽卡是直接沖；打標抽卡是逐張標。</li>
-          <li>同一鍵在不同模式做對應的事，不用另記一套。</li>
-        </ul>
-      </div>
-      <div class="chapter-stage">
-        <div class="mosaic mosaic-6" data-mosaic="24"></div>
-      </div>
+    <section class="quiet" id="local">
+      <p class="frame-no">16</p>
+      <h2>本機。一個 port。</h2>
+      <p>跑 <span translate="no">darkroom/preview_ui.bat</span>，開 <span translate="no">http://localhost:7860/</span>。另一份詞庫用 <span translate="no">preview_ui_animebot.bat</span>，同一個 port，一次只能開一個。頂列會寫你在操作哪一夾。沒有登入，不要把這個埠對公網開放。</p>
     </section>
-
-    <section class="band" id="score">
-      <p class="kicker">分數</p>
-      <h2>三個模型，一顆徽章</h2>
-      <p>Blackroot × 0.40、Waifu Scorer × 0.40、Kawai × 0.20，正規化到 0–10，貼在縮圖左下角。6.5 以上淺藍光、7.5 以上淺紫光。需要另開 waifu-score 服務；沒開就沒分數，其他功能照常。</p>
-      <div class="score-row">
-        <div><b>Blackroot</b><span>0.40</span></div>
-        <div><b>Waifu Scorer</b><span>0.40</span></div>
-        <div><b>Kawai</b><span>0.20</span></div>
-      </div>
-    </section>
-
-    <section class="keys" id="keys">
-      <p class="kicker">鍵盤</p>
-      <h2>手不用離開鍵盤</h2>
-      <div class="key-grid">
-        <div><kbd>R</kbd><span>全庫抽卡</span></div>
-        <div><kbd>E</kbd><span>本分類抽卡</span></div>
-        <div><kbd>C</kbd><span>Concepts 抽卡</span></div>
-        <div><kbd>?</kbd><span>使用說明</span></div>
-        <div><kbd>1</kbd><span class="dim">–</span><kbd>4</kbd><span>打標四級</span></div>
-        <div><kbd>S</kbd><span>跳過</span></div>
-        <div><kbd>Z</kbd><span>復原</span></div>
-        <div><kbd>←</kbd><kbd>→</kbd><span>大圖切張</span></div>
-      </div>
-    </section>
-
-    <section class="local" id="local">
-      <p class="kicker">本機</p>
-      <h2>一個 port，兩份詞庫不要開錯</h2>
-      <p>跑 <span translate="no">darkroom/preview_ui.bat</span>，預設 <span translate="no">http://localhost:7860/</span>。生圖要先開 ComfyUI。另一份詞庫用 <span translate="no">preview_ui_animebot.bat</span>，同一個 port，一次只能開一個。頂列會寫目前操作的資料夾。</p>
-      <p>沒有登入、沒有上傳。不要把這個埠對公網開放。</p>
-    </section>
-  </main>
+  </div>
 
   <footer class="foot">
-    <p>接觸印樣看完了。</p>
-    <a class="intro-enter-btn" href="/">進入暗房</a>
+    <a class="go" href="/">進入暗房</a>
   </footer>
 </div>
 
