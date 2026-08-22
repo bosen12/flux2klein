@@ -13,62 +13,36 @@ const pollers = new Set();
 const REDUCE_MOTION = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const $ = id => document.getElementById(id);
 
-// 疊層開關：display:none 的 overlay 關掉時 CSS 過渡播不完（拿掉 .open 畫面立刻沒了），
-// 所以關閉一律走 WAAPI 先淡出、再拆 class。開啟時要取消進行中的關閉，不然 160ms 後
-// finish() 會把剛打開的疊層又關掉。分頁在背景時 finished 不結算（CLAUDE.md 老坑），
-// 另用 setTimeout 保險。inner 可省略（只淡外層）；onDone 在拿掉 .open 之後呼叫。
-//
-// 關閉動畫 fill:forwards 會黏在「內層面板」上。getAnimations() 預設不算子孫，
-// 若再開只 cancel 外層，就會變成霧面遮罩在、面板停在 opacity:0——LoRA 大面板
-// 關過一次再點就跳不出來，正是這個。所以 cancel 必須連同 subtree 裡、我們自己
-// 標了 id 的關閉動畫一起拆；不要無差別 cancel 全部（內層還有 modalPop／清單進場）。
-const OVERLAY_CLOSE_ANIM = 'dr-overlay-close';
-function overlayCloseAnims(el) {
-  if (!el || !el.getAnimations) return [];
-  return el.getAnimations({ subtree: true }).filter(a => a.id === OVERLAY_CLOSE_ANIM);
-}
-function cancelOverlayClose(el) {
+// 疊層開關：LoRA／設定／快捷鍵／抽卡／進場走 CSS opacity（跟確認框同一種，人留在
+// DOM）。關閉加 .is-closing 而不是立刻拆 .open——鍵盤層級與 lora-tarot-open 的
+// z-index 才對得上，過渡也由 CSS 往回走，再開不會黏在透明。#modal 關大圖的 morph
+// 仍要同步拆 .open（display:none 才不會被 View Transitions 截到），走 closeModal()。
+// inner 參數保留是為了舊呼叫點，CSS 已經吃掉內層縮放，這裡不再對它做 WAAPI。
+function overlayOpen(el) {
   if (!el) return;
   el._closeGen = (el._closeGen || 0) + 1;
   delete el.dataset.closing;
-  overlayCloseAnims(el).forEach(a => a.cancel());
-}
-function overlayOpen(el) {
-  cancelOverlayClose(el);
+  el.classList.remove('is-closing');
+  el.inert = false;
   el.classList.add('open');
 }
-function fadeCloseOverlay(el, inner, onDone) {
+function fadeCloseOverlay(el, _inner, onDone) {
   if (!el || !el.classList.contains('open') || el.dataset.closing === '1') return;
   const gen = (el._closeGen = (el._closeGen || 0) + 1);
   el.dataset.closing = '1';
+  el.classList.add('is-closing');
+  el.inert = true;
+  const ms = REDUCE_MOTION ? 0 : 180;
   let done = false;
   const finish = () => {
     if (done) return;
     done = true;
     if (el._closeGen !== gen) return;
     delete el.dataset.closing;
-    el.classList.remove('open');
-    // 先 display:none 再拆 fill:forwards，順序反了會閃一幀全亮遮罩。
-    overlayCloseAnims(el).forEach(a => a.cancel());
+    el.classList.remove('open', 'is-closing');
     if (onDone) onDone();
   };
-  if (REDUCE_MOTION || document.visibilityState !== 'visible' || !el.animate) {
-    finish();
-    return;
-  }
-  const ease = 'cubic-bezier(.4,0,1,1)';   // --ease-in，退場快走
-  const opt = { duration: 160, easing: ease, fill: 'forwards' };  // forwards：結束停在透明，避免拆 class 前閃一幀
-  const anims = [el.animate([{ opacity: 1 }, { opacity: 0 }], opt)];
-  anims[0].id = OVERLAY_CLOSE_ANIM;
-  if (inner) {
-    const innerAnim = inner.animate(
-      [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.97)' }],
-      opt);
-    innerAnim.id = OVERLAY_CLOSE_ANIM;
-    anims.push(innerAnim);
-  }
-  Promise.all(anims.map(a => a.finished)).then(finish).catch(finish);
-  setTimeout(finish, 260);
+  setTimeout(finish, ms);
 }
 
 // ── ALL 的索引層 ───────────────────────────────────────────────
@@ -1152,8 +1126,10 @@ function modalNav(dir) {
 
 function closeModal() {
   const modal = $('modal');
-  cancelOverlayClose(modal);
-  modal.classList.remove('open');
+  modal._closeGen = (modal._closeGen || 0) + 1;
+  delete modal.dataset.closing;
+  modal.classList.remove('open', 'is-closing');
+  modal.inert = true;
   const inner = $('modal-inner');
   if (inner) { delete inner.dataset.rel; delete inner.dataset.gid; }
 }
@@ -1593,7 +1569,7 @@ window.addEventListener('keydown', e => {
   // preventDefault——使用者回報「很多 Windows 預設快捷鍵都不能用」就是這個。任何組合鍵
   // 一律直接放行給瀏覽器/系統處理，不進這支 handler 的判斷邏輯。
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  // 確認對話框（z-index 90，取代 window.confirm）排最最前面：它可能疊在任何畫面之上
+  // 確認對話框（z-index 250，取代 window.confirm）排最最前面：它可能疊在任何畫面之上
   // （批次生成鈕在頂列，不屬於任何其他 modal 的子層級），Esc 一律當取消，不往下傳。
   if ($('confirm-modal').classList.contains('open')) {
     if (e.key === 'Escape') { e.preventDefault(); _confirmModalResolve(false); }
@@ -2416,10 +2392,12 @@ let _confirmModalResolve = null;
 function confirmDialog(message) {
   const modal = $('confirm-modal');
   $('confirm-modal-msg').textContent = message;
+  modal.inert = false;
   modal.classList.add('open');
   return new Promise(resolve => {
     _confirmModalResolve = (ok) => {
       modal.classList.remove('open');
+      modal.inert = true;
       _confirmModalResolve = null;
       resolve(ok);
     };

@@ -93,7 +93,7 @@
      分兩頁：快捷鍵（照使用情境分組，不是照字母排，使用者記的是「我在做什麼時按什麼」
      而不是「這個鍵是什麼」）／功能總覽（滑鼠驅動、容易被忽略的功能，例如生成步數輸入
      框——這個分頁存在的起因）。兩頁共用同一個疊層外觀、同一組開關方式，不新增按鈕。 -->
-<div class="shortcuts-overlay" id="shortcuts-overlay">
+<div class="shortcuts-overlay" id="shortcuts-overlay" inert>
   <div class="shortcuts-panel" id="shortcuts-panel">
     <button class="shortcuts-close" id="shortcuts-close" aria-label="關閉 (Esc)" title="關閉 (Esc)"><svg class="btn-svg" style="margin-right:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     <div class="shortcuts-head">
@@ -200,7 +200,7 @@
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <!-- 取代 window.confirm 的通用確認對話框，樣式跟其他彈窗一致，見 confirmDialog()。 -->
-<div id="confirm-modal" class="confirm-modal" role="alertdialog" aria-modal="true">
+<div id="confirm-modal" class="confirm-modal" role="alertdialog" aria-modal="true" inert>
   <div class="confirm-modal-inner">
     <div class="confirm-modal-msg" id="confirm-modal-msg"></div>
     <div class="confirm-modal-actions">
@@ -210,7 +210,7 @@
   </div>
 </div>
 
-<div id="modal" class="modal">
+<div id="modal" class="modal" inert>
   <button class="m-nav prev" id="m-prev" aria-label="上一個"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg></button>
   <div class="modal-inner" id="modal-inner"></div>
   <button class="m-nav next" id="m-next" aria-label="下一個"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg></button>
@@ -221,7 +221,7 @@
 <!-- LoRA 抽取設定：⚙ 鈕開，跟 .lora-modal 同一種置中彈窗慣例（背景遮罩＋Esc＋✕都能關）。
      內部兩分頁「一般」（L/K 抽取範圍設定，含 LoRA1/LoRA2 各自的分類/子資料夾晶片）／
      「Concepts」（Concepts 抽卡強度/張數/模板鎖定，跟原本完全一樣，只是換了外殼）。 -->
-<div class="cs-modal" id="cs-modal">
+<div class="cs-modal" id="cs-modal" inert>
   <div class="cs-modal-inner" id="cs-modal-inner">
     <button class="cs-modal-close" id="cs-modal-close" aria-label="關閉" title="關閉 (Esc)"><svg class="btn-svg" style="margin-right:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     <div class="seg cs-tab-seg" id="cs-tab-seg" role="group" aria-label="設定分頁">
@@ -292,7 +292,7 @@
 <!-- Concepts 抽卡邏輯教學：從 cs-modal「一般」分頁的「？ 詳細教學」按鈕開，疊在 cs-modal
      之上（z-index 220 > cs-modal 的 200），內容純展示，沿用 .shortcuts-panel 那套
      「分組標題＋說明列」讀物排版，不用另外設計一套。 -->
-<div class="lora-help-modal" id="lora-help-modal">
+<div class="lora-help-modal" id="lora-help-modal" inert>
   <div class="lora-help-inner" id="lora-help-inner">
     <button class="cs-modal-close" id="lora-help-close" aria-label="關閉" title="關閉 (Esc)"><svg class="btn-svg" style="margin-right:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     <div class="shortcuts-head">
@@ -359,7 +359,7 @@
     </div>
   </div>
 </div>
-<div id="lora-modal" class="lora-modal">
+<div id="lora-modal" class="lora-modal" inert>
   <div class="lora-modal-inner">
     <button class="lora-modal-close" id="lora-modal-close" aria-label="關閉 (Esc)" title="關閉 (Esc)"><svg class="btn-svg" style="margin-right:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     <div class="lm-left">
@@ -387,7 +387,7 @@
 </div>
 
 <!-- 抽卡：從全部隨機抽 5 張，塔羅式發牌 + 翻牌呈現 -->
-<div id="tarot" class="tarot-overlay">
+<div id="tarot" class="tarot-overlay" inert>
   <div class="tarot-stage" id="tarot-stage">
     <div class="tarot-head">
       <span class="tarot-title" id="tarot-title">抽選八張</span>
@@ -408,7 +408,7 @@
 <!-- 進暗房的進場畫面「印樣瀑布」：整片詞庫的接觸印樣鋪滿畫面、滿版不減光，而且
      一直往下流，每一欄各有自己的速度。每次載入頁面都會播，見 darkroom.js 的
      maybeStartIntro()。 -->
-<div class="intro-modal" id="intro-modal">
+<div class="intro-modal" id="intro-modal" inert>
   <!-- 整個場景在這張 canvas 的片段著色器裡算完（印樣 atlas、逐欄捲動、暗角），
        見 darkroom.js 的「印樣瀑布」一節。#intro-fallback 是拿不到 WebGL 時的
        退化版本（CSS transform 的欄式瀑布）。 -->

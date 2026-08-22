@@ -42,6 +42,21 @@
 @keyframes modalPop { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes railIn { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
+
+/* 疊層關閉中仍留 .open（鍵盤層級、body.lora-tarot-open 的 z-index 才對得上），
+   只把 opacity 收到 0。display:none 會掐掉關閉過渡，才會走到 WAAPI fill:forwards
+   黏住內層、霧面在面板沒了。再開拿掉 .is-closing，過渡往回走。#modal 進場仍用
+   fadeIn（它關閉後是 display:none，View Transitions morph 需要這個）。 */
+.lora-modal.open.is-closing,
+.cs-modal.open.is-closing,
+.lora-help-modal.open.is-closing,
+.shortcuts-overlay.open.is-closing,
+.tarot-overlay.open.is-closing,
+.intro-modal.open.is-closing,
+.modal.open.is-closing {
+  opacity: 0; pointer-events: none; animation: none;
+  transition: opacity var(--d-exit) var(--ease-in);
+}
 * { box-sizing: border-box; }
 
 /* ── 連續曲率圓角（Apple 那種「squircle」）─────────────────────────
@@ -456,8 +471,8 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
 
 /* ── 大圖 modal ───────────────────────────────────────────────── */
 .modal { position: fixed; inset: 0; background: rgba(8,8,11,.8); backdrop-filter: blur(6px);
-         display: none; align-items: center; justify-content: center; z-index: 130; padding: 24px; }   /* 高於抽卡覆蓋層(120)：抽卡點卡片時大圖疊在牌上、關掉回到那批牌 */
-.modal.open { display: flex; animation: fadeIn var(--d-pop) var(--ease-out); }
+         display: none; align-items: center; justify-content: center; z-index: 130; padding: 24px; }   /* 高於抽卡覆蓋層(120)：抽卡點卡片時大圖疊在牌上、關掉回到那批牌。關閉後必須 display:none，View Transitions morph 才不會把大圖截進新快照。 */
+.modal.open { display: flex; opacity: 1; animation: fadeIn var(--d-pop) var(--ease-out); }
 /* 視窗尺寸從「詞庫預覽都是 1:1 正方形」這個事實直接算出來，不是先訂一個看
    起來順眼的高度再讓圖去擠——.m-stage 沒設寬度，是靠 aspect-ratio 從欄寬
    反推高度（見上面 ── 大圖的橫向卡片列 那段說明），所以只要左欄寬度固定，
@@ -590,13 +605,16 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
 
 /* ==================== 抽卡（塔羅式發牌翻牌） ==================== */
 .tarot-overlay {
-  position: fixed; inset: 0; z-index: 120; display: none;
+  position: fixed; inset: 0; z-index: 120; display: flex;
   align-items: center; justify-content: center; padding: 24px;
   background: radial-gradient(circle at 50% 30%, rgba(35,30,18,.6), rgba(8,8,11,.86));
   backdrop-filter: blur(7px);
   overscroll-behavior: contain; overflow: auto;   /* 手機捲動不穿透到背後清單 */
+  opacity: 0; pointer-events: none; visibility: hidden;
+  transition: opacity var(--d-exit) var(--ease-in);
 }
-.tarot-overlay.open { display: flex; animation: fadeIn var(--d-pop) var(--ease-out); }
+.tarot-overlay.open { opacity: 1; pointer-events: auto; visibility: visible;
+  transition: opacity var(--d-pop) var(--ease-out); }
 .tarot-stage { width: 100%; max-width: 1160px; display: flex; flex-direction: column; align-items: center; gap: 20px; }
 .tarot-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; flex-wrap: wrap; }
 .tarot-title { font-size: 17px; font-weight: 650; letter-spacing: 2px; color: var(--amber);
@@ -887,15 +905,20 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 /* LoRA 抽取設定：⚙ 鈕開，比照 .lora-modal 同一套置中彈窗慣例（見該規則旁的說明），
    這裡不重用 .lora-modal 這個 class，是因為兩個彈窗的開關時機、內容都各自獨立，
    共用 class 容易在其中一個開著時被另一個的開關邏輯誤觸。 */
-.cs-modal { position: fixed; inset: 0; z-index: 200; display: none;
+.cs-modal { position: fixed; inset: 0; z-index: 200; display: flex;
   align-items: center; justify-content: center; padding: 24px;
-  background: rgba(8,8,11,.8); backdrop-filter: blur(6px); }
-.cs-modal.open { display: flex; animation: fadeIn var(--d-pop) var(--ease-out); }
+  background: rgba(8,8,11,.8); backdrop-filter: blur(6px);
+  opacity: 0; pointer-events: none; visibility: hidden;
+  transition: opacity var(--d-exit) var(--ease-in); }
+.cs-modal.open { opacity: 1; pointer-events: auto; visibility: visible;
+  transition: opacity var(--d-pop) var(--ease-out); }
 .cs-modal-inner { position: relative; width: min(720px, 92vw); max-height: 86vh; overflow-y: auto; overscroll-behavior: contain;
   background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius);
   box-shadow: var(--shadow); padding: 24px; display: flex; flex-direction: column; gap: 14px;
-  animation: modalPop var(--d-pop) var(--ease-entrance); }
-@media (prefers-reduced-motion: reduce) { .cs-modal.open, .cs-modal-inner { animation: none; } }
+  transform: translateY(8px) scale(.985);
+  transition: transform var(--d-exit) var(--ease-in); }
+.cs-modal.open:not(.is-closing) .cs-modal-inner { transform: none;
+  transition: transform var(--d-pop) var(--ease-entrance); }
 .cs-modal-close { position: absolute; top: 10px; right: 10px; z-index: 2;
   width: 32px; height: 32px; padding: 0; border-radius: 8px; border: 0; background: var(--sunk); color: var(--dim);
   display: grid; place-items: center; cursor: pointer; font-size: 15px; line-height: 1;
@@ -907,14 +930,20 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
    要疊在它上面，不是取代它（cs-modal 背後保持開著，關教學疊層時直接回去看設定）。
    內容排版整段沿用 .shortcuts-panel 那套讀物樣式（.shortcuts-head/.shortcut-group/
    .shortcut-row/.kbd），這個疊層只負責外殼跟裡面幾個示意用的小元件。 */
-.lora-help-modal { position: fixed; inset: 0; z-index: 220; display: none;
+.lora-help-modal { position: fixed; inset: 0; z-index: 220; display: flex;
   align-items: center; justify-content: center; padding: 24px;
-  background: rgba(8,8,11,.8); backdrop-filter: blur(6px); }
-.lora-help-modal.open { display: flex; animation: fadeIn var(--d-pop) var(--ease-out); }
+  background: rgba(8,8,11,.8); backdrop-filter: blur(6px);
+  opacity: 0; pointer-events: none; visibility: hidden;
+  transition: opacity var(--d-exit) var(--ease-in); }
+.lora-help-modal.open { opacity: 1; pointer-events: auto; visibility: visible;
+  transition: opacity var(--d-pop) var(--ease-out); }
 .lora-help-inner { position: relative; width: min(560px, 92vw); max-height: 86vh; overflow-y: auto; overscroll-behavior: contain;
   background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius);
-  box-shadow: var(--shadow); padding: 24px; animation: modalPop var(--d-pop) var(--ease-entrance); }
-@media (prefers-reduced-motion: reduce) { .lora-help-modal.open, .lora-help-inner { animation: none; } }
+  box-shadow: var(--shadow); padding: 24px;
+  transform: translateY(8px) scale(.985);
+  transition: transform var(--d-exit) var(--ease-in); }
+.lora-help-modal.open:not(.is-closing) .lora-help-inner { transform: none;
+  transition: transform var(--d-pop) var(--ease-entrance); }
 /* 示意用的小卡片：跟 .cs-skip-toggle 同一套視覺樣式（不是另外畫一套圖示），這樣看到的
    長相就是使用者真正會在介面上遇到的樣子，不用另外對照。用專屬的 .help-demo-skip class
    （不是直接套用 .cs-skip-toggle）——裝飾用的 <span> 跟真正互動的按鈕撞名會讓
@@ -1051,17 +1080,22 @@ body.gallery-open #tagbar { transform: translateY(130%); }   /* 圖庫視圖不�
 /* ---- LoRA 大面板：置中彈窗（跟 #modal 同一種視覺語言），左欄搜尋＋翻頁清單、
    右欄目前選的 LoRA＋每段 trainedWords 完整攤開（不截斷）＋強度。由 topbar「🎨 LoRA」
    或 genbar「🎨 選 LoRA」開啟，同一個面板、選擇即時生效，關閉只是收起檢視。 ---- */
-.lora-modal { position: fixed; inset: 0; z-index: 140; display: none;
+.lora-modal { position: fixed; inset: 0; z-index: 140; display: flex;
   align-items: center; justify-content: center; padding: 24px;
-  background: rgba(8,8,11,.8); backdrop-filter: blur(6px); }
-.lora-modal.open { display: flex; animation: fadeIn var(--d-pop) var(--ease-out); }
+  background: rgba(8,8,11,.8); backdrop-filter: blur(6px);
+  opacity: 0; pointer-events: none; visibility: hidden;
+  transition: opacity var(--d-exit) var(--ease-in); }
+.lora-modal.open { opacity: 1; pointer-events: auto; visibility: visible;
+  transition: opacity var(--d-pop) var(--ease-out); }
 /* 雙 LoRA 上線後右欄多了一列分頁卡，面板整體加大一點（原本 920×680）騰出空間，
    不然分頁卡+展開內容會擠。 */
 .lora-modal-inner { position: relative; width: min(1080px, 95vw); height: min(740px, 88vh);
   background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius);
   box-shadow: var(--shadow); display: grid; grid-template-columns: 320px 1fr; overflow: hidden;
-  animation: modalPop var(--d-pop) var(--ease-entrance); }
-@media (prefers-reduced-motion: reduce) { .lora-modal.open, .lora-modal-inner { animation: none; } }
+  transform: translateY(8px) scale(.985);
+  transition: transform var(--d-exit) var(--ease-in); }
+.lora-modal.open:not(.is-closing) .lora-modal-inner { transform: none;
+  transition: transform var(--d-pop) var(--ease-entrance); }
 /* display:grid + place-items:center 是這專案讓單一符號在按鈕正中間的既定做法（跟
    .fav-btn 同一招）——純文字按鈕若只靠預設 line-height/padding 置中，"✕" 這類符號
    的字型量度天生不對稱，看起來會偏一邊。padding:0 避免預設 button padding 把它推歪。 */
@@ -1311,7 +1345,9 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
   box-shadow: var(--shadow), inset 3px 0 0 var(--err); }
 
 /* ── 通用確認對話框（取代 window.confirm，樣式跟其他彈窗一致）─────────────── */
-.confirm-modal { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center;
+/* z-index 250：高於進場 230／快捷鍵 210／LoRA 140。鍵盤本來就把它當最上層，
+   層級必須對得上，否則 LoRA 面板開著時確認框會被擋住、Esc 卻把看不見的對話取消。 */
+.confirm-modal { position: fixed; inset: 0; z-index: 250; display: flex; align-items: center;
   justify-content: center; background: rgba(10,10,14,.6); opacity: 0; pointer-events: none;
   transition: opacity var(--d-ui) var(--ease-out); }
 .confirm-modal.open { opacity: 1; pointer-events: auto; }
@@ -1517,15 +1553,20 @@ button svg.btn-svg { width: 15px; height: 15px; vertical-align: -3px; margin-rig
 .gallery-head h2 svg { width: 17px; height: 17px; vertical-align: -2px; margin-right: 6px; }
 .shortcuts-emblem svg { width: 24px; height: 24px; }
 .concepts-lock svg { width: 10px; height: 10px; vertical-align: -1px; margin-right: 2px; }
-.shortcuts-overlay { position: fixed; inset: 0; z-index: 210; display: none;
+.shortcuts-overlay { position: fixed; inset: 0; z-index: 210; display: flex;
   align-items: center; justify-content: center; padding: 24px;
-  background: rgba(8,8,11,.82); backdrop-filter: blur(7px); }
-.shortcuts-overlay.open { display: flex; animation: fadeIn var(--d-pop) var(--ease-out); }
+  background: rgba(8,8,11,.82); backdrop-filter: blur(7px);
+  opacity: 0; pointer-events: none; visibility: hidden;
+  transition: opacity var(--d-exit) var(--ease-in); }
+.shortcuts-overlay.open { opacity: 1; pointer-events: auto; visibility: visible;
+  transition: opacity var(--d-pop) var(--ease-out); }
 .shortcuts-panel { position: relative; width: min(640px, 92vw); max-height: 86vh; overflow-y: auto; overscroll-behavior: contain;
   background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius);
   box-shadow: var(--shadow); padding: 30px 32px 26px;
-  animation: modalPop var(--d-pop) var(--ease-entrance); }
-@media (prefers-reduced-motion: reduce) { .shortcuts-overlay.open, .shortcuts-panel { animation: none; } }
+  transform: translateY(8px) scale(.985);
+  transition: transform var(--d-exit) var(--ease-in); }
+.shortcuts-overlay.open:not(.is-closing) .shortcuts-panel { transform: none;
+  transition: transform var(--d-pop) var(--ease-entrance); }
 .shortcuts-close { position: absolute; top: 14px; right: 14px; width: 32px; height: 32px; padding: 0;
   border-radius: 8px; border: 0; background: var(--sunk); color: var(--dim);
   display: grid; place-items: center; cursor: pointer; font-size: 15px; line-height: 1;
@@ -1585,11 +1626,13 @@ button svg.btn-svg { width: 15px; height: 15px; vertical-align: -3px; margin-rig
    z-index 230，比 #boot（300）低——boot 淡出的 600ms 期間這層已經在底下跑，
    boot 一收起就無縫接上（沿用原本的分層，沒有改）。
    --------------------------------------------------------------------------- */
-.intro-modal { position: fixed; inset: 0; z-index: 230; display: none;
+.intro-modal { position: fixed; inset: 0; z-index: 230; display: block;
   background: #08090d;   /* 縮圖還沒到齊時的底色，跟 atlas 的底色同一個值 */
-  overflow: hidden; }
-.intro-modal.open { display: block; animation: fadeIn var(--d-pop) var(--ease-out); }
-@media (prefers-reduced-motion: reduce) { .intro-modal.open { animation: none; } }
+  overflow: hidden;
+  opacity: 0; pointer-events: none; visibility: hidden;
+  transition: opacity var(--d-exit) var(--ease-in); }
+.intro-modal.open { opacity: 1; pointer-events: auto; visibility: visible;
+  transition: opacity var(--d-pop) var(--ease-out); }
 /* 滑鼠掃過題字時原生文字選取會整片反白——這層不給選取。 */
 .intro-modal { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 
