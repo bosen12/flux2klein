@@ -17,11 +17,21 @@ const $ = id => document.getElementById(id);
 // 所以關閉一律走 WAAPI 先淡出、再拆 class。開啟時要取消進行中的關閉，不然 160ms 後
 // finish() 會把剛打開的疊層又關掉。分頁在背景時 finished 不結算（CLAUDE.md 老坑），
 // 另用 setTimeout 保險。inner 可省略（只淡外層）；onDone 在拿掉 .open 之後呼叫。
+//
+// 關閉動畫 fill:forwards 會黏在「內層面板」上。getAnimations() 預設不算子孫，
+// 若再開只 cancel 外層，就會變成霧面遮罩在、面板停在 opacity:0——LoRA 大面板
+// 關過一次再點就跳不出來，正是這個。所以 cancel 必須連同 subtree 裡、我們自己
+// 標了 id 的關閉動畫一起拆；不要無差別 cancel 全部（內層還有 modalPop／清單進場）。
+const OVERLAY_CLOSE_ANIM = 'dr-overlay-close';
+function overlayCloseAnims(el) {
+  if (!el || !el.getAnimations) return [];
+  return el.getAnimations({ subtree: true }).filter(a => a.id === OVERLAY_CLOSE_ANIM);
+}
 function cancelOverlayClose(el) {
   if (!el) return;
   el._closeGen = (el._closeGen || 0) + 1;
   delete el.dataset.closing;
-  if (el.getAnimations) el.getAnimations().forEach(a => a.cancel());
+  overlayCloseAnims(el).forEach(a => a.cancel());
 }
 function overlayOpen(el) {
   cancelOverlayClose(el);
@@ -38,6 +48,8 @@ function fadeCloseOverlay(el, inner, onDone) {
     if (el._closeGen !== gen) return;
     delete el.dataset.closing;
     el.classList.remove('open');
+    // 先 display:none 再拆 fill:forwards，順序反了會閃一幀全亮遮罩。
+    overlayCloseAnims(el).forEach(a => a.cancel());
     if (onDone) onDone();
   };
   if (REDUCE_MOTION || document.visibilityState !== 'visible' || !el.animate) {
@@ -47,9 +59,14 @@ function fadeCloseOverlay(el, inner, onDone) {
   const ease = 'cubic-bezier(.4,0,1,1)';   // --ease-in，退場快走
   const opt = { duration: 160, easing: ease, fill: 'forwards' };  // forwards：結束停在透明，避免拆 class 前閃一幀
   const anims = [el.animate([{ opacity: 1 }, { opacity: 0 }], opt)];
-  if (inner) anims.push(inner.animate(
-    [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.97)' }],
-    opt));
+  anims[0].id = OVERLAY_CLOSE_ANIM;
+  if (inner) {
+    const innerAnim = inner.animate(
+      [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.97)' }],
+      opt);
+    innerAnim.id = OVERLAY_CLOSE_ANIM;
+    anims.push(innerAnim);
+  }
   Promise.all(anims.map(a => a.finished)).then(finish).catch(finish);
   setTimeout(finish, 260);
 }
