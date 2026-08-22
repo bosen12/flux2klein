@@ -190,6 +190,7 @@ function buildRail() {
     TAG_QUERY = ''; TAG_MATCH_SET = null; tagSearchReq++;
     $('tag-search').value = ''; $('tag-search-clear').style.display = 'none';
     buildRail(); render(); $('main').scrollTop = 0;
+    closeMobileRail();
   });
   frag.appendChild(allBtn);
 
@@ -224,6 +225,7 @@ function buildRail() {
       TAG_QUERY = ''; TAG_MATCH_SET = null; tagSearchReq++;
       $('tag-search').value = ''; $('tag-search-clear').style.display = 'none';
       buildRail(); render(); $('main').scrollTop = 0;
+      closeMobileRail();
     });
     frag.appendChild(b);
   });
@@ -1439,7 +1441,13 @@ async function pollTagBackfill() {
 }
 $('tag-backfill-btn').onclick = startTagBackfill;
 $('rescan').onclick = () => loadAll(true);
-$('menu-btn').onclick = () => $('rail').classList.toggle('open');
+function setMobileRail(on) {
+  $('rail').classList.toggle('open', on);
+  document.body.classList.toggle('rail-open', on);
+}
+function closeMobileRail() { setMobileRail(false); }
+$('menu-btn').onclick = () => setMobileRail(!$('rail').classList.contains('open'));
+$('rail-dim').addEventListener('click', closeMobileRail);
 // 卡片聚光：游標在縮圖上移動時更新 --mx/--my（委派在 grid 上，只有 hover 的縮圖會算）
 //
 // 兩個聚光委派共用 spotlight()。原本每一次 pointermove 都「讀 getBoundingClientRect()

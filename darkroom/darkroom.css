@@ -87,9 +87,10 @@
    round`，改動時一眼看得到。 */
 *, *::before, *::after { corner-shape: squircle; }
 
-html, body { height: 100%; }
+html, body { height: 100%; height: 100dvh; }
 body { margin: 0; font-family: var(--sans); background: var(--bg); color: var(--ink);
-       display: flex; flex-direction: column; overflow: hidden; }
+       display: flex; flex-direction: column; overflow: hidden;
+       -webkit-text-size-adjust: 100%; }
 ::selection { background: rgba(230,163,74,.28); }
 
 /* focus 一律可見 */
@@ -588,18 +589,75 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+.rail-dim { display: none; }
 @media (max-width: 860px) {
-  .rail { position: fixed; z-index: 30; height: 100%; left: 0; top: 0; box-shadow: var(--shadow); transform: translateX(-100%); transition: transform .2s; }
+  /* iPhone 12 Safari（390×844）：頂列改成「標題列＋搜尋列＋工具列」三層，不要
+     一條桌面 flex 橫溢出。input 必須 ≥16px，否則 Safari 對焦會把整頁放大。
+     安全區：劉海／Home 條；100vh 在 Safari 會算進工具列後面，改用 100dvh。 */
+  .topbar {
+    flex-wrap: wrap; align-items: center; gap: 8px 10px;
+    padding: max(8px, env(safe-area-inset-top)) 12px 10px;
+    position: relative; z-index: 45;
+  }
+  .menu-btn { display: inline-flex !important; width: 44px; height: 44px; padding: 0;
+    align-items: center; justify-content: center; flex: none; }
+  .brand { order: 1; flex: 1; min-width: 0; gap: 7px; }
+  .brand h1 { font-size: 16px; }
+  .brand .sub, .dataset { display: none; }
+  .mode-seg { order: 2; }
+  .mode-seg button { padding: 8px 9px; font-size: 12px; }
+  .shortcuts-btn, #shortcuts-btn { order: 3; }
+  #conn { order: 4; min-width: 0; }
+  #conn-text { display: none; }
+  .search-wrap, .tag-search-wrap { order: 10; flex: 1 1 calc(50% - 6px); max-width: none; min-width: 0; }
+  .spacer { display: none; }
+  .steps-field, #review-btn, .gallery-btn, .concepts-group, .lora-panel-btn,
+  #draw-cards, #rescan, #score-backfill-btn, #tag-backfill-btn { order: 20; }
+  /* 工具列圖示化：文字藏起來，留下 SVG。圖庫角標跟「篩選」仍顯示。 */
+  #draw-cards, #rescan, #score-backfill-btn, #tag-backfill-btn, #concepts-btn, .gallery-btn {
+    font-size: 0; padding: 0; width: 40px; height: 40px;
+    display: inline-flex; align-items: center; justify-content: center; }
+  #draw-cards .btn-svg, #rescan .btn-svg, #score-backfill-btn .btn-svg,
+  #tag-backfill-btn .btn-svg, #concepts-btn .btn-svg, .gallery-btn .btn-svg { margin-right: 0; width: 18px; height: 18px; }
+  .gallery-btn { width: auto; padding: 0 8px; gap: 4px; }
+  .gallery-btn .gallery-n { font-size: 11px; }
+  #review-btn { min-height: 40px; }
+  input[type=text], .steps-field input, .rail-search input { font-size: 16px; }
+
+  .rail { position: fixed; z-index: 50; height: 100dvh; width: min(86vw, 320px); left: 0; top: 0;
+    box-shadow: var(--shadow); transform: translateX(-110%);
+    transition: transform var(--d-ui) var(--ease-out);
+    padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
   .rail.open { transform: none; }
-  /* 手機單欄上下排列，圖片跟資訊本來就會一起捲，維持整個視窗自然捲動即可，
-     不需要桌面版「正方形固定寬度＋右欄獨立捲」那套（見上面 .modal-inner 的
-     說明）——欄寬也要跟著改回 100%，不然桌面版算出來的 --sq／380px 在單欄
-     排列下會把手機畫面撐出邊界。 */
-  .modal-inner { flex-direction: column; width: 100%; max-width: calc(100vw - 48px);
-                  height: auto; max-height: 92vh; overflow: auto; }
+  .rail-dim { display: block; position: fixed; inset: 0; z-index: 48;
+    background: rgba(8,8,11,.5); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+    opacity: 0; pointer-events: none; visibility: hidden;
+    transition: opacity var(--d-ui) var(--ease-out), visibility var(--d-ui); }
+  body.rail-open .rail-dim { opacity: 1; pointer-events: auto; visibility: visible; }
+
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
+    padding: 8px 12px calc(28px + env(safe-area-inset-bottom)); }
+  :is(body[data-mode="tag"], body[data-mode="gen"]) #grid {
+    padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
+  .main-head { padding: 12px 12px 10px; }
+  .main-title h2 { font-size: 18px; }
+  .coverbar, .rarity-bar { margin-left: 12px; margin-right: 12px; }
+
+  .tagbar { padding: 10px 12px max(10px, env(safe-area-inset-bottom)); gap: 10px; }
+
+  /* 手機單欄上下排列，圖片跟資訊本來就會一起捲。欄寬改回 100%，不然桌面版
+     --sq／380px 會把畫面撐出邊界。高度用 dvh，避開 Safari 把 100vh 算進工具列後面。 */
+  .modal { padding: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom)); }
+  .modal-inner { flex-direction: column; width: 100%; max-width: none;
+                  height: auto; max-height: none; overflow: auto; }
   .modal-inner > div:first-child,
   .modal-inner > div:last-child { width: 100%; overflow: visible; }
-  .menu-btn { display: inline-flex !important; }
+  .lora-modal, .cs-modal, .lora-help-modal, .shortcuts-overlay, .tarot-overlay, .confirm-modal {
+    padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)); }
+  .lora-modal-inner { height: auto; max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+  .toast { bottom: calc(24px + env(safe-area-inset-bottom)); }
+  #age-gate { padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom); }
+  .age-gate-actions button { height: 44px; }
 }
 .menu-btn { display: none; }
 
@@ -1301,7 +1359,7 @@ body.lora-tarot-open #modal, body.concepts-tarot-open #modal { z-index: 150; }
 }
 
 @media (max-width: 760px) {
-  .lora-modal-inner { grid-template-columns: 1fr; height: 90vh; }
+  .lora-modal-inner { grid-template-columns: 1fr; height: auto; }
   .lm-left { border-right: 0; border-bottom: 1px solid var(--line); max-height: 40vh; }
 }
 
@@ -1738,4 +1796,12 @@ button svg.btn-svg { width: 15px; height: 15px; vertical-align: -3px; margin-rig
    退回實心暗底，形狀與邊框維持不變。 */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .intro-copy { background: rgba(12,13,19,.94); }
+}
+
+/* 疊層規則寫在檔案後段，上面 860px 區塊的 padding 會被蓋掉，這裡再蓋回來。 */
+@media (max-width: 860px) {
+  .lora-modal, .cs-modal, .lora-help-modal, .shortcuts-overlay, .tarot-overlay, .confirm-modal {
+    padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)); }
+  .lora-modal-inner { height: auto;
+    max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
 }
