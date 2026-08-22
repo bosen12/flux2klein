@@ -1189,7 +1189,7 @@ def scan_libraries(force: bool = False) -> list[dict]:
     ]
 
 
-INTRO_SAMPLE = 80
+INTRO_SAMPLE = 120
 
 
 def intro_payload() -> dict:

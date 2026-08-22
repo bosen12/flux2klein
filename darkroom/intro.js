@@ -299,23 +299,60 @@ void main() {
     introRAF = requestAnimationFrame(introFrame);
   }
 
+  function fmt(n) { return Number(n).toLocaleString('en-US'); }
+
+  function thumb(it, w) {
+    const img = document.createElement('img');
+    img.alt = '';
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}&w=${w}`;
+    return img;
+  }
+
   function fillStats(data) {
     const kicker = $('intro-kicker');
     if (kicker) kicker.textContent = data.folder || '';
     const stats = $('intro-stats');
-    if (!stats) return;
-    const n = (v) => Number(v).toLocaleString('en-US');
     const total = data.total || 0, have = data.developed || 0, folders = data.folders || 0;
-    const cover = (total && have >= total) ? '100%' : n(have);
-    stats.innerHTML = '';
-    for (const [v, k] of [[n(total), '詞庫'], [n(folders), '資料夾'], [cover, '已顯影']]) {
-      const box = document.createElement('div');
-      box.className = 'stat';
-      const nv = document.createElement('span'); nv.className = 'stat-n'; nv.textContent = v;
-      const kv = document.createElement('span'); kv.className = 'stat-k'; kv.textContent = k;
-      box.append(nv, kv);
-      stats.appendChild(box);
+    const cover = (total && have >= total) ? '100%' : fmt(have);
+    if (stats) {
+      stats.innerHTML = '';
+      for (const [v, k] of [[fmt(total), '詞庫'], [fmt(folders), '資料夾'], [cover, '已顯影']]) {
+        const box = document.createElement('div');
+        box.className = 'stat';
+        const nv = document.createElement('span'); nv.className = 'stat-n'; nv.textContent = v;
+        const kv = document.createElement('span'); kv.className = 'stat-k'; kv.textContent = k;
+        box.append(nv, kv);
+        stats.appendChild(box);
+      }
     }
+    document.querySelectorAll('[data-stat]').forEach((el) => {
+      const key = el.dataset.stat;
+      if (key === 'total') el.textContent = fmt(total);
+      else if (key === 'folders') el.textContent = fmt(folders);
+      else if (key === 'developed') el.textContent = cover;
+    });
+  }
+
+  function fillWall(sample) {
+    const wall = $('wall-grid');
+    if (!wall || !sample.length) return;
+    const n = Math.min(36, sample.length);
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < n; i++) frag.appendChild(thumb(sample[i], 192));
+    wall.appendChild(frag);
+  }
+
+  function fillMosaics(sample) {
+    if (!sample.length) return;
+    document.querySelectorAll('[data-mosaic]').forEach((box) => {
+      const offset = Number(box.dataset.mosaic) || 0;
+      const count = box.classList.contains('mosaic-6') ? 6 : 9;
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < count; i++) frag.appendChild(thumb(sample[(offset + i) % sample.length], 256));
+      box.appendChild(frag);
+    });
   }
 
   function fillStrips(sample) {
@@ -325,19 +362,17 @@ void main() {
       const run = document.createElement('div');
       run.className = 'strip-run';
       run.style.setProperty('--dur', (46 + si * 7) + 's');
-      const makeImg = (it) => {
-        const img = document.createElement('img');
-        img.alt = '';
-        img.loading = 'lazy';
-        img.decoding = 'async';
-        img.width = 88; img.height = 88;
-        img.src = `/api/thumb?rel=${encodeURIComponent(it.rel)}&v=${it.image_mtime}&w=128`;
-        return img;
-      };
+      const w = film.classList.contains('tall') ? 192 : 128;
+      const px = film.classList.contains('tall') ? 160 : 88;
       const frames = [];
       for (let i = 0; i < 16; i++) frames.push(sample[(offset + i) % sample.length]);
-      frames.forEach((it) => run.appendChild(makeImg(it)));
-      frames.forEach((it) => run.appendChild(makeImg(it)));
+      const add = (it) => {
+        const img = thumb(it, w);
+        img.width = px; img.height = px;
+        run.appendChild(img);
+      };
+      frames.forEach(add);
+      frames.forEach(add);
       film.appendChild(run);
     });
   }
@@ -353,7 +388,7 @@ void main() {
     introRAF = requestAnimationFrame(introFrame);
   }
 
-  function revealStrips() {
+  function revealChapters() {
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) {
         if (e.isIntersecting) {
@@ -361,8 +396,19 @@ void main() {
           io.unobserve(e.target);
         }
       }
-    }, { threshold: 0.22 });
-    document.querySelectorAll('.strip').forEach((el) => io.observe(el));
+    }, { threshold: 0.18 });
+    document.querySelectorAll('.chapter').forEach((el) => io.observe(el));
+  }
+
+  function watchNav() {
+    const nav = $('nav');
+    const hero = $('hero');
+    if (!nav || !hero) return;
+    const io = new IntersectionObserver((entries) => {
+      const heroOn = entries.some((e) => e.isIntersecting && e.intersectionRatio > 0.35);
+      nav.classList.toggle('is-solid', !heroOn);
+    }, { threshold: [0, 0.35, 0.7] });
+    io.observe(hero);
   }
 
   function watchHero() {
@@ -382,13 +428,16 @@ void main() {
   async function startPage() {
     const page = $('page');
     page.hidden = false;
-    revealStrips();
+    watchNav();
+    revealChapters();
     try {
       const r = await fetch('/api/intro');
       if (!r.ok) throw new Error('intro ' + r.status);
       const data = await r.json();
       fillStats(data);
       introPool = data.sample || [];
+      fillWall(introPool);
+      fillMosaics(introPool);
       fillStrips(introPool);
       startSheet();
       watchHero();
