@@ -13,6 +13,47 @@ const pollers = new Set();
 const REDUCE_MOTION = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const $ = id => document.getElementById(id);
 
+// 疊層開關：display:none 的 overlay 關掉時 CSS 過渡播不完（拿掉 .open 畫面立刻沒了），
+// 所以關閉一律走 WAAPI 先淡出、再拆 class。開啟時要取消進行中的關閉，不然 160ms 後
+// finish() 會把剛打開的疊層又關掉。分頁在背景時 finished 不結算（CLAUDE.md 老坑），
+// 另用 setTimeout 保險。inner 可省略（只淡外層）；onDone 在拿掉 .open 之後呼叫。
+function cancelOverlayClose(el) {
+  if (!el) return;
+  el._closeGen = (el._closeGen || 0) + 1;
+  delete el.dataset.closing;
+  if (el.getAnimations) el.getAnimations().forEach(a => a.cancel());
+}
+function overlayOpen(el) {
+  cancelOverlayClose(el);
+  el.classList.add('open');
+}
+function fadeCloseOverlay(el, inner, onDone) {
+  if (!el || !el.classList.contains('open') || el.dataset.closing === '1') return;
+  const gen = (el._closeGen = (el._closeGen || 0) + 1);
+  el.dataset.closing = '1';
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    if (el._closeGen !== gen) return;
+    delete el.dataset.closing;
+    el.classList.remove('open');
+    if (onDone) onDone();
+  };
+  if (REDUCE_MOTION || document.visibilityState !== 'visible' || !el.animate) {
+    finish();
+    return;
+  }
+  const ease = 'cubic-bezier(.4,0,1,1)';   // --ease-in，退場快走
+  const opt = { duration: 160, easing: ease, fill: 'forwards' };  // forwards：結束停在透明，避免拆 class 前閃一幀
+  const anims = [el.animate([{ opacity: 1 }, { opacity: 0 }], opt)];
+  if (inner) anims.push(inner.animate(
+    [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.97)' }],
+    opt));
+  Promise.all(anims.map(a => a.finished)).then(finish).catch(finish);
+  setTimeout(finish, 260);
+}
+
 // ── ALL 的索引層 ───────────────────────────────────────────────
 // 實測詞庫規模約 28000 筆，任何 `itemOf(rel)` 都是一次全庫線性掃描。
 // 最痛的是 restoreCard()——超大範圍（「全部」/跨資料夾搜尋）啟用卡片修剪後，每張卡片
@@ -899,7 +940,7 @@ function reloadModalImage(rel) {
 // 由各開啟點設定：抽卡的卡片設 true、格線縮圖/結果區設 false。
 let MODAL_FROM_TAROT = false;
 function dismissModal() {
-  if (MODAL_FROM_TAROT) { MODAL_FROM_TAROT = false; closeModal(); }   // 露出底下那批抽到的牌
+  if (MODAL_FROM_TAROT) { MODAL_FROM_TAROT = false; fadeCloseModal(); }   // 露出底下那批抽到的牌
   else closeModalWithMorph();
 }
 
@@ -1065,7 +1106,7 @@ function openModal(rel, resetNav = true) {
   $('modal-score').innerHTML = modalScoreRowsHTML(item.score);
   $('modal-gen').onclick = () => generate(rel);
   $('modal-close').onclick = dismissModal;
-  $('modal').classList.add('open');
+  overlayOpen($('modal'));
   if (item.job && item.job.status) updateStatusEl($('modal-status'), item.job);
   fetch('/api/prompt?rel=' + relEnc).then(r => r.json()).then(j => {
     if (j.error) { $('pos').textContent = j.error; return; }
@@ -1093,9 +1134,21 @@ function modalNav(dir) {
 }
 
 function closeModal() {
-  $('modal').classList.remove('open');
+  const modal = $('modal');
+  cancelOverlayClose(modal);
+  modal.classList.remove('open');
   const inner = $('modal-inner');
   if (inner) { delete inner.dataset.rel; delete inner.dataset.gid; }
+}
+// 沒有縮圖可 morph 回去時（抽卡開的大圖、缺圖、減動）走跟其他疊層同一套淡出，
+// 不要瞬間 display:none。closeModal() 本身保持同步——View Transitions 的 callback
+// 裡必須當幀關掉，否則 morph 截不到「大圖消失、縮圖接手」的新快照。
+function fadeCloseModal() {
+  const modal = $('modal');
+  fadeCloseOverlay(modal, $('modal-inner'), () => {
+    const inner = $('modal-inner');
+    if (inner) { delete inner.dataset.rel; delete inner.dataset.gid; }
+  });
 }
 
 // 圖庫大圖的預設順序要跟畫面上看到的一致——renderGallery() 是新到舊（陣列反過來
@@ -1137,7 +1190,7 @@ function closeModalWithMorph() {
   const modalImg = $('modal-image');
   const canMorph = document.startViewTransition && !REDUCE_MOTION
     && document.visibilityState === 'visible' && modalImg && rel;
-  if (!canMorph) { closeModal(); return; }
+  if (!canMorph) { fadeCloseModal(); return; }
   const thumbImg = document.querySelector(`#grid .card[data-rel="${cssAttr(rel)}"] .thumb img`);
   const clear = () => { if (thumbImg) thumbImg.style.viewTransitionName = ''; };
   const t = document.startViewTransition(() => {
@@ -1539,6 +1592,7 @@ window.addEventListener('keydown', e => {
   // 關大面板」的分支把這個疊層的按鍵也吃掉（那樣 Esc 會直接關掉整個大面板，
   // 而不是只關疊層回到大面板）。
   if (LORA_TAROT && $('tarot').classList.contains('open')) {
+    if ($('tarot').dataset.closing) return;
     if (e.key === 'Escape') { closeTarot(); return; }
     if (e.key === 'r' || e.key === 'R' || e.key === 'Enter') { e.preventDefault(); drawLoraTarot(); return; }   // 全庫重抽
     if (e.key === 'e' || e.key === 'E') { e.preventDefault(); drawLoraCategoryDispatch(); return; }             // 只抽目前左欄選的分類/子資料夾
@@ -1547,6 +1601,7 @@ window.addEventListener('keydown', e => {
   // Concepts 抽卡同樣要排在「MODE==='tag' 就全鍵盤逐張標」那條之前——不然使用者剛好停在
   // 打標模式時按 C 開了 Concepts 疊層，R/1~4 這些鍵會被下面通用分支誤判成打標快捷鍵。
   if (CONCEPTS_TAROT && $('tarot').classList.contains('open')) {
+    if ($('tarot').dataset.closing) return;
     if (e.key === 'Escape') { closeTarot(); return; }
     // C／Enter 是「照設定彈窗的判斷邏輯」重抽；R／E 差別只在模板池（全庫／目前資料夾），
     // 且都不做 C 專屬的「角色/情境都沒訊號、自動補一顆全庫 concepts」補位——見
@@ -1572,6 +1627,7 @@ window.addEventListener('keydown', e => {
   }
   // 大圖疊在抽卡之上時，鍵盤先歸大圖：Esc 關大圖回到那批牌（而非關掉整個抽卡）
   if ($('modal').classList.contains('open')) {
+    if ($('modal').dataset.closing) return;
     if (e.key === 'Escape') { dismissModal(); return; }
     // 切哪一份清單由 modalNav() 依 MODAL_LIST 決定（‹ › 兩顆鈕走同一個入口）。
     // 抽卡開的大圖也能左右切——走的是那批牌，不是格線的 VISIBLE。
@@ -1580,6 +1636,7 @@ window.addEventListener('keydown', e => {
     return;
   }
   if ($('tarot').classList.contains('open')) {
+    if ($('tarot').dataset.closing) return;
     if (e.key === 'Escape') { closeTarot(); return; }
     if (MODE === 'tag') {                                  // 抽卡打標：全鍵盤逐張標
       const cards = tarotCards();
@@ -1694,7 +1751,7 @@ function drawTarot(pool, label) {
     }
     wrap.appendChild(card);
   });
-  $('tarot').classList.add('open');
+  overlayOpen($('tarot'));
   // 發牌完成後依序翻牌；reduced-motion 直接全開
   const cards = [...wrap.children];
   if (REDUCE) { cards.forEach(c => c.classList.add('revealed')); return; }
@@ -1747,11 +1804,13 @@ function tiltReset(card) {
 }
 
 function closeTarot() {
-  $('tarot').classList.remove('open');
-  TAROT_FOCUS = -1;
-  if (MODE === 'tag') { render(); updateTagbar(); }   // 反映剛標的
-  if (LORA_TAROT) { LORA_TAROT = false; document.body.classList.remove('lora-tarot-open'); }
-  if (CONCEPTS_TAROT) { CONCEPTS_TAROT = false; document.body.classList.remove('concepts-tarot-open'); }
+  const el = $('tarot');
+  fadeCloseOverlay(el, el.querySelector('.tarot-stage'), () => {
+    TAROT_FOCUS = -1;
+    if (MODE === 'tag') { render(); updateTagbar(); }   // 反映剛標的
+    if (LORA_TAROT) { LORA_TAROT = false; document.body.classList.remove('lora-tarot-open'); }
+    if (CONCEPTS_TAROT) { CONCEPTS_TAROT = false; document.body.classList.remove('concepts-tarot-open'); }
+  });
 }
 
 // ── LoRA 大面板「隨機瀏覽」：沿用詞庫抽卡同一套塔羅發牌/翻牌，改抽 LoRA。跟瀏覽
@@ -1809,7 +1868,7 @@ function drawLoraTarot(pool, label) {
     }
     wrap.appendChild(card);
   });
-  $('tarot').classList.add('open');
+  overlayOpen($('tarot'));
   const cards = [...wrap.children];
   if (REDUCE) {
     // 沒有發牌動畫可以掛，直接把每張的 data-src 排進下載佇列，不然永遠不會開始
@@ -2178,7 +2237,7 @@ function drawTagTarot() {
     card.addEventListener('mouseenter', () => setTarotFocus(i));
     wrap.appendChild(card);
   });
-  $('tarot').classList.add('open');
+  overlayOpen($('tarot'));
   setTarotFocus(0);
   updateTarotProgress();
   const cards = [...wrap.children];
@@ -3049,7 +3108,7 @@ function genTriggerText() {
 }
 
 async function openLoraModal() {
-  $('lora-modal').classList.add('open');
+  overlayOpen($('lora-modal'));
   if (!GEN_LORAS) $('lm-list').innerHTML = '<div class="lora-empty">載入中…</div>';
   renderLmCurrent();
   await fetchGenLoras();
@@ -3058,31 +3117,14 @@ async function openLoraModal() {
   renderLmList($('lm-search').value, true);
   $('lm-search').focus();
 }
-// 關閉走淡出＋輕微縮小（呼應開啟的 fadeIn+modalPop），不像開啟時瞬間消失。用
-// element.animate() 而不是加 class 再等 animationend——分頁在背景時 finished 不會
-// 結算（CLAUDE.md 記過的老坑），所以另外用 setTimeout 保險收尾。
 function closeLoraModal() {
   const modal = $('lora-modal');
-  if (!modal.classList.contains('open')) return;
   // 關面板時強制收掉 hover 預覽——這個面板裡好幾個地方（LoRA1/2 分頁卡、左欄清單列）
   // 靠 mouseleave 收預覽卡，但關面板（Esc／背景遮罩／點 ✕）當下滑鼠通常還停在被 hover
   // 的元素上沒有真的移開，mouseleave 不一定會觸發，預覽卡會卡住不消失。不能只靠
   // mouseleave，關閉動作本身就要保證收掉。
   hideLoraPreviewTip();
-  if (REDUCE_MOTION || document.visibilityState !== 'visible' || !modal.animate) {
-    modal.classList.remove('open');
-    return;
-  }
-  const inner = modal.querySelector('.lora-modal-inner');
-  const ease = 'cubic-bezier(.4,0,1,1)';   // --ease-in
-  const anims = [modal.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: ease })];
-  if (inner) anims.push(inner.animate(
-    [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.97)' }],
-    { duration: 160, easing: ease }));
-  let done = false;
-  const finish = () => { if (done) return; done = true; modal.classList.remove('open'); };
-  Promise.all(anims.map(a => a.finished)).then(finish).catch(finish);
-  setTimeout(finish, 260);
+  fadeCloseOverlay(modal, modal.querySelector('.lora-modal-inner'));
 }
 // 快捷鍵一覽：純展示疊層，內容按「使用情境」分組（不是按字母），因為使用者記的是
 // 「我在做什麼時按什麼」。只在第一次開啟時建 DOM（內容固定不會變，不用每次重繪）。
@@ -3184,28 +3226,12 @@ $('help-seg').addEventListener('click', (e) => {
 function openShortcuts() {
   renderShortcuts();
   renderFeatures();
-  $('shortcuts-overlay').classList.add('open');
+  overlayOpen($('shortcuts-overlay'));
   moveHelpPill();
 }
-// 收尾邏輯跟 closeLoraModal 同一套（element.animate() 取代加減 class，分頁在背景時
-// finished 不結算的老坑靠 setTimeout 保險），這裡不獨立寫註解重複解釋。
 function closeShortcuts() {
   const ov = $('shortcuts-overlay');
-  if (!ov.classList.contains('open')) return;
-  if (REDUCE_MOTION || document.visibilityState !== 'visible' || !ov.animate) {
-    ov.classList.remove('open');
-    return;
-  }
-  const panel = $('shortcuts-panel');
-  const ease = 'cubic-bezier(.4,0,1,1)';
-  const anims = [ov.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: ease })];
-  if (panel) anims.push(panel.animate(
-    [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.97)' }],
-    { duration: 160, easing: ease }));
-  let done = false;
-  const finish = () => { if (done) return; done = true; ov.classList.remove('open'); };
-  Promise.all(anims.map(a => a.finished)).then(finish).catch(finish);
-  setTimeout(finish, 260);
+  fadeCloseOverlay(ov, $('shortcuts-panel'));
 }
 $('shortcuts-btn').onclick = openShortcuts;
 $('shortcuts-close').onclick = closeShortcuts;
@@ -3446,7 +3472,7 @@ $('concepts-btn').onclick = () => { fetchGenLoras().then(() => { updateConceptsL
 // DOM 移除，冒泡到 document 判斷式時 Node.contains() 對離線節點一律回傳 false，會被
 // 誤判成「點在外面」而自動關閉——這次直接用背景遮罩點擊取代，整類問題不會再發生）。
 async function openCsModal() {
-  $('cs-modal').classList.add('open');
+  overlayOpen($('cs-modal'));
   await fetchGenLoras();
   renderCsScopeChips(0);
   renderCsScopeChips(1);
@@ -3497,47 +3523,17 @@ $('cs-checkpoint').onchange = async (e) => {
   }
 };
 function closeCsModal() {
-  const modal = $('cs-modal');
-  if (!modal.classList.contains('open')) return;
   hideLoraPreviewTip();   // 鎖定卡片（.cs-locked-card）hover 預覽同樣的收尾保險，見 closeLoraModal()
-  if (REDUCE_MOTION || document.visibilityState !== 'visible' || !modal.animate) {
-    modal.classList.remove('open');
-    return;
-  }
-  const inner = $('cs-modal-inner');
-  const ease = 'cubic-bezier(.4,0,1,1)';
-  const anims = [modal.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: ease })];
-  if (inner) anims.push(inner.animate(
-    [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.97)' }],
-    { duration: 160, easing: ease }));
-  let done = false;
-  const finish = () => { if (done) return; done = true; modal.classList.remove('open'); };
-  Promise.all(anims.map(a => a.finished)).then(finish).catch(finish);
-  setTimeout(finish, 260);
+  fadeCloseOverlay($('cs-modal'), $('cs-modal-inner'));
 }
 $('concepts-settings-btn').onclick = (e) => { e.stopPropagation(); openCsModal(); };
 $('cs-modal-close').onclick = closeCsModal;
 $('cs-modal').addEventListener('click', e => { if (e.target.id === 'cs-modal') closeCsModal(); });
 // 教學疊層：純展示、不影響任何狀態，開關動畫跟 closeCsModal() 同一套寫法。從 cs-modal
 // 裡的「？ 詳細教學」按鈕開，關掉只是收起這層，cs-modal 本身還開著。
-function openLoraHelpModal() { $('lora-help-modal').classList.add('open'); }
+function openLoraHelpModal() { overlayOpen($('lora-help-modal')); }
 function closeLoraHelpModal() {
-  const modal = $('lora-help-modal');
-  if (!modal.classList.contains('open')) return;
-  if (REDUCE_MOTION || document.visibilityState !== 'visible' || !modal.animate) {
-    modal.classList.remove('open');
-    return;
-  }
-  const inner = $('lora-help-inner');
-  const ease = 'cubic-bezier(.4,0,1,1)';
-  const anims = [modal.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: ease })];
-  if (inner) anims.push(inner.animate(
-    [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.97)' }],
-    { duration: 160, easing: ease }));
-  let done = false;
-  const finish = () => { if (done) return; done = true; modal.classList.remove('open'); };
-  Promise.all(anims.map(a => a.finished)).then(finish).catch(finish);
-  setTimeout(finish, 260);
+  fadeCloseOverlay($('lora-help-modal'), $('lora-help-inner'));
 }
 $('lora-help-btn').addEventListener('click', (e) => { e.stopPropagation(); openLoraHelpModal(); });
 $('lora-help-close').onclick = closeLoraHelpModal;
@@ -3715,7 +3711,7 @@ function openGalleryItem(gid) {
   }
   if (g) right.insertAdjacentHTML('beforeend', modalScoreRowsHTML(g.score));
   inner.append(left, right);
-  $('modal').classList.add('open');
+  overlayOpen($('modal'));
 }
 
 // Concepts 抽卡：跟一般抽卡生圖不同，不是「固定 LoRA、抽不同詞庫」，而是**每張卡各自**
@@ -3942,7 +3938,7 @@ function openGenTarot(items, picks, label) {
     }
     wrap.appendChild(card);
   });
-  $('tarot').classList.add('open');
+  overlayOpen($('tarot'));
   const cards = [...wrap.children];
   if (REDUCE) { cards.forEach(c => c.classList.add('revealed')); return; }
   const dealDone = n * 48 + 220;
@@ -4452,7 +4448,7 @@ function maybeStartIntro() {
   const kicker = $('intro-kicker');
   if (kicker) kicker.textContent = ($('dataset') && $('dataset').textContent) || '';
 
-  $('intro-modal').classList.add('open');
+  overlayOpen($('intro-modal'));
   introGL = REDUCE_MOTION ? null : introInitGL();
   if (!introGL) { introFallback(); return; }
   introAtlas = introBuildAtlas();
@@ -4464,10 +4460,8 @@ function maybeStartIntro() {
 
 function closeIntro() {
   const modal = $('intro-modal');
-  if (!modal.classList.contains('open')) return;
   if (introRAF) { cancelAnimationFrame(introRAF); introRAF = null; }
-  const finish = () => {
-    modal.classList.remove('open');
+  fadeCloseOverlay(modal, null, () => {
     // 釋放 GL 資源——進場只播一次，留著等於白佔一張材質與一個 context
     if (introGL) {
       const { gl, tex, cellTex, prog } = introGL;
@@ -4478,13 +4472,7 @@ function closeIntro() {
     }
     introAtlas = null;
     const fb = $('intro-fallback'); if (fb) { fb.innerHTML = ''; fb.hidden = true; }
-  };
-  if (REDUCE_MOTION || document.visibilityState !== 'visible' || !modal.animate) { finish(); return; }
-  const anim = modal.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 220, easing: 'cubic-bezier(.4,0,1,1)' });
-  let done = false;
-  const settle = () => { if (done) return; done = true; finish(); };
-  anim.finished.then(settle).catch(settle);
-  setTimeout(settle, 300);   // 分頁在背景時 finished 不結算的保險（CLAUDE.md 記過的老坑）
+  });
 }
 
 $('intro-enter-btn').addEventListener('click', closeIntro);
@@ -4519,14 +4507,30 @@ function initAgeGate() {
     startApp();
     return;
   }
+  let ageEntering = false;
   $('age-gate-enter').addEventListener('click', () => {
+    if (ageEntering) return;
+    ageEntering = true;
     sessionStorage.setItem(AGE_GATE_KEY, '1');
-    $('age-gate').remove();
-    startApp();
+    const gate = $('age-gate');
+    const go = () => { gate.remove(); startApp(); };
+    if (REDUCE_MOTION || !gate.animate) { go(); return; }
+    const anim = gate.animate([{ opacity: 1 }, { opacity: 0 }],
+      { duration: 280, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' });
+    let done = false;
+    const settle = () => { if (done) return; done = true; go(); };
+    anim.finished.then(settle).catch(settle);
+    setTimeout(settle, 400);
   });
   $('age-gate-leave').addEventListener('click', () => {
-    document.querySelector('.age-gate-card').innerHTML =
+    const card = document.querySelector('.age-gate-card');
+    card.innerHTML =
       '<p class="age-gate-eyebrow">年齡限制內容</p><h1>無法使用</h1><p class="age-gate-body">很抱歉，本站僅限已滿 18 歲人士使用。</p>';
+    if (!REDUCE_MOTION && card.animate) {
+      card.animate(
+        [{ opacity: .4, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }],
+        { duration: 220, easing: 'cubic-bezier(.22,.61,.36,1)' });
+    }
   });
 }
 initAgeGate();

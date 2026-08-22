@@ -82,9 +82,18 @@ body { margin: 0; font-family: var(--sans); background: var(--bg); color: var(--
 
 button, input, select { font-family: inherit; }
 button { cursor: pointer; background: #21232c; color: var(--ink); border: 1px solid var(--line);
-         padding: 7px 12px; border-radius: 8px; font-size: 13px; transition: background .12s, border-color .12s; }
+         padding: 7px 12px; border-radius: 8px; font-size: 13px;
+         transition: background .12s, border-color .12s, transform var(--d-micro) var(--ease-out), color .12s; }
 button:hover:not(:disabled) { background: #2a2d38; border-color: #3a3d49; }
 button:disabled { opacity: .45; cursor: not-allowed; }
+/* 按壓縮放只給「短控制項」（ghost/primary/晶片），不要套到整列資料夾／LoRA 清單列——
+   那些是滿寬列，縮放看起來像整排在抖。 */
+button.ghost:active:not(:disabled),
+button.primary:active:not(:disabled),
+button.danger:active:not(:disabled),
+.rar-chip:active,
+.rar-pick:active:not(:disabled),
+.lm-cat:active { transform: scale(.97); }
 /* 主要按鈕：hover 時一道柔光掃過（比照主面板生成鈕的 beam） */
 button.primary { position: relative; overflow: hidden; }
 button.primary::after {
@@ -115,8 +124,11 @@ body[data-mode="browse"] .select-only { display: none !important; }
 .mode-seg { flex: 0 0 auto; }
 .mode-seg button { padding: 6px 12px; font-size: 13px; white-space: nowrap; }
 input[type=text] { background: var(--sunk); color: var(--ink); border: 1px solid var(--line);
-                   padding: 8px 12px 8px 30px; border-radius: 8px; font-size: 13px; }
+                   padding: 8px 12px 8px 30px; border-radius: 8px; font-size: 13px;
+                   transition: border-color var(--d-micro) var(--ease-out), box-shadow var(--d-micro) var(--ease-out); }
 input[type=text]::placeholder { color: var(--faint); }
+input[type=text]:focus { outline: none; border-color: rgba(234,173,87,.55);
+                         box-shadow: 0 0 0 3px rgba(234,173,87,.12); }
 
 /* ── 18+ 年齡確認 ─────────────────────────────────────────────── */
 /* 擋在 #boot 之前的第一個畫面，z-index 比 #boot（300）高，故意跟其他疊層
@@ -125,7 +137,8 @@ input[type=text]::placeholder { color: var(--faint); }
 #age-gate { position: fixed; inset: 0; z-index: 310; display: grid; place-items: center;
   background: #0a0a0a; }
 .age-gate-card { width: min(380px, 92vw); text-align: center; padding: 28px 24px;
-  border: 1px solid #3a1414; border-radius: 10px; }
+  border: 1px solid #3a1414; border-radius: 10px;
+  animation: modalPop var(--d-pop) var(--ease-out) both; }
 .age-gate-eyebrow { font-size: 11px; letter-spacing: .12em; color: #e24b4a; margin: 0 0 6px; }
 .age-gate-card h1 { font-size: 18px; font-weight: 500; color: #fafafa; margin: 0 0 10px; }
 .age-gate-body { font-size: 13px; line-height: 1.6; color: #a3a3a0; margin: 0 0 22px; }
@@ -135,6 +148,7 @@ input[type=text]::placeholder { color: var(--faint); }
 .age-gate-no:hover { border-color: #6a3a3a; color: #c3c3c0; }
 .age-gate-yes { border: none; background: #e24b4a; color: #4a1010; font-weight: 500; }
 .age-gate-yes:hover { background: #e86867; }
+.age-gate-actions button:active { transform: scale(.97); }
 
 /* ── 頂欄 ─────────────────────────────────────────────────────── */
 /* 開場載入（大詞庫要幾秒掃描/渲染）：科技感——光圈 logo 自轉＋外圈掃描光弧（重用
@@ -288,6 +302,7 @@ input[type=text]::placeholder { color: var(--faint); }
   font-size: 13px; border-radius: 999px; corner-shape: round; flex: none; align-self: center;
   transition: transform var(--d-micro) var(--ease-out), border-color var(--d-micro) var(--ease-out), color var(--d-micro) var(--ease-out); }
 .cat-draw-btn:hover { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 45%, var(--line)); transform: scale(1.08); }
+.cat-draw-btn:active { transform: scale(.94); }
 body[data-mode="tag"] .cat-draw-btn { display: none !important; }
 .main-sub { font-family: var(--mono); font-size: 12px; color: var(--dim); margin-top: 4px; }
 .head-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -433,7 +448,8 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
   .card:hover .thumb .gen-btn { opacity: 1; transform: none; }
 }
 
-.empty-state { padding: 80px 20px; text-align: center; color: var(--faint); }
+.empty-state { padding: 80px 20px; text-align: center; color: var(--faint);
+  animation: fadeIn var(--d-ui) var(--ease-out); }
 /* 超大資料夾的安全網按鈕（見 darkroom.js AUTO_LOAD_CAP），目前實際規模不會出現 */
 .load-more-btn { margin: 24px auto; display: block; padding: 10px 20px; }
 .empty-state .big { font-size: 15px; color: var(--dim); margin-bottom: 6px; }
@@ -769,7 +785,9 @@ body.selecting .fav-btn { display: none; }
   opacity: 0 !important; pointer-events: none !important; }
 .card.selected .pick-box { background: var(--amber); border-color: var(--amber); }
 .card.selected .pick-box::after { content: "✓"; position: absolute; inset: 0; display: grid;
-  place-items: center; color: #241a08; font-weight: 800; font-size: 14px; }
+  place-items: center; color: #241a08; font-weight: 800; font-size: 14px;
+  animation: pickPop var(--d-ui) var(--ease-spring) both; }
+@keyframes pickPop { from { transform: scale(.55); opacity: 0; } to { transform: none; opacity: 1; } }
 .card.selected { border-color: var(--amber); box-shadow: 0 0 0 2px var(--amber) inset; }
 
 /* 打標底部稀有度列（固定在底部）＋ toast。
@@ -794,6 +812,7 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
   transition: transform var(--d-micro) var(--ease-out), box-shadow var(--d-micro) var(--ease-out),
               border-color var(--d-micro) var(--ease-out), opacity var(--d-micro) var(--ease-out); }
 .rar-pick:not(:disabled):hover { transform: translateY(-2px); }
+.rar-pick:not(:disabled):active { transform: scale(.97); }
 .rar-pick:disabled { opacity: .4; cursor: not-allowed; }
 .rar-pick.rare      { border-color: var(--rar-rare);    box-shadow: 0 0 0 1px var(--rar-rare) inset,    0 0 14px -5px var(--rar-rare); }
 .rar-pick.special   { border-color: var(--rar-special); box-shadow: 0 0 0 1px var(--rar-special) inset, 0 0 14px -5px var(--rar-special); }
@@ -1541,7 +1560,9 @@ button svg.btn-svg { width: 15px; height: 15px; vertical-align: -3px; margin-rig
 .kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px;
   padding: 0 6px; border-radius: 6px; font-family: var(--mono); font-size: 11.5px; font-weight: 600;
   background: var(--sunk); color: var(--ink); border: 1px solid var(--line-2);
-  border-bottom: 2px solid var(--line-2); box-sizing: border-box; }
+  border-bottom: 2px solid var(--line-2); box-sizing: border-box;
+  transition: transform var(--d-micro) var(--ease-out), border-bottom-width var(--d-micro); }
+.kbd:active { transform: translateY(1px); border-bottom-width: 1px; }
 @media (max-width: 640px) {
   .shortcut-row { flex-direction: column; gap: 5px; }
   .shortcut-keys { width: auto; }
