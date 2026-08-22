@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#08090d">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>詞庫暗房</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23eaad57' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='14.31' y1='8' x2='20.05' y2='17.94'/%3E%3Cline x1='9.69' y1='8' x2='21.17' y2='8'/%3E%3Cline x1='7.38' y1='12' x2='13.12' y2='2.06'/%3E%3Cline x1='9.69' y1='16' x2='3.95' y2='6.06'/%3E%3Cline x1='14.31' y1='16' x2='2.83' y2='16'/%3E%3Cline x1='16.62' y1='12' x2='10.88' y2='21.94'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/intro.css">
+</head>
+<body>
+<a class="skip" href="#story">跳到介紹</a>
+
+<div id="age-gate">
+  <div class="age-gate-card">
+    <p class="age-gate-eyebrow">年齡限制內容</p>
+    <h1>你已年滿 18 歲了嗎？</h1>
+    <p class="age-gate-body">本站包含成人向詞庫與生成內容，僅限已年滿 18 歲人士使用。</p>
+    <div class="age-gate-actions">
+      <button type="button" id="age-gate-leave" class="age-gate-no">離開</button>
+      <button type="button" id="age-gate-enter" class="age-gate-yes">已滿 18 歲</button>
+    </div>
+  </div>
+</div>
+
+<main id="page" hidden>
+  <section class="hero" id="hero" aria-label="詞庫暗房">
+    <canvas class="intro-gl" id="intro-gl" aria-hidden="true"></canvas>
+    <div class="intro-fallback" id="intro-fallback" hidden aria-hidden="true"></div>
+    <div class="intro-copy">
+      <p class="intro-kicker" id="intro-kicker"></p>
+      <h1>詞庫暗房</h1>
+      <p class="intro-lede">本機詞庫的接觸印樣。瀏覽、打標、生圖。</p>
+      <div class="intro-stats" id="intro-stats"></div>
+      <a class="intro-enter-btn" href="/">進入暗房</a>
+    </div>
+  </section>
+
+  <section class="table" id="story">
+    <header class="table-head">
+      <p class="kicker">接觸印樣裡有什麼</p>
+      <h2>同一張牆，四種用法</h2>
+    </header>
+
+    <article class="strip">
+      <div class="strip-copy">
+        <p class="kicker">瀏覽</p>
+        <h3>兩萬多張詞庫牆</h3>
+        <p>資料夾、稀有度、分數。點開就是正向／負向與大圖。</p>
+      </div>
+      <div class="strip-film" data-offset="0"></div>
+    </article>
+
+    <article class="strip">
+      <div class="strip-copy">
+        <p class="kicker">打標</p>
+        <h3>稀有度、旗標、收藏</h3>
+        <p>牆還在，只是多了一層標記。篩選跟瀏覽共用同一份清單。</p>
+      </div>
+      <div class="strip-film" data-offset="16"></div>
+    </article>
+
+    <article class="strip">
+      <div class="strip-copy">
+        <p class="kicker">生圖</p>
+        <h3>選 LoRA、換底模、批次補缺</h3>
+        <p>單張可插隊。缺圖就補，整夾可重生。</p>
+      </div>
+      <div class="strip-film" data-offset="32"></div>
+    </article>
+
+    <article class="strip">
+      <div class="strip-copy">
+        <p class="kicker">抽卡</p>
+        <h3>塔羅牌面直接生圖</h3>
+        <p>隨機詞庫配 Character 與 concepts LoRA。鎖定其中一側，另一側繼續抽。</p>
+      </div>
+      <div class="strip-film" data-offset="48"></div>
+    </article>
+  </section>
+
+  <footer class="foot">
+    <p>本機工具，詞庫不會上傳。</p>
+    <a class="intro-enter-btn" href="/">進入暗房</a>
+  </footer>
+</main>
+
+<script src="/intro.js" defer></script>
+</body>
+</html>

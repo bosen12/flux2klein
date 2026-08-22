@@ -696,6 +696,11 @@ STATIC_FILES = {
     # 打標已併進同一頁（瀏覽/打標用頂列模式切換）。舊網址 /tag 保留：回同一個
     # index.html，前端依 location.pathname === '/tag' 自動進打標模式。
     "/tag": ("index.html", "text/html; charset=utf-8"),
+    # 產品門面：獨立介紹頁，不載入 28000 筆詞庫牆。同 port，見 /api/intro。
+    "/intro": ("intro.html", "text/html; charset=utf-8"),
+    "/intro.html": ("intro.html", "text/html; charset=utf-8"),
+    "/intro.css": ("intro.css", "text/css; charset=utf-8"),
+    "/intro.js": ("intro.js", "application/javascript; charset=utf-8"),
 }
 
 class PrioritySemaphore:
@@ -1182,6 +1187,35 @@ def scan_libraries(force: bool = False) -> list[dict]:
              score=(smap.get(it["rel"]) if it["has_image"] else None))
         for it in cached
     ]
+
+
+INTRO_SAMPLE = 80
+
+
+def intro_payload() -> dict:
+    """介紹頁用的輕量摘要：計數 + 有圖樣本。不走 /api/libs 那份 2.2MB JSON。
+
+    讀同一份詞庫掃描快取（沒有就掃一次並寫回），所以開過暗房本體之後這支是秒回；
+    反過來先開 /intro 也會把快取暖好，接著進 / 就不用再等掃描。"""
+    with _scan_lock:
+        cached = _scan["items"]
+    if cached is None:
+        cached = _scan_fs()
+        with _scan_lock:
+            _scan["items"] = cached
+            _scan["at"] = time.time()
+    have = [it for it in cached if it.get("has_image")]
+    folders = {it.get("folder") or "" for it in cached}
+    n = min(INTRO_SAMPLE, len(have))
+    sample = random.sample(have, n) if n else []
+    parts = [p for p in str(SPECIAL_DIR).replace("\\", "/").split("/") if p]
+    return {
+        "folder": "/".join(parts[-2:]) if parts else "",
+        "total": len(cached),
+        "folders": len(folders),
+        "developed": len(have),
+        "sample": [{"rel": it["rel"], "image_mtime": it["image_mtime"]} for it in sample],
+    }
 
 
 def run_score_backfill(progress_cb=None):
@@ -2264,6 +2298,9 @@ class Handler(BaseHTTPRequestHandler):
                     "steps": STATE["steps"],
                     "special_dir": str(SPECIAL_DIR),
                 })
+                return
+            if u.path == "/api/intro":
+                self._send_json(intro_payload())
                 return
             if u.path == "/api/tag_search":
                 q = qs.get("q", [""])[0]

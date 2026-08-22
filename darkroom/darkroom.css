@@ -1785,6 +1785,10 @@ button svg.btn-svg { width: 15px; height: 15px; vertical-align: -3px; margin-rig
   transition: background var(--d-micro) var(--ease-out), border-color var(--d-micro) var(--ease-out); }
 .intro-enter-btn:hover { background: color-mix(in srgb, var(--amber) 16%, transparent);
   border-color: var(--amber); }
+.intro-about { display: block; margin: 14px 0 0; font-size: 11px;
+  letter-spacing: .16em; text-indent: .16em; color: var(--faint);
+  text-decoration: none; }
+.intro-about:hover { color: var(--amber); }
 
 @media (max-width: 640px) {
   .intro-copy { padding: 30px 20px 26px; border-radius: 30px; }
