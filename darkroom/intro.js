@@ -340,7 +340,7 @@ void main() {
     const wall = stage.querySelector('.mini-wall');
     const cap = stage.querySelector('[data-cap]');
     const frag = document.createDocumentFragment();
-    for (let i = 0; i < 18; i++) frag.appendChild(cell(sample[i % sample.length]));
+    for (let i = 0; i < 24; i++) frag.appendChild(cell(sample[i % sample.length]));
     wall.appendChild(frag);
     const names = [...new Set(sample.slice(0, 8).map(nameOf))];
     if (cap && names.length) {
@@ -356,7 +356,7 @@ void main() {
   function fillTag(stage, sample) {
     const wall = stage.querySelector('.mini-wall');
     const frag = document.createDocumentFragment();
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < 8; i++) {
       const dot = document.createElement('span');
       dot.className = 'tag-dot';
       frag.appendChild(cell(sample[i % sample.length], dot));
@@ -368,21 +368,90 @@ void main() {
   function fillGen(stage, sample) {
     const wall = stage.querySelector('.mini-wall');
     const frag = document.createDocumentFragment();
-    for (let i = 0; i < 4; i++) frag.appendChild(cell(sample[(i + 4) % sample.length]));
+    for (let i = 0; i < 8; i++) frag.appendChild(cell(sample[(i + 4) % sample.length]));
     wall.appendChild(frag);
     stage._genTick = 0;
   }
 
+  const SPARKLE = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><path d="M12 2c.6 3.6 2.2 6 6 6.6-3.8.6-5.4 3-6 6.6-.6-3.6-2.2-6-6-6.6 3.8-.6 5.4-3 6-6.6z"/></svg>';
+  const DRAW_N = 8;
+
+  function clearDrawTimers(stage) {
+    (stage._drawTimers || []).forEach(clearTimeout);
+    stage._drawTimers = [];
+    (stage._drawAnims || []).forEach((a) => { try { a.cancel(); } catch (_) {} });
+    stage._drawAnims = [];
+  }
+
   function fillDraw(stage, sample) {
-    const hand = stage.querySelector('.draw-hand');
-    for (let i = 0; i < 5; i++) {
-      const fig = document.createElement('figure');
-      fig.className = 'card-mini';
-      fig.style.setProperty('--i', String(i));
-      fig.append(thumb(sample[(i + 9) % sample.length], 192));
-      hand.appendChild(fig);
+    stage._drawSample = sample;
+    stage._drawCursor = 0;
+    buildDrawHand(stage);
+  }
+
+  function buildDrawHand(stage) {
+    const wrap = stage.querySelector('.mini-tarot');
+    const sample = stage._drawSample;
+    wrap.textContent = '';
+    const start = stage._drawCursor || 0;
+    for (let i = 0; i < DRAW_N; i++) {
+      const it = sample[(start + i) % sample.length];
+      const card = document.createElement('div');
+      card.className = 'tcard';
+      card.innerHTML =
+        '<div class="tinner">' +
+          '<div class="tback"><span class="temblem">' + SPARKLE + '</span></div>' +
+          '<div class="tfront"></div>' +
+        '</div>';
+      card.querySelector('.tfront').append(thumb(it, 128));
+      wrap.appendChild(card);
     }
-    stage._drawTick = 0;
+    stage._drawCursor = start + DRAW_N;
+  }
+
+  function playDraw(stage) {
+    clearDrawTimers(stage);
+    const wrap = stage.querySelector('.mini-tarot');
+    if (!wrap) return;
+    const cards = [...wrap.querySelectorAll('.tcard')];
+    const n = cards.length;
+    if (!n) return;
+    if (REDUCE_MOTION) {
+      cards.forEach((c) => c.classList.add('revealed'));
+      return;
+    }
+    cards.forEach((c, i) => {
+      c.classList.remove('revealed');
+      const inner = c.querySelector('.tinner');
+      inner.style.transition = 'none';
+      void inner.offsetWidth;
+      inner.style.transition = '';
+      const anim = c.animate(
+        [
+          { opacity: 0, transform: 'translateY(18px) scale(0.86)' },
+          { opacity: 1, transform: 'none' }
+        ],
+        { duration: 340, delay: i * 48, easing: 'cubic-bezier(0.16, 1, 0.3, 1)', fill: 'both' }
+      );
+      stage._drawAnims.push(anim);
+    });
+    const dealDone = n * 48 + 220;
+    cards.forEach((c, i) => {
+      stage._drawTimers.push(setTimeout(() => c.classList.add('revealed'), dealDone + i * 80));
+    });
+    const hold = dealDone + n * 80 + 1800;
+    stage._drawTimers.push(setTimeout(() => {
+      if (!stage.classList.contains('is-in')) return;
+      cards.forEach((c) => c.classList.remove('revealed'));
+      stage._drawTimers.push(setTimeout(() => {
+        if (!stage.classList.contains('is-in')) return;
+        buildDrawHand(stage);
+        playDraw(stage);
+      }, 420));
+    }, hold));
+    stage._drawTimers.push(setTimeout(() => {
+      if (stage.classList.contains('is-in') && !wrap.querySelector('.tcard.revealed')) playDraw(stage);
+    }, hold + 900));
   }
 
   function freezeDemos(stages) {
@@ -395,10 +464,9 @@ void main() {
           c.classList.toggle('rare', i % 5 === 0);
         });
       } else if (kind === 'gen') {
-        stage.querySelectorAll('.cell').forEach((c, i) => c.classList.toggle('dev', i < 2));
+        stage.querySelectorAll('.cell').forEach((c, i) => c.classList.toggle('dev', i < 4));
       } else if (kind === 'draw') {
-        const cards = stage.querySelectorAll('.card-mini');
-        if (cards[2]) cards[2].classList.add('up');
+        playDraw(stage);
       }
     });
   }
@@ -422,11 +490,6 @@ void main() {
         const shown = t % (cells.length + 1);
         cells.forEach((c, i) => c.classList.toggle('dev', i < shown));
         stage._genTick = t + 1;
-      } else if (kind === 'draw') {
-        const cards = [...stage.querySelectorAll('.card-mini')];
-        const t = stage._drawTick || 0;
-        cards.forEach((c, i) => c.classList.toggle('up', i === t % cards.length));
-        stage._drawTick = t + 1;
       }
     });
   }
@@ -443,9 +506,25 @@ void main() {
     });
     if (REDUCE_MOTION) { freezeDemos(stages); return; }
     const io = new IntersectionObserver((entries) => {
-      entries.forEach((e) => e.target.classList.toggle('is-in', e.isIntersecting));
+      entries.forEach((e) => {
+        const on = e.isIntersecting;
+        e.target.classList.toggle('is-in', on);
+        if (e.target.dataset.demo !== 'draw') return;
+        if (on) playDraw(e.target);
+        else {
+          clearDrawTimers(e.target);
+          e.target.querySelectorAll('.tcard').forEach((c) => c.classList.remove('revealed'));
+        }
+      });
     }, { threshold: 0.35 });
     stages.forEach((s) => io.observe(s));
+    document.addEventListener('visibilitychange', () => {
+      stages.forEach((stage) => {
+        if (stage.dataset.demo !== 'draw') return;
+        if (document.visibilityState === 'hidden') clearDrawTimers(stage);
+        else if (stage.classList.contains('is-in')) playDraw(stage);
+      });
+    });
     setInterval(() => tickDemos(stages), 1400);
   }
 
