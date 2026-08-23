@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="/intro.css">
 </head>
 <body>
-<a class="skip" href="#look">跳到印樣</a>
+<a class="skip" href="#look">跳到看法</a>
 
 <div id="age-gate">
   <div class="age-gate-card">
@@ -28,7 +28,7 @@
   <nav class="nav-pill" id="nav" aria-label="主要">
     <a class="wordmark" href="#hero" translate="no">詞庫暗房</a>
     <ul class="nav-pill__links">
-      <li><a href="#look">印樣</a></li>
+      <li><a href="#look">看法</a></li>
       <li><a href="#local">本機</a></li>
     </ul>
     <a class="cta-fill" href="/">進入暗房</a>
@@ -46,7 +46,7 @@
       </dl>
       <div class="hero-actions">
         <a class="cta-fill" href="/">進入暗房</a>
-        <a class="pull" href="#look">往下看印樣</a>
+        <a class="pull" href="#look">往下看看法</a>
       </div>
     </div>
     <div class="stack-stage hero-stage">
@@ -55,39 +55,58 @@
     </div>
   </header>
 
-  <section class="stack look" id="look">
-    <div class="stack-pin">
-      <h2 id="pin-title">四種看法，同一張紙</h2>
-      <p id="pin-body">左邊資料夾、中間卡片。下面是你現在這份詞庫抽來的格，不是示意素材。切看法只改紙上的記號，圖還是同一批。</p>
-      <div class="mode-rail" role="tablist" aria-label="印樣看法">
-        <button type="button" role="tab" aria-selected="true" data-mode="browse">瀏覽</button>
-        <button type="button" role="tab" aria-selected="false" data-mode="tag">打標</button>
-        <button type="button" role="tab" aria-selected="false" data-mode="gen">生圖</button>
-        <button type="button" role="tab" aria-selected="false" data-mode="draw">抽卡</button>
-      </div>
-      <div class="hand-keys" id="hand-keys" hidden>
-        <button type="button" class="key-card" data-key="r"><kbd>R</kbd><span>全庫</span></button>
-        <button type="button" class="key-card" data-key="e"><kbd>E</kbd><span>本分類</span></button>
-        <button type="button" class="key-card" data-key="c"><kbd>C</kbd><span>Concepts</span></button>
-      </div>
-      <p class="hand-hint" id="hand-hint" hidden>在這頁按 R、E、C 也會亮。進工具才真的抽。</p>
-    </div>
-    <div class="stack-track">
-      <div class="stage-live">
-        <div class="sheet-wall" id="wall-grid" data-mode="browse"></div>
-      </div>
-      <div class="beats" aria-hidden="true">
-        <div class="beat" data-mode="browse" id="beat-browse"></div>
-        <div class="beat" data-mode="tag" id="beat-tag"></div>
-        <div class="beat" data-mode="gen" id="beat-gen"></div>
-        <div class="beat" data-mode="draw" id="beat-draw"></div>
-      </div>
+  <section class="look" id="look">
+    <h2>四種看法，同一張紙</h2>
+    <p class="look-lede">小框裡跑的是你現在這份詞庫抽來的縮圖，不是示意素材。</p>
+    <div class="feats">
+      <article class="feat">
+        <div class="feat-stage" data-demo="browse" aria-hidden="true">
+          <div class="mini-wall"></div>
+          <p class="demo-cap" data-cap></p>
+        </div>
+        <h3>瀏覽</h3>
+        <p>左邊資料夾、中間卡片。點開是大圖與正向／負向。</p>
+      </article>
+      <article class="feat">
+        <div class="feat-stage" data-demo="tag" aria-hidden="true">
+          <div class="mini-wall"></div>
+        </div>
+        <h3>打標</h3>
+        <p>稀有度寫在紙邊，不改檔名。點了立刻亮。</p>
+      </article>
+      <article class="feat">
+        <div class="feat-stage" data-demo="gen" aria-hidden="true">
+          <div class="mini-wall mini-wall--row"></div>
+        </div>
+        <h3>生圖</h3>
+        <p>詞庫加上 LoRA，丟進藥液。單張會插隊到批次前面。</p>
+      </article>
+      <article class="feat">
+        <div class="feat-stage" data-demo="draw" aria-hidden="true">
+          <div class="draw-hand"></div>
+        </div>
+        <h3>抽卡</h3>
+        <p>發牌，不是清單亂跳。R 全庫、E 本分類、C 是 Concepts。</p>
+      </article>
     </div>
   </section>
 
-  <section class="quiet" id="local">
-    <h2>本機。一個 port。</h2>
-    <p>跑 <span translate="no">darkroom/preview_ui.bat</span>，開 <span translate="no">http://localhost:7860/</span>。另一份詞庫用 <span translate="no">preview_ui_animebot.bat</span>，同一個 port，一次只能開一個。頂列會寫你在操作哪一夾。沒有登入，不要把這個埠對公網開放。</p>
+  <section class="slip" id="local">
+    <h2>藥液只在這台機器裡</h2>
+    <dl class="slip-list">
+      <div>
+        <dt>開</dt>
+        <dd><span translate="no">preview_ui.bat</span> → <span translate="no">localhost:7860</span></dd>
+      </div>
+      <div>
+        <dt>換夾</dt>
+        <dd><span translate="no">preview_ui_animebot.bat</span>，同一個 port，一次一個</dd>
+      </div>
+      <div>
+        <dt>別</dt>
+        <dd>沒有登入。不要把這個埠對公網開放。</dd>
+      </div>
+    </dl>
   </section>
 
   <footer class="foot-stmt">

@@ -328,131 +328,125 @@ void main() {
     });
   }
 
-  const MODE_COPY = {
-    browse: {
-      title: '四種看法，同一張紙',
-      body: '左邊資料夾、中間卡片。這格是你現在這份詞庫抽來的，不是示意素材。切看法只改紙上的記號，圖還是同一批。'
-    },
-    tag: {
-      title: '稀有度寫在紙邊',
-      body: '普通、稀有、特別、傳奇。點了立刻亮。真的標記寫在側檔，不改檔名。'
-    },
-    gen: {
-      title: '詞庫加上 LoRA，丟進藥液',
-      body: '多選詞庫，打開 LoRA 大面板挑觸發詞。單張會插隊到批次前面。圖庫是這次開啟的暫存，刷新即清空。'
-    },
-    draw: {
-      title: '抽卡是發牌，不是清單亂跳',
-      body: '同一套鍵，三種模式做對應的事：瀏覽看圖、打標逐張標、生圖直接沖。'
-    }
-  };
-
-  function applyMode(mode) {
-    const wall = $('wall-grid');
-    if (!wall) return;
-    wall.dataset.mode = mode;
-    document.querySelectorAll('.mode-rail [role="tab"]').forEach((btn) => {
-      const on = btn.dataset.mode === mode;
-      btn.setAttribute('aria-selected', on ? 'true' : 'false');
-      btn.tabIndex = on ? 0 : -1;
-    });
-    const copy = MODE_COPY[mode] || MODE_COPY.browse;
-    const title = $('pin-title');
-    const body = $('pin-body');
-    if (title) title.textContent = copy.title;
-    if (body) body.textContent = copy.body;
-    const keys = $('hand-keys');
-    const hint = $('hand-hint');
-    if (keys) keys.hidden = mode !== 'draw';
-    if (hint) hint.hidden = mode !== 'draw';
-    const frames = [...wall.querySelectorAll('.frame')];
-    frames.forEach((el, i) => {
-      el.classList.toggle('dev', mode === 'gen' && i % 7 === 0);
-      el.classList.toggle('picked', mode === 'draw' && i < 8);
-    });
+  function cell(it, extra) {
+    const fig = document.createElement('figure');
+    fig.className = 'cell';
+    fig.append(thumb(it, 128));
+    if (extra) fig.append(extra);
+    return fig;
   }
 
-  function bindModeRail() {
-    const rail = document.querySelector('.mode-rail');
-    if (!rail) return;
-    rail.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-mode]');
-      if (!btn) return;
-      applyMode(btn.dataset.mode);
-      const beat = document.getElementById('beat-' + btn.dataset.mode);
-      if (beat && beat.offsetParent !== null) {
-        beat.scrollIntoView({ behavior: REDUCE_MOTION ? 'auto' : 'smooth', block: 'center' });
-      }
-    });
-    rail.addEventListener('keydown', (e) => {
-      const tabs = [...rail.querySelectorAll('[role="tab"]')];
-      const i = tabs.indexOf(document.activeElement);
-      if (i < 0) return;
-      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-        e.preventDefault();
-        const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
-        next.focus();
-        applyMode(next.dataset.mode);
-      }
-    });
-  }
-
-  function fillWall(sample) {
-    const wall = $('wall-grid');
-    if (!wall || !sample.length) return;
-    const n = Math.min(40, sample.length);
+  function fillBrowse(stage, sample) {
+    const wall = stage.querySelector('.mini-wall');
+    const cap = stage.querySelector('[data-cap]');
     const frag = document.createDocumentFragment();
-    for (let i = 0; i < n; i++) {
-      const it = sample[i];
-      const fig = document.createElement('figure');
-      fig.className = 'frame';
-      const cap = document.createElement('figcaption');
-      cap.textContent = nameOf(it);
-      fig.append(thumb(it, 192), cap);
-      frag.appendChild(fig);
+    for (let i = 0; i < 18; i++) frag.appendChild(cell(sample[i % sample.length]));
+    wall.appendChild(frag);
+    const names = [...new Set(sample.slice(0, 8).map(nameOf))];
+    if (cap && names.length) {
+      let i = 0;
+      cap.textContent = names[0];
+      stage._tickCap = () => {
+        i = (i + 1) % names.length;
+        cap.textContent = names[i];
+      };
+    }
+  }
+
+  function fillTag(stage, sample) {
+    const wall = stage.querySelector('.mini-wall');
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < 9; i++) {
+      const dot = document.createElement('span');
+      dot.className = 'tag-dot';
+      frag.appendChild(cell(sample[i % sample.length], dot));
     }
     wall.appendChild(frag);
-    applyMode('browse');
+    stage._tagTick = 0;
   }
 
-  function bindStack() {
-    const beats = [...document.querySelectorAll('.look .beat')];
-    if (!beats.length || REDUCE_MOTION) return;
-    if (window.matchMedia('(max-width: 59.99rem)').matches) return;
+  function fillGen(stage, sample) {
+    const wall = stage.querySelector('.mini-wall');
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < 4; i++) frag.appendChild(cell(sample[(i + 4) % sample.length]));
+    wall.appendChild(frag);
+    stage._genTick = 0;
+  }
+
+  function fillDraw(stage, sample) {
+    const hand = stage.querySelector('.draw-hand');
+    for (let i = 0; i < 5; i++) {
+      const fig = document.createElement('figure');
+      fig.className = 'card-mini';
+      fig.style.setProperty('--i', String(i));
+      fig.append(thumb(sample[(i + 9) % sample.length], 192));
+      hand.appendChild(fig);
+    }
+    stage._drawTick = 0;
+  }
+
+  function freezeDemos(stages) {
+    stages.forEach((stage) => {
+      stage.classList.add('is-in');
+      const kind = stage.dataset.demo;
+      if (kind === 'tag') {
+        stage.querySelectorAll('.cell').forEach((c, i) => {
+          c.classList.toggle('marked', i % 3 === 0);
+          c.classList.toggle('rare', i % 5 === 0);
+        });
+      } else if (kind === 'gen') {
+        stage.querySelectorAll('.cell').forEach((c, i) => c.classList.toggle('dev', i < 2));
+      } else if (kind === 'draw') {
+        const cards = stage.querySelectorAll('.card-mini');
+        if (cards[2]) cards[2].classList.add('up');
+      }
+    });
+  }
+
+  function tickDemos(stages) {
+    if (document.visibilityState === 'hidden') return;
+    stages.forEach((stage) => {
+      if (!stage.classList.contains('is-in')) return;
+      const kind = stage.dataset.demo;
+      if (kind === 'browse' && stage._tickCap) stage._tickCap();
+      else if (kind === 'tag') {
+        const t = stage._tagTick || 0;
+        stage.querySelectorAll('.cell').forEach((c, i) => {
+          c.classList.toggle('marked', (i + t) % 3 === 0);
+          c.classList.toggle('rare', (i + t) % 5 === 0);
+        });
+        stage._tagTick = t + 1;
+      } else if (kind === 'gen') {
+        const cells = [...stage.querySelectorAll('.cell')];
+        const t = stage._genTick || 0;
+        const shown = t % (cells.length + 1);
+        cells.forEach((c, i) => c.classList.toggle('dev', i < shown));
+        stage._genTick = t + 1;
+      } else if (kind === 'draw') {
+        const cards = [...stage.querySelectorAll('.card-mini')];
+        const t = stage._drawTick || 0;
+        cards.forEach((c, i) => c.classList.toggle('up', i === t % cards.length));
+        stage._drawTick = t + 1;
+      }
+    });
+  }
+
+  function fillDemos(sample) {
+    if (!sample.length) return;
+    const stages = [...document.querySelectorAll('[data-demo]')];
+    stages.forEach((stage) => {
+      const kind = stage.dataset.demo;
+      if (kind === 'browse') fillBrowse(stage, sample);
+      else if (kind === 'tag') fillTag(stage, sample);
+      else if (kind === 'gen') fillGen(stage, sample);
+      else if (kind === 'draw') fillDraw(stage, sample);
+    });
+    if (REDUCE_MOTION) { freezeDemos(stages); return; }
     const io = new IntersectionObserver((entries) => {
-      const vis = entries.filter((e) => e.isIntersecting)
-        .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-      if (!vis) return;
-      const mode = vis.target.dataset.mode;
-      if (mode) applyMode(mode);
-    }, { threshold: [0.45, 0.7] });
-    beats.forEach((el) => io.observe(el));
-  }
-
-  function bindKeys() {
-    const hint = $('hand-hint');
-    const flash = (key) => {
-      const card = document.querySelector('.key-card[data-key="' + key + '"]');
-      if (!card) return;
-      card.classList.add('is-hot');
-      setTimeout(() => card.classList.remove('is-hot'), 280);
-    };
-    document.querySelectorAll('.key-card').forEach((card) => {
-      card.addEventListener('click', () => {
-        flash(card.dataset.key);
-        applyMode('draw');
-        if (hint) hint.textContent = '進工具按 ' + card.dataset.key.toUpperCase() + ' 才會真的抽。';
-      });
-    });
-    window.addEventListener('keydown', (e) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const t = e.target;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-      const k = e.key.toLowerCase();
-      if (k !== 'r' && k !== 'e' && k !== 'c') return;
-      flash(k);
-      applyMode('draw');
-    });
+      entries.forEach((e) => e.target.classList.toggle('is-in', e.isIntersecting));
+    }, { threshold: 0.35 });
+    stages.forEach((s) => io.observe(s));
+    setInterval(() => tickDemos(stages), 1400);
   }
 
   function startSheet() {
@@ -483,16 +477,13 @@ void main() {
   async function startPage() {
     const page = $('page');
     page.hidden = false;
-    bindModeRail();
-    bindKeys();
-    bindStack();
     try {
       const r = await fetch('/api/intro');
       if (!r.ok) throw new Error('intro ' + r.status);
       const data = await r.json();
       fillStats(data);
       introPool = data.sample || [];
-      fillWall(introPool);
+      fillDemos(introPool);
       startSheet();
       watchHero();
     } catch (err) {

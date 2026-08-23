@@ -1,6 +1,17 @@
 [
   {
     "date": "2026-08-23",
+    "macrostructure": "Feature Stack hero + live-stage grid",
+    "theme": "custom",
+    "theme_axes": "dark / classical-serif / warm",
+    "vibe": "warm darkroom brass",
+    "enrichment": "existing WebGL contact sheet + four 160px live stages",
+    "nav": "N5",
+    "footer": "Ft5",
+    "brief": "詞庫暗房 /intro · 第二部分改成 What'Sub 式小框動態演示，第三部分改成藥液流程單"
+  },
+  {
+    "date": "2026-08-23",
     "macrostructure": "Feature Stack",
     "theme": "custom",
     "theme_axes": "dark / classical-serif / warm",
