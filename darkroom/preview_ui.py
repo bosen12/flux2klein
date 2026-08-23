@@ -701,6 +701,10 @@ STATIC_FILES = {
     "/intro.html": ("intro.html", "text/html; charset=utf-8"),
     "/intro.css": ("intro.css", "text/css; charset=utf-8"),
     "/intro.js": ("intro.js", "application/javascript; charset=utf-8"),
+    "/tokens.css": ("tokens.css", "text/css; charset=utf-8"),
+    "/fonts/instrumentserif-400.woff2": ("fonts/instrumentserif-400.woff2", "font/woff2"),
+    "/fonts/geist-400.woff2": ("fonts/geist-400.woff2", "font/woff2"),
+    "/fonts/ibmplexmono-500.woff2": ("fonts/ibmplexmono-500.woff2", "font/woff2"),
 }
 
 class PrioritySemaphore:

@@ -1,0 +1,97 @@
+/* Hallmark · pre-emit critique: P4 H4 E4 S4 R4 V4
+ * Hallmark · genre: atmospheric · macrostructure: Feature Stack · tone: atmospheric
+ * theme: custom (vibe: "warm darkroom brass" · paper oklch(12% 0.014 55) · accent oklch(78% 0.14 75) amber · Instrument Serif + Geist)
+ * H2 knobs: ratio=5/7 · right=live contact sheet · divider=negative-space
+ * F2 knobs: pinned=left · right=sheet · pin-steps=4
+ * nav: N5 Floating pill · footer: Ft5 Statement
+ * enrichment: existing WebGL contact sheet (product, not illustration)
+ * studied: no · DNA-source: none (What'Sub consulted as public reference only)
+ * audience: 本機詞庫使用者 · use: 搞懂後進入暗房 · axis vs last: first run
+ */
+@font-face {
+  font-family: "Instrument Serif";
+  src: url("/fonts/instrumentserif-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/geist-400.woff2") format("woff2");
+  font-weight: 400 600;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/fonts/ibmplexmono-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+  --color-paper: oklch(12% 0.014 55);
+  --color-paper-2: oklch(16% 0.018 55);
+  --color-paper-3: oklch(20% 0.02 55);
+  --color-ink: oklch(94% 0.012 80);
+  --color-ink-2: oklch(72% 0.022 70);
+  --color-muted: oklch(58% 0.02 65);
+  --color-rule: oklch(28% 0.02 55);
+  --color-accent: oklch(78% 0.14 75);
+  --color-accent-ink: oklch(22% 0.05 70);
+  --color-focus: oklch(80% 0.14 75);
+  --color-danger: oklch(62% 0.18 25);
+  --color-rare: oklch(82% 0.12 90);
+  --color-special: oklch(72% 0.1 250);
+  --color-bloom: oklch(78% 0.14 75 / 0.18);
+  --color-bloom-2: oklch(78% 0.14 75 / 0.1);
+  --color-danger-ink: oklch(96% 0.02 25);
+  --color-scrim: oklch(12% 0.014 55 / 0.86);
+
+  --font-display: "Instrument Serif", "Songti TC", "Noto Serif TC", "PMingLiU", serif;
+  --font-body: "Geist", -apple-system, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --font-outlier: "IBM Plex Mono", ui-monospace, monospace;
+
+  --space-3xs: 0.125rem;
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2.5rem;
+  --space-2xl: 4rem;
+  --space-3xl: 6rem;
+  --space-4xl: 9rem;
+  --page-gutter: clamp(1rem, 4vw, 2.5rem);
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1.125rem;
+  --text-lg: 1.375rem;
+  --text-xl: 1.75rem;
+  --text-2xl: 2.25rem;
+  --text-display: clamp(2.75rem, 5vw + 1rem, 5.25rem);
+  --text-display-s: clamp(2rem, 3.6vw + 0.8rem, 3.25rem);
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-micro: 120ms;
+  --dur-short: 220ms;
+  --dur-long: 420ms;
+
+  --radius-card: 1.25rem;
+  --radius-pill: 999px;
+  --rule-hair: 1px;
+
+  --z-base: 1;
+  --z-raised: 10;
+  --z-sticky: 200;
+  --z-modal: 400;
+
+  --nav-clear: 5.5rem;
+}

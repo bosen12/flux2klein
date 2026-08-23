@@ -328,16 +328,27 @@ void main() {
     });
   }
 
-  const MODE_CAP = {
-    browse: '點格子看名稱。進工具以後，點開是大圖與正向／負向。',
-    tag: '角上的點是稀有／特別的記號。真的標記寫在側檔，不改檔名。',
-    gen: '亮的幾格正在顯影。單張生成會插隊到批次前面。',
-    draw: '抽出 8 張。R 全庫、E 本分類、C 是 Concepts。'
+  const MODE_COPY = {
+    browse: {
+      title: '四種看法，同一張紙',
+      body: '左邊資料夾、中間卡片。這格是你現在這份詞庫抽來的，不是示意素材。切看法只改紙上的記號，圖還是同一批。'
+    },
+    tag: {
+      title: '稀有度寫在紙邊',
+      body: '普通、稀有、特別、傳奇。點了立刻亮。真的標記寫在側檔，不改檔名。'
+    },
+    gen: {
+      title: '詞庫加上 LoRA，丟進藥液',
+      body: '多選詞庫，打開 LoRA 大面板挑觸發詞。單張會插隊到批次前面。圖庫是這次開啟的暫存，刷新即清空。'
+    },
+    draw: {
+      title: '抽卡是發牌，不是清單亂跳',
+      body: '同一套鍵，三種模式做對應的事：瀏覽看圖、打標逐張標、生圖直接沖。'
+    }
   };
 
   function applyMode(mode) {
     const wall = $('wall-grid');
-    const cap = $('mode-cap');
     if (!wall) return;
     wall.dataset.mode = mode;
     document.querySelectorAll('.mode-rail [role="tab"]').forEach((btn) => {
@@ -345,16 +356,19 @@ void main() {
       btn.setAttribute('aria-selected', on ? 'true' : 'false');
       btn.tabIndex = on ? 0 : -1;
     });
-    if (cap) cap.textContent = MODE_CAP[mode] || MODE_CAP.browse;
+    const copy = MODE_COPY[mode] || MODE_COPY.browse;
+    const title = $('pin-title');
+    const body = $('pin-body');
+    if (title) title.textContent = copy.title;
+    if (body) body.textContent = copy.body;
+    const keys = $('hand-keys');
+    const hint = $('hand-hint');
+    if (keys) keys.hidden = mode !== 'draw';
+    if (hint) hint.hidden = mode !== 'draw';
     const frames = [...wall.querySelectorAll('.frame')];
     frames.forEach((el, i) => {
       el.classList.toggle('dev', mode === 'gen' && i % 7 === 0);
       el.classList.toggle('picked', mode === 'draw' && i < 8);
-      if (mode === 'draw' && i < 8) {
-        el.style.setProperty('--tilt', ((i % 2 ? 1 : -1) * (1.2 + (i % 5) * 0.6)) + 'deg');
-      } else {
-        el.style.removeProperty('--tilt');
-      }
     });
   }
 
@@ -365,6 +379,10 @@ void main() {
       const btn = e.target.closest('[data-mode]');
       if (!btn) return;
       applyMode(btn.dataset.mode);
+      const beat = document.getElementById('beat-' + btn.dataset.mode);
+      if (beat && beat.offsetParent !== null) {
+        beat.scrollIntoView({ behavior: REDUCE_MOTION ? 'auto' : 'smooth', block: 'center' });
+      }
     });
     rail.addEventListener('keydown', (e) => {
       const tabs = [...rail.querySelectorAll('[role="tab"]')];
@@ -397,23 +415,18 @@ void main() {
     applyMode('browse');
   }
 
-  function fillStrips(sample) {
-    if (!sample.length) return;
-    document.querySelectorAll('.bath-strip').forEach((film) => {
-      const offset = Number(film.dataset.offset) || 0;
-      const run = document.createElement('div');
-      run.className = 'strip-run';
-      const frames = [];
-      for (let i = 0; i < 14; i++) frames.push(sample[(offset + i) % sample.length]);
-      const add = (it) => {
-        const img = thumb(it, 192);
-        img.width = 140; img.height = 140;
-        run.appendChild(img);
-      };
-      frames.forEach(add);
-      frames.forEach(add);
-      film.appendChild(run);
-    });
+  function bindStack() {
+    const beats = [...document.querySelectorAll('.look .beat')];
+    if (!beats.length || REDUCE_MOTION) return;
+    if (window.matchMedia('(max-width: 59.99rem)').matches) return;
+    const io = new IntersectionObserver((entries) => {
+      const vis = entries.filter((e) => e.isIntersecting)
+        .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (!vis) return;
+      const mode = vis.target.dataset.mode;
+      if (mode) applyMode(mode);
+    }, { threshold: [0.45, 0.7] });
+    beats.forEach((el) => io.observe(el));
   }
 
   function bindKeys() {
@@ -453,29 +466,6 @@ void main() {
     introRAF = requestAnimationFrame(introFrame);
   }
 
-  function revealChapters() {
-    const io = new IntersectionObserver((entries) => {
-      for (const e of entries) {
-        if (e.isIntersecting) {
-          e.target.classList.add('in');
-          io.unobserve(e.target);
-        }
-      }
-    }, { threshold: 0.18 });
-    document.querySelectorAll('.sheet, .plate, .quiet').forEach((el) => io.observe(el));
-  }
-
-  function watchNav() {
-    const nav = $('nav');
-    const hero = $('hero');
-    if (!nav || !hero) return;
-    const io = new IntersectionObserver((entries) => {
-      const heroOn = entries.some((e) => e.isIntersecting && e.intersectionRatio > 0.35);
-      nav.classList.toggle('is-solid', !heroOn);
-    }, { threshold: [0, 0.35, 0.7] });
-    io.observe(hero);
-  }
-
   function watchHero() {
     const hero = $('hero');
     if (!hero || REDUCE_MOTION) return;
@@ -493,10 +483,9 @@ void main() {
   async function startPage() {
     const page = $('page');
     page.hidden = false;
-    watchNav();
-    revealChapters();
     bindModeRail();
     bindKeys();
+    bindStack();
     try {
       const r = await fetch('/api/intro');
       if (!r.ok) throw new Error('intro ' + r.status);
@@ -504,7 +493,6 @@ void main() {
       fillStats(data);
       introPool = data.sample || [];
       fillWall(introPool);
-      fillStrips(introPool);
       startSheet();
       watchHero();
     } catch (err) {

@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#07060a">
+<meta name="theme-color" content="#1c1610">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>詞庫暗房</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23eaad57' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='14.31' y1='8' x2='20.05' y2='17.94'/%3E%3Cline x1='9.69' y1='8' x2='21.17' y2='8'/%3E%3Cline x1='7.38' y1='12' x2='13.12' y2='2.06'/%3E%3Cline x1='9.69' y1='16' x2='3.95' y2='6.06'/%3E%3Cline x1='14.31' y1='16' x2='2.83' y2='16'/%3E%3Cline x1='16.62' y1='12' x2='10.88' y2='21.94'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23e4b15c' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='14.31' y1='8' x2='20.05' y2='17.94'/%3E%3Cline x1='9.69' y1='8' x2='21.17' y2='8'/%3E%3Cline x1='7.38' y1='12' x2='13.12' y2='2.06'/%3E%3Cline x1='9.69' y1='16' x2='3.95' y2='6.06'/%3E%3Cline x1='14.31' y1='16' x2='2.83' y2='16'/%3E%3Cline x1='16.62' y1='12' x2='10.88' y2='21.94'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/intro.css">
 </head>
 <body>
-<a class="skip" href="#sheet">跳到印樣</a>
+<a class="skip" href="#look">跳到印樣</a>
 
 <div id="age-gate">
   <div class="age-gate-card">
@@ -25,105 +25,77 @@
 </div>
 
 <div id="page" hidden>
-  <nav class="nav" id="nav">
-    <a class="nav-brand" href="#hero" translate="no">詞庫暗房</a>
-    <div class="nav-links">
-      <a href="#sheet">印樣</a>
-      <a href="#mark">打標</a>
-      <a href="#bath">生圖</a>
-      <a href="#hand">抽卡</a>
-    </div>
-    <a class="nav-go" href="/">進入暗房</a>
+  <nav class="nav-pill" id="nav" aria-label="主要">
+    <a class="wordmark" href="#hero" translate="no">詞庫暗房</a>
+    <ul class="nav-pill__links">
+      <li><a href="#look">印樣</a></li>
+      <li><a href="#local">本機</a></li>
+    </ul>
+    <a class="cta-fill" href="/">進入暗房</a>
   </nav>
 
-  <header class="hero" id="hero">
-    <canvas class="intro-gl" id="intro-gl" aria-hidden="true"></canvas>
-    <div class="intro-fallback" id="intro-fallback" hidden aria-hidden="true"></div>
-    <div class="hero-scrim" aria-hidden="true"></div>
-    <div class="hero-type">
-      <p class="hero-edge" id="intro-kicker">CONTACT SHEET</p>
-      <h1>詞庫<br>暗房</h1>
-      <p class="hero-line">本機詞庫的接觸印樣。不上傳。</p>
+  <header class="hero stack" id="hero">
+    <div class="stack-pin hero-pin">
+      <p class="meter-kicker" id="intro-kicker">CONTACT SHEET</p>
+      <h1>先<em>看</em>這張紙</h1>
+      <p class="lede">本機詞庫抽來的接觸印樣。不上傳。</p>
+      <dl class="meter">
+        <div><dt data-stat="total">—</dt><dd>詞庫</dd></div>
+        <div><dt data-stat="folders">—</dt><dd>資料夾</dd></div>
+        <div><dt data-stat="developed">—</dt><dd>已顯影</dd></div>
+      </dl>
       <div class="hero-actions">
-        <a class="go" href="/">進入暗房</a>
-        <a class="pull" href="#sheet">抽這張印樣</a>
+        <a class="cta-fill" href="/">進入暗房</a>
+        <a class="pull" href="#look">往下看印樣</a>
       </div>
+    </div>
+    <div class="stack-stage hero-stage">
+      <canvas class="intro-gl" id="intro-gl" aria-hidden="true"></canvas>
+      <div class="intro-fallback" id="intro-fallback" hidden aria-hidden="true"></div>
     </div>
   </header>
 
-  <div class="table">
-    <aside class="rebate" aria-hidden="true"><span>KLEIN · DARKROOM · SPECIAL PROMPTS</span></aside>
-
-    <section class="sheet" id="sheet">
-      <header class="sheet-head">
-        <p class="frame-no">12</p>
-        <div>
-          <h2>一張印樣，四種看法</h2>
-          <p>左邊資料夾、中間卡片。下面是你現在這份詞庫抽來的格，不是示意素材。切模式只改這張紙上的記號，圖還是同一批。</p>
-        </div>
-        <dl class="grease">
-          <div><dt data-stat="total">—</dt><dd>詞庫</dd></div>
-          <div><dt data-stat="folders">—</dt><dd>資料夾</dd></div>
-          <div><dt data-stat="developed">—</dt><dd>已顯影</dd></div>
-        </dl>
-      </header>
-
+  <section class="stack look" id="look">
+    <div class="stack-pin">
+      <h2 id="pin-title">四種看法，同一張紙</h2>
+      <p id="pin-body">左邊資料夾、中間卡片。下面是你現在這份詞庫抽來的格，不是示意素材。切看法只改紙上的記號，圖還是同一批。</p>
       <div class="mode-rail" role="tablist" aria-label="印樣看法">
         <button type="button" role="tab" aria-selected="true" data-mode="browse">瀏覽</button>
         <button type="button" role="tab" aria-selected="false" data-mode="tag">打標</button>
         <button type="button" role="tab" aria-selected="false" data-mode="gen">生圖</button>
         <button type="button" role="tab" aria-selected="false" data-mode="draw">抽卡</button>
       </div>
-      <p class="mode-cap" id="mode-cap">點格子看名稱。進工具以後，點開是大圖與正向／負向。</p>
-      <div class="sheet-wall" id="wall-grid" data-mode="browse"></div>
-    </section>
-
-    <section class="plate" id="mark">
-      <p class="frame-no">13</p>
-      <div class="plate-copy">
-        <h2>稀有度寫在紙邊，不改檔名</h2>
-        <p>普通、稀有、特別、傳奇。點了立刻亮。抽 15 張還沒標的，按 1 到 4 標、S 跳過、Z 復原、R 重抽。兩份詞庫的側檔分開。</p>
-      </div>
-      <ol class="grades">
-        <li class="g g-n"><b>普通</b><span>看過了，別再抽到</span></li>
-        <li class="g g-r"><b>稀有</b><span>黃光</span></li>
-        <li class="g g-s"><b>特別</b><span>藍光</span></li>
-        <li class="g g-l"><b>傳奇</b><span>彩色光暈</span></li>
-      </ol>
-    </section>
-
-    <section class="plate" id="bath">
-      <p class="frame-no">14</p>
-      <div class="plate-copy">
-        <h2>詞庫加上 LoRA，丟進藥液</h2>
-        <p>多選詞庫，打開 LoRA 大面板挑觸發詞。底模只影響生圖，瀏覽裡重新生成縮圖仍走原本 workflow。單張會插隊到批次前面。圖庫是這次開啟的暫存，刷新即清空。</p>
-      </div>
-      <div class="bath-strip" data-offset="8"></div>
-    </section>
-
-    <section class="plate" id="hand">
-      <p class="frame-no">15</p>
-      <div class="plate-copy">
-        <h2>抽卡是發牌，不是清單亂跳</h2>
-        <p>同一套鍵，三種模式做對應的事：瀏覽看圖、打標逐張標、生圖直接沖。</p>
-      </div>
-      <div class="hand-keys">
+      <div class="hand-keys" id="hand-keys" hidden>
         <button type="button" class="key-card" data-key="r"><kbd>R</kbd><span>全庫</span></button>
         <button type="button" class="key-card" data-key="e"><kbd>E</kbd><span>本分類</span></button>
         <button type="button" class="key-card" data-key="c"><kbd>C</kbd><span>Concepts</span></button>
       </div>
-      <p class="hand-hint" id="hand-hint">在這頁按 R、E、C 也會亮。進工具才真的抽。</p>
-    </section>
+      <p class="hand-hint" id="hand-hint" hidden>在這頁按 R、E、C 也會亮。進工具才真的抽。</p>
+    </div>
+    <div class="stack-track">
+      <div class="stage-live">
+        <div class="sheet-wall" id="wall-grid" data-mode="browse"></div>
+      </div>
+      <div class="beats" aria-hidden="true">
+        <div class="beat" data-mode="browse" id="beat-browse"></div>
+        <div class="beat" data-mode="tag" id="beat-tag"></div>
+        <div class="beat" data-mode="gen" id="beat-gen"></div>
+        <div class="beat" data-mode="draw" id="beat-draw"></div>
+      </div>
+    </div>
+  </section>
 
-    <section class="quiet" id="local">
-      <p class="frame-no">16</p>
-      <h2>本機。一個 port。</h2>
-      <p>跑 <span translate="no">darkroom/preview_ui.bat</span>，開 <span translate="no">http://localhost:7860/</span>。另一份詞庫用 <span translate="no">preview_ui_animebot.bat</span>，同一個 port，一次只能開一個。頂列會寫你在操作哪一夾。沒有登入，不要把這個埠對公網開放。</p>
-    </section>
-  </div>
+  <section class="quiet" id="local">
+    <h2>本機。一個 port。</h2>
+    <p>跑 <span translate="no">darkroom/preview_ui.bat</span>，開 <span translate="no">http://localhost:7860/</span>。另一份詞庫用 <span translate="no">preview_ui_animebot.bat</span>，同一個 port，一次只能開一個。頂列會寫你在操作哪一夾。沒有登入，不要把這個埠對公網開放。</p>
+  </section>
 
-  <footer class="foot">
-    <a class="go" href="/">進入暗房</a>
+  <footer class="foot-stmt">
+    <p class="foot-stmt__line">進去才算數。</p>
+    <div class="foot-stmt__meta">
+      <span class="wordmark" translate="no">詞庫暗房</span>
+      <a class="cta-fill" href="/">進入暗房</a>
+    </div>
   </footer>
 </div>
 
