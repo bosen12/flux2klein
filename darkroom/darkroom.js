@@ -1622,6 +1622,10 @@ window.addEventListener('keydown', e => {
     if (e.key === 'Escape') closeCsModal();
     return;
   }
+  if ($('repl-modal').classList.contains('open')) {
+    if (e.key === 'Escape') closeReplModal();
+    return;
+  }
   if ($('lora-modal').classList.contains('open')) {
     if (e.key === 'Escape') closeLoraModal();
     return;
@@ -2552,6 +2556,8 @@ function updateGenbar() {
   const n = SEL.size;
   c.textContent = `已選 ${n}`; c.classList.toggle('has', n > 0);
   const run = $('gen-run'); if (run) run.disabled = n === 0;
+  // 替換詞面板開著時，選取變了（換了預覽的目標詞庫）要跟著重抓一次預覽。
+  if ($('repl-modal').classList.contains('open')) updateReplPreview();
 }
 
 const GEN_LORA_PAGE_SIZE = 80;          // 每頁列數（總數上百，全渲染會卡；改翻頁而非截斷丟資料）
@@ -4503,6 +4509,7 @@ function startApp() {
   $('boot').style.display = '';
   loadAll().then(() => { maybeStartIntro(); pollBatch(); return introWarmup(); }).finally(hideBoot);
   setTimeout(hideBoot, 20000);   // 保險：萬一 loadAll 本身卡住也別讓載入畫面永遠蓋著
+  fetchReplacements();   // 背景抓替換規則、更新 genbar 摘要 chip；不影響 boot 收起時機
 }
 function initAgeGate() {
   if (sessionStorage.getItem(AGE_GATE_KEY) === '1') {
@@ -4536,4 +4543,152 @@ function initAgeGate() {
     }
   });
 }
+// ---------------------------------------------------------------------------
+// 詞彙替換規則：生圖/抽卡送出前，把 positive 裡整段標籤完全相符的詞換成別的字
+// （可加權重）。後端套用點在 preview_ui.py 的 apply_replacements()，這裡只負責
+// 規則的 CRUD 介面與即時預覽。REPL_RULES 是伺服器那份的本地副本，開機背景抓一次
+// （不擋 boot），每次存檔成功後用伺服器回傳的正規化結果整份覆蓋回來。
+// ---------------------------------------------------------------------------
+let REPL_RULES = [];
+let REPL_SAVE_SEQ = 0;   // 存檔請求的序號：只有「最新一次」送出的結果能覆蓋 REPL_RULES，
+                          // 避免使用者連續改好幾列時，先送出但後回來的舊回應蓋掉新輸入。
+
+async function fetchReplacements() {
+  try {
+    const j = await fetch('/api/replacements').then(r => r.json());
+    REPL_RULES = j.rules || [];
+  } catch (e) { REPL_RULES = []; }
+  updateReplSummary();
+  if ($('repl-modal').classList.contains('open')) { renderReplRows(); updateReplPreview(); }
+}
+
+function replWeightLabel(w) {
+  const n = (+w || 1);
+  // 1.20 → "1.2"，1.00 → "1"：權重欄位本身還是用完整小數，這裡只是給摘要文字用的短格式。
+  return n.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+function replRuleLabel(r) {
+  const w = replWeightLabel(r.weight);
+  const dst = r.replace || '（刪除）';
+  return `${r.match}→${dst}${w !== '1' ? '(' + w + ')' : ''}`;
+}
+
+function updateReplSummary() {
+  const btn = $('repl-summary');
+  const enabled = REPL_RULES.filter(r => r.enabled);
+  if (!enabled.length) { btn.hidden = true; btn.textContent = ''; return; }
+  btn.hidden = false;
+  btn.textContent = enabled.length > 1
+    ? `${replRuleLabel(enabled[0])} 等 ${enabled.length} 條`
+    : replRuleLabel(enabled[0]);
+}
+
+function replRowHTML(r, i) {
+  return `<div class="repl-row" data-i="${i}">
+    <input type="checkbox" class="repl-en" data-f="enabled" ${r.enabled ? 'checked' : ''} title="啟用這條規則">
+    <input type="text" class="repl-match" data-f="match" placeholder="原詞（例：milf）" value="${escapeAttr(r.match || '')}">
+    <span class="repl-arrow" aria-hidden="true">→</span>
+    <input type="text" class="repl-replace" data-f="replace" placeholder="替換成（留空＝刪除）" value="${escapeAttr(r.replace || '')}">
+    <input type="number" class="repl-weight" data-f="weight" min="0.1" max="3" step="0.1" value="${r.weight}">
+    <button type="button" class="repl-del" data-i="${i}" title="刪除規則" aria-label="刪除規則"><svg class="btn-svg" style="margin-right:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
+  </div>`;
+}
+
+function renderReplRows() {
+  $('repl-rows').innerHTML = REPL_RULES.map(replRowHTML).join('')
+    || '<p class="repl-empty">還沒有替換規則，按下面「新增規則」開始。</p>';
+}
+
+// 每列改動即時存檔（跟 LoRA 大面板同一套「選擇即時生效」慣例），debounce 200ms
+// 避免打字每個按鍵都送一次 request。
+let REPL_SAVE_TIMER = null;
+function scheduleReplSave() {
+  clearTimeout(REPL_SAVE_TIMER);
+  REPL_SAVE_TIMER = setTimeout(saveReplRules, 200);
+}
+
+async function saveReplRules() {
+  const seq = ++REPL_SAVE_SEQ;
+  const err = $('repl-err');
+  let res;
+  try {
+    res = await fetch('/api/replacements', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rules: REPL_RULES }),
+    }).then(r => r.json());
+  } catch (e) {
+    if (seq === REPL_SAVE_SEQ) { err.textContent = '存檔失敗：' + e.message; err.hidden = false; }
+    return;
+  }
+  if (seq !== REPL_SAVE_SEQ) return;   // 已經有更新的存檔請求在路上，這次回應是舊的，丟棄
+  if (res.error) {
+    err.textContent = res.error;
+    err.hidden = false;
+    return;   // 驗證失敗（例如重複的原詞）：畫面上使用者剛打的內容繼續留著讓他改，不覆蓋
+  }
+  err.hidden = true;
+  REPL_RULES = res.rules || [];
+  updateReplSummary();
+  updateReplPreview();
+}
+
+function addReplRule() {
+  REPL_RULES.push({ match: '', replace: '', weight: 1.0, enabled: true });
+  renderReplRows();
+  const rows = $('repl-rows').querySelectorAll('.repl-match');
+  const last = rows[rows.length - 1];
+  if (last) last.focus();
+}
+
+async function updateReplPreview() {
+  const box = $('repl-preview');
+  const rel = [...SEL][0];
+  const hasEnabled = REPL_RULES.some(r => r.enabled);
+  if (!rel || !hasEnabled) { box.hidden = true; return; }
+  let j;
+  try {
+    j = await fetch('/api/replacements/preview?rel=' + encodeURIComponent(rel)).then(r => r.json());
+  } catch (e) { box.hidden = true; return; }
+  if (j.error) { box.hidden = true; return; }
+  box.hidden = false;
+  $('repl-preview-before').textContent = j.before;
+  $('repl-preview-after').textContent = j.after;
+}
+
+async function openReplModal() {
+  overlayOpen($('repl-modal'));
+  renderReplRows();
+  updateReplPreview();
+}
+function closeReplModal() {
+  if (document.activeElement) document.activeElement.blur();
+  fadeCloseOverlay($('repl-modal'), $('repl-modal-inner'));
+}
+$('repl-pick-btn').onclick = (e) => { e.stopPropagation(); openReplModal(); };
+$('repl-modal-close').onclick = closeReplModal;
+$('repl-modal').addEventListener('click', e => { if (e.target.id === 'repl-modal') closeReplModal(); });
+$('repl-add-btn').onclick = addReplRule;
+$('repl-rows').addEventListener('input', (e) => {
+  const row = e.target.closest('.repl-row');
+  if (!row) return;
+  const i = +row.dataset.i;
+  const field = e.target.dataset.f;
+  if (!field || !REPL_RULES[i]) return;
+  if (field === 'weight') REPL_RULES[i][field] = parseFloat(e.target.value) || 1.0;
+  else if (field === 'enabled') REPL_RULES[i][field] = e.target.checked;
+  else REPL_RULES[i][field] = e.target.value;
+  scheduleReplSave();
+});
+$('repl-rows').addEventListener('change', (e) => {
+  if (e.target.dataset.f !== 'enabled') return;   // input 事件已經處理過 checkbox 即時值
+});
+$('repl-rows').addEventListener('click', (e) => {
+  const btn = e.target.closest('.repl-del');
+  if (!btn) return;
+  REPL_RULES.splice(+btn.dataset.i, 1);
+  renderReplRows();
+  scheduleReplSave();
+});
+
 initAgeGate();

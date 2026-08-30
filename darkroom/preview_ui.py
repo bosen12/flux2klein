@@ -359,6 +359,137 @@ def _flush_scores() -> None:
     _atomic_write_json(_meta_path("scores"), {"scores": snapshot})
 
 
+# ---------------------------------------------------------------------------
+# 詞彙替換規則（生圖／抽卡用）：不是 key-by-rel 的側檔，是一份小規則清單，整批讀寫。
+# 存 replacements.<dataset>.json，跟收藏/旗標/稀有度同一套「依 special_dir 分檔」
+# 機制——兩個 bat 各自的替換規則不會互相污染。套用點見 apply_replacements()，
+# 呼叫端見 _gen_one_worker()（生圖模式與抽卡共用同一個函式，改一處兩邊都生效）。
+# ---------------------------------------------------------------------------
+_REPLACEMENT_WEIGHT_MIN = 0.1
+_REPLACEMENT_WEIGHT_MAX = 3.0
+_replacements: list = []          # [{"match","replace","weight","enabled"}, ...]
+_replacements_lock = threading.Lock()
+
+
+def _load_replacements():
+    global _replacements
+    path = _meta_path("replacements")
+    if not path.is_file():
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        rules = d.get("rules") if isinstance(d, dict) else None
+        if isinstance(rules, list):
+            _replacements = [r for r in rules if isinstance(r, dict) and r.get("match")]
+        plog(f"[replace] 載入 {len(_replacements)} 條替換規則")
+    except Exception as e:
+        plog(f"[replace] 讀取失敗，從空白開始：{e}")
+
+
+def _save_replacements_locked():
+    """呼叫端須已持有 _replacements_lock。"""
+    _atomic_write_json(_meta_path("replacements"), {"rules": _replacements})
+
+
+def _normalize_replacement_rules(rules_in) -> tuple[list | None, str]:
+    """驗證＋正規化前端送來的規則陣列。回傳 (正規化後的規則, 錯誤訊息)——成功時
+    錯誤訊息是空字串，失敗時規則是 None。match 不分大小寫比對，同一批裡啟用中的
+    規則不能有重複 match（同一個詞被兩條規則搶著換，行為不確定，直接擋在存檔前，
+    不要留到 apply_replacements() 才用「後蓋前」這種使用者猜不到的規則默默解決）。"""
+    if not isinstance(rules_in, list):
+        return None, "格式錯誤：rules 必須是陣列"
+    out = []
+    seen_enabled = set()
+    for i, r in enumerate(rules_in[:200]):
+        if not isinstance(r, dict):
+            return None, f"第 {i+1} 條格式錯誤"
+        match = str(r.get("match") or "").strip()
+        if not match:
+            return None, f"第 {i+1} 條「原詞」不能空白"
+        replace = str(r.get("replace") or "").strip()
+        try:
+            weight = float(r.get("weight", 1.0))
+        except (TypeError, ValueError):
+            return None, f"第 {i+1} 條權重必須是數字"
+        if not (_REPLACEMENT_WEIGHT_MIN <= weight <= _REPLACEMENT_WEIGHT_MAX):
+            return None, f"第 {i+1} 條權重須介於 {_REPLACEMENT_WEIGHT_MIN}~{_REPLACEMENT_WEIGHT_MAX}"
+        enabled = bool(r.get("enabled", True))
+        if enabled:
+            key = match.lower()
+            if key in seen_enabled:
+                return None, f"「{match}」被多條啟用中的規則重複比對，請關掉其中一條或合併"
+            seen_enabled.add(key)
+        out.append({"match": match, "replace": replace, "weight": round(weight, 3), "enabled": enabled})
+    return out, ""
+
+
+def set_replacement_rules(rules_in) -> tuple[list | None, str]:
+    normalized, err = _normalize_replacement_rules(rules_in)
+    if normalized is None:
+        return None, err
+    with _replacements_lock:
+        global _replacements
+        _replacements = normalized
+        _save_replacements_locked()
+        return list(_replacements), ""
+
+
+def replacement_rules() -> list:
+    with _replacements_lock:
+        return list(_replacements)
+
+
+_REPLACEMENT_PAREN_RE = re.compile(r"[()]")
+
+
+def _escape_weight_parens(text: str) -> str:
+    """ComfyUI 權重語法用 (text:weight) 包住標籤，若 text 本身含字面括號會跟語法的
+    括號混在一起、巢狀結構壞掉。查證過的跳脫方式是 \( \)（見
+    https://docs.comfy.org/built-in-nodes/ClipTextEncode）。"""
+    return _REPLACEMENT_PAREN_RE.sub(lambda m: "\\" + m.group(0), text)
+
+
+def apply_replacements(prompt: str, rules: list) -> str:
+    """把 build_prompt() 組好的 positive 字串，依 rules 逐標籤比對替換。
+
+    比對規則：整段標籤（逗號拆開、trim、小寫）完全相等才算命中，不是子字串比對
+    ——詞庫裡的 "milf" 都是逗號清單裡的獨立標籤，不是被包在別的字裡（實測過），
+    整段比對不會誤傷 "milfy" 這種理論上可能存在但目前詞庫沒有的複合詞。
+
+    replace 留空＝直接刪掉這個標籤（不用另外做「刪除」功能）。weight 恰好 1.0 時
+    不加權重括號，避免送出一堆沒意義的 "(x:1.0)"。替換後再去重一次（用最終文字的
+    小寫比對，加權重前的版本）——因為不同標籤有可能被換成同一個詞（例如「milf」
+    跟「mature female」都設定換成「cute girl」），不去重會讓它連續出現兩次。"""
+    if not prompt or not rules:
+        return prompt
+    active = {r["match"].lower(): r for r in rules if r.get("enabled") and r.get("match")}
+    if not active:
+        return prompt
+    parts_out: list[str] = []
+    seen: set[str] = set()
+    for piece in prompt.split(","):
+        tag = piece.strip()
+        if not tag:
+            continue
+        rule = active.get(tag.lower())
+        if rule is None:
+            final, dedup_key = tag, tag.lower()
+        else:
+            replace = rule.get("replace", "")
+            if not replace:
+                continue   # 替換成空字串＝刪除這個標籤
+            weight = rule.get("weight", 1.0)
+            dedup_key = replace.lower()
+            final = replace if abs(weight - 1.0) < 1e-9 else f"({_escape_weight_parens(replace)}:{weight})"
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+        parts_out.append(final)
+    return ", ".join(parts_out)
+
+
+
 def score_map() -> dict:
     with _scores_lock:
         return dict(_scores)
@@ -1987,6 +2118,7 @@ def _gen_one_worker(gid, rel, loras, trigger, wait_for=None, mark_started=None):
                 positive = build_prompt([], [])
                 negative = build_negative([])
                 prefix = "genmode/concepts"
+            positive = apply_replacements(positive, replacement_rules())
             if trigger:
                 positive = (positive + ", " + trigger) if positive else trigger
             seed = random.randint(0, 2**63 - 1)
@@ -2586,6 +2718,24 @@ class Handler(BaseHTTPRequestHandler):
                     items = []
                 self._send_json({"items": items, "current": STATE.get("checkpoint")})
                 return
+            if u.path == "/api/replacements":
+                self._send_json({"rules": replacement_rules()})
+                return
+            if u.path == "/api/replacements/preview":
+                # 送出前先看「真的會變成這樣」，不用生完圖才發現規則設錯（見 apply_replacements）。
+                # rel 空字串＝ Concepts 抽卡的無詞庫模板情境，跟 _gen_one_worker() 同一種解讀。
+                rel = qs.get("rel", [""])[0]
+                if rel:
+                    img_py = py_of(rel)
+                    req, pos, neg = load_lib(img_py)
+                    positive = build_prompt(req, pos)
+                else:
+                    positive = build_prompt([], [])
+                self._send_json({
+                    "before": positive,
+                    "after": apply_replacements(positive, replacement_rules()),
+                })
+                return
             if u.path == "/api/lora-preview":
                 p = lora_preview_path(qs.get("folder", [""])[0], qs.get("file", [""])[0])
                 if p is None:
@@ -2769,6 +2919,14 @@ class Handler(BaseHTTPRequestHandler):
                 STATE["steps"] = s
                 plog(f"[steps] 生成步數設為 {s}")
                 self._send_json({"ok": True, "steps": s})
+                return
+            if u.path == "/api/replacements":
+                rules, err = set_replacement_rules(data.get("rules"))
+                if rules is None:
+                    self._send_json({"error": err}, 400)
+                    return
+                plog(f"[replace] 儲存 {len(rules)} 條替換規則")
+                self._send_json({"ok": True, "rules": rules})
                 return
             if u.path == "/api/checkpoint":
                 file = data.get("file") or ""
@@ -3053,6 +3211,7 @@ def main():
     _load_flags()                 # 載入品質旗標黑名單（依 dataset 分檔）
     _load_favs()                  # 載入收藏清單（依 dataset 分檔）
     _load_rarities()              # 載入稀有度側檔（依 dataset 分檔）
+    _load_replacements()          # 載入生圖/抽卡的詞彙替換規則（依 dataset 分檔）
     _load_scores()                # 載入卡片評分側檔（依 dataset 分檔）
     srv = _QuietThreadingHTTPServer((bind_host, port), Handler)
     # 開機就先在背景把詞庫掃一遍暖快取（第一次開頁的 /api/libs 才不用等 ~1s 掃描），

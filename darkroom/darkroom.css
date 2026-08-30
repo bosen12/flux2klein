@@ -1064,6 +1064,49 @@ body[data-mode="gen"] #genbar { transform: none; pointer-events: auto; }
 .cs-tab-panel { display: flex; flex-direction: column; gap: 12px; }
 .cs-tab-panel[hidden] { display: none; }
 
+/* ── 詞彙替換規則（#repl-modal，殼沿用 .cs-modal，見上方）────────────────────── */
+/* genbar「替換詞」鈕旁的摘要 chip：跟 #lora-pick-btn 的截斷寫法一致（inline + ellipsis），
+   有規則啟用時才出現，提醒使用者目前生圖/抽卡會被改字，避免忘記自己開著替換。 */
+.repl-summary { display: inline-block; max-width: 180px; margin-left: 8px; padding: 2px 8px;
+  border-radius: 999px; corner-shape: round; background: var(--sunk); border: 1px solid var(--amber);
+  color: var(--amber); font-family: var(--mono); font-size: 10.5px; line-height: 1.6;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: -1px; }
+.repl-table { display: flex; flex-direction: column; gap: 6px; max-height: 46vh; overflow-y: auto;
+  overscroll-behavior: contain; padding-right: 2px; }
+.repl-row { display: grid; grid-template-columns: 20px 1fr 16px 1fr 64px 26px; gap: 8px; align-items: center; }
+.repl-row-head { font-size: 11px; color: var(--faint); padding: 0 0 2px; }
+.repl-row-head span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.repl-en { accent-color: var(--amber); width: 16px; height: 16px; cursor: pointer; }
+.repl-match, .repl-replace { padding: 6px 9px; font-size: 12.5px; min-width: 0;
+  background: var(--sunk); border: 1px solid var(--line-2); border-radius: 8px; color: var(--ink);
+  transition: border-color var(--d-micro) var(--ease-out), box-shadow var(--d-micro) var(--ease-out); }
+.repl-match:focus, .repl-replace:focus, .repl-weight:focus { outline: none;
+  border-color: var(--amber); box-shadow: 0 0 0 3px color-mix(in srgb, var(--amber) 22%, transparent); }
+.repl-arrow { color: var(--faint); text-align: center; font-size: 13px; }
+.repl-weight { padding: 6px 4px; font-size: 12.5px; text-align: center; min-width: 0;
+  background: var(--sunk); border: 1px solid var(--line-2); border-radius: 8px; color: var(--ink);
+  font-family: var(--mono); transition: border-color var(--d-micro) var(--ease-out); }
+.repl-row:has(.repl-en:not(:checked)) .repl-match,
+.repl-row:has(.repl-en:not(:checked)) .repl-replace,
+.repl-row:has(.repl-en:not(:checked)) .repl-weight { opacity: .45; }
+.repl-del { width: 26px; height: 26px; padding: 0; border-radius: 8px; border: 0; background: transparent;
+  color: var(--faint); display: grid; place-items: center; cursor: pointer;
+  transition: color var(--d-micro) var(--ease-out), background var(--d-micro) var(--ease-out); }
+.repl-del svg { width: 14px; height: 14px; }
+.repl-del:hover { color: var(--err); background: var(--line-2); }
+.repl-empty { margin: 4px 0; font-size: 12.5px; color: var(--faint); }
+.repl-add-btn { align-self: flex-start; font-size: 12.5px; padding: 6px 12px; }
+.repl-add-btn svg { width: 13px; height: 13px; }
+.repl-err { margin: 0; font-size: 12px; color: var(--err); line-height: 1.5; }
+.repl-preview { display: flex; flex-direction: column; gap: 4px; padding-top: 10px;
+  border-top: 1px solid var(--line); }
+.repl-preview-head { font-size: 11px; color: var(--faint); }
+.repl-preview-before, .repl-preview-after { font-family: var(--mono); font-size: 11.5px; line-height: 1.5;
+  padding: 8px 10px; border-radius: 8px; background: var(--sunk); max-height: 90px; overflow-y: auto;
+  overscroll-behavior: contain; word-break: break-word; }
+.repl-preview-before { color: var(--faint); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--faint) 50%, transparent); }
+.repl-preview-after { color: var(--ink); border: 1px solid color-mix(in srgb, var(--amber) 35%, transparent); }
+
 /* 鎖定模板小選擇器：跟 LoRA1/2「搜尋→點選鎖定」同一套心智模型，但縮小成塞得進設定
    彈窗的迷你版——沒有縮圖，純文字列表，畢竟這裡的重點是「選中哪個詞庫」不是看預覽圖
    （預覽圖已經在 genbar/面板 hover 預覽處理過了）。 */

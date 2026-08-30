@@ -193,10 +193,15 @@
   </div>
 </div>
 <!-- 生圖模式底部：選取詞庫 → 選 LoRA → 生圖。LoRA 挑選/trainedWords/強度全部搬進
-     #lora-modal 大面板（見下方），這裡只留「目前選的是誰」摘要鈕，開的是同一個大面板。 -->
+     #lora-modal 大面板（見下方），這裡只留「目前選的是誰」摘要鈕，開的是同一個大面板。
+     「替換詞」鈕開 #repl-modal：把 positive 裡的指定標籤換成別的字（可加權重），例如
+     milf → cute girl，套用點在後端 apply_replacements()（見 preview_ui.py），生圖與
+     抽卡共用同一個 _gen_one_worker() 都會生效。有規則啟用時 #repl-summary 會顯示摘要，
+     避免忘記自己開著替換、生出來的圖跟預期不一樣卻不知道為什麼。 -->
 <div class="tagbar" id="genbar">
   <span class="tagbar-count" id="gen-count">已選 0</span>
   <button class="ghost" id="lora-pick-btn" title="選一個 LoRA 套用（開大面板）"><span class="gen-pick-label">選 LoRA</span></button>
+  <button class="ghost" id="repl-pick-btn" title="設定詞彙替換規則（例如 milf → cute girl）"><span class="gen-pick-label">替換詞</span><span class="repl-summary" id="repl-summary" hidden></span></button>
   <div class="spacer"></div>
   <button class="primary" id="gen-run" disabled><svg class="btn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22a9.4 9.4 0 0 1 0-18.8A8.4 8.4 0 0 1 20.4 11.6c0 1.5-1.2 2.7-2.7 2.7h-1.5a1.7 1.7 0 0 0-1 3c.4.3.6.7.6 1.1 0 1.5-1.4 2.7-2.9 2.6z"/><circle cx="7.6" cy="10.2" r="1.1" fill="currentColor" stroke="none"/><circle cx="11.5" cy="6.8" r="1.1" fill="currentColor" stroke="none"/><circle cx="16" cy="8.5" r="1.1" fill="currentColor" stroke="none"/></svg>生圖</button>
 </div>
@@ -385,6 +390,35 @@
     <div class="lm-right">
       <div class="lm-right-head">目前選擇</div>
       <div id="lm-current" class="lm-current"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 詞彙替換規則：套用在生圖/抽卡的 positive（不動 negative）。沿用 .cs-modal 那套
+     置中彈窗殼（背景遮罩＋Esc＋✕都能關，跟 #cs-modal 同一種慣例），內容是動態表格
+     （JS 產生列，見 darkroom.js renderReplRows）。每列改動即時存檔（POST /api/replacements
+     整批覆蓋），跟 LoRA 大面板「選擇即時生效」同一套互動語言，不另外放儲存鈕。 -->
+<div class="cs-modal" id="repl-modal" inert>
+  <div class="cs-modal-inner" id="repl-modal-inner">
+    <button class="cs-modal-close" id="repl-modal-close" aria-label="關閉" title="關閉 (Esc)"><svg class="btn-svg" style="margin-right:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
+    <p class="cs-hint">生圖／抽卡送出前，把 positive 裡<b>整個標籤完全相符</b>的詞換成別的字（不分大小寫，不是子字串比對）。<b>權重</b>不等於 1 時會包成 ComfyUI 的 <code>(替換成:權重)</code> 格式；<b>替換成留空</b>＝直接刪掉這個標籤。只影響正向，負向不動。</p>
+    <div class="repl-table" id="repl-table">
+      <div class="repl-row repl-row-head" aria-hidden="true">
+        <span class="repl-col-en"></span>
+        <span class="repl-col-match">原詞</span>
+        <span class="repl-col-arrow"></span>
+        <span class="repl-col-replace">替換成</span>
+        <span class="repl-col-weight">權重</span>
+        <span class="repl-col-del"></span>
+      </div>
+      <div id="repl-rows"></div>
+    </div>
+    <button type="button" class="ghost repl-add-btn" id="repl-add-btn"><svg class="btn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>新增規則</button>
+    <p class="repl-err" id="repl-err" hidden></p>
+    <div class="repl-preview" id="repl-preview" hidden>
+      <div class="repl-preview-head">預覽（目前選取的第一個詞庫）</div>
+      <div class="repl-preview-before" id="repl-preview-before"></div>
+      <div class="repl-preview-after" id="repl-preview-after"></div>
     </div>
   </div>
 </div>
