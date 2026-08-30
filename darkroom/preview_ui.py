@@ -586,7 +586,8 @@ mimetypes.add_type("image/webp", ".webp")   # 有些 Python 的 mimetypes 不認
 LORA_VIDEO_EXTS = (".mp4", ".webm")   # 有些 LoRA 的預覽是短片，前端要改用 <video> 渲染
 
 
-_lora_cache = {"data": None, "at": 0.0}
+_lora_cache = {"data": None, "at": 0.0, "refreshing": False}
+_lora_cache_lock = threading.Lock()
 _LORA_TTL = 300.0   # LoRA 很少變動，快取 5 分鐘（每次要讀數百個 metadata.json，約 5 秒）
 
 # 有些 LoRA 的 trainedWords 是直接從 CivitAI 頁面複製貼上的，會混進 A1111/Forge 用的
@@ -604,9 +605,8 @@ def _strip_angle_tags(word: str) -> str:
     return ", ".join(parts)
 
 
-def list_loras() -> dict:
-    """列出各分類夾內每個 LoRA 的觸發詞與預覽圖檔名。trainedWords 保留為「多組」陣列。
-    讀數百個 metadata.json 很慢（約 5s），用 TTL 快取。
+def _build_lora_list() -> dict:
+    """真的去掃 LORA_ROOT 組出清單（實測 5.93 秒）。呼叫端一律走 list_loras()，它有快取。
 
     用 rglob 遞迴掃描（不是只掃頂層）：LoRA Manager 那邊本來就允許在 style/Character/
     HENTAI/illus 底下建子資料夾整理（例如 Character/other、Character/manhwa），舊版只掃
@@ -614,8 +614,6 @@ def list_loras() -> dict:
     時帶的 folder 是完整相對路徑（如 "Character/other"），暗房這邊的清單卻找不到對應項目、
     比對永遠失敗，大面板開了卻是空的。item 的 "folder" 現在是完整相對路徑（用來跟推送比對、
     顯示、組預覽/詳情連結），"category" 才是頂層四分類（用來給左欄篩選晶片分組計數）。"""
-    if _lora_cache["data"] is not None and (time.time() - _lora_cache["at"]) < _LORA_TTL:
-        return _lora_cache["data"]
     items, counts = [], {}
     for category in LORA_FOLDERS:
         base = LORA_ROOT / category
@@ -655,8 +653,38 @@ def list_loras() -> dict:
             n += 1
         counts[category] = n
     data = {"items": items, "counts": counts, "folders": LORA_FOLDERS}
-    _lora_cache["data"] = data
-    _lora_cache["at"] = time.time()
+    with _lora_cache_lock:
+        _lora_cache["data"] = data
+        _lora_cache["at"] = time.time()
+        _lora_cache["refreshing"] = False
+    return data
+
+
+def list_loras() -> dict:
+    """帶 stale-while-revalidate 快取的 LoRA 清單。
+
+    以前是純 TTL：時間一到，「下一個開 LoRA 面板的人」要在前景等完整重掃。實測那一次
+    是 5.93 秒，而快取命中只要 11ms——使用者的感受是「暗房偶爾會卡住好幾秒」，而且因為
+    只在剛好過期的那一次發生，很難歸因到 LoRA 清單。scan_libraries() 早就是 SWR 了，
+    這支沒跟上。現在過期先回舊的、同時背景重掃，沒有人會等到那 5.9 秒；代價是剛加的
+    LoRA 可能晚一次請求才出現（下一次開面板就會有）。"""
+    with _lora_cache_lock:
+        data = _lora_cache["data"]
+        stale = (time.time() - _lora_cache["at"]) >= _LORA_TTL
+        need_bg = stale and data is not None and not _lora_cache["refreshing"]
+        if need_bg:
+            _lora_cache["refreshing"] = True
+    if data is None:
+        return _build_lora_list()      # 第一次沒有舊資料可回，只能等
+    if need_bg:
+        def work():
+            try:
+                _build_lora_list()
+            except Exception as e:
+                with _lora_cache_lock:
+                    _lora_cache["refreshing"] = False
+                plog(f"[lora] 背景重掃失敗：{type(e).__name__}: {e}")
+        threading.Thread(target=work, daemon=True).start()
     return data
 
 
@@ -2206,6 +2234,12 @@ def _client_allowed(ip: str) -> bool:
     return _in_cgnat(ip)
 
 
+# _send_json_etag 用的 gzip 記憶：{key: (etag, gz_bytes)}。key 是端點名稱，同一支端點
+# 只留最新一份——內容變了舊的就沒用了，不需要留多份。
+_json_gz_cache: dict[str, tuple] = {}
+_json_gz_lock = threading.Lock()
+
+
 class Handler(BaseHTTPRequestHandler):
     # HTTP/1.1 → 開 keep-alive：瀏覽器重用連線，不再每張縮圖/圖片都重開 TCP 握手。
     # 這是跟 Jellyfin/Stash 載入順暢度最大的差別（它們是 keep-alive/HTTP2）。所有回應
@@ -2299,6 +2333,77 @@ class Handler(BaseHTTPRequestHandler):
 
     def _send_bytes(self, body: bytes, content_type: str = "application/octet-stream", code: int = 200):
         self._write_body(body, content_type, code, {"Cache-Control": "no-store"})
+
+    def _send_static(self, fname: str, ctype: str):
+        """前端靜態檔：帶 ETag（來源 mtime+size）與 no-cache。
+
+        以前一律 no-store，等於每次重整都重新下載 darkroom.js（88KB gz）＋
+        darkroom.css（41KB gz）＋index.html（13KB gz）＝142KB，手機走 Tailscale 每次
+        都要付。用 no-cache 而不是 max-age 是刻意的：這幾支沒有內容雜湊網址（不像主
+        面板 index.html 會把資產網址換成 ?v=<雜湊>），必須每次問一下伺服器，但內容沒變
+        就回 304、不重送 body——「改完存檔重整就生效」這個前提完全不變。"""
+        path = DARKROOM_DIR / fname
+        try:
+            st = path.stat()
+        except OSError:
+            self._send_bytes(b"darkroom asset missing", "text/plain", 404)
+            return
+        etag = '"%s"' % hashlib.md5(
+            f"{fname}|{st.st_mtime_ns}|{st.st_size}".encode("utf-8")).hexdigest()[:16]
+        if self.headers.get("If-None-Match") == etag:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            return
+        try:
+            body = path.read_bytes()
+        except OSError:
+            self._send_bytes(b"darkroom asset missing", "text/plain", 404)
+            return
+        self._write_body(body, ctype, 200, {"Cache-Control": "no-cache", "ETag": etag})
+
+    def _send_json_etag(self, obj, key: str):
+        """跟 _send_json 一樣，但帶 ETag：內容沒變就回 304，一個 byte 的 body 都不用送。
+
+        /api/libs 實測 12.65MB（gzip 後 1.81MB），而且每次請求都要重建 30785 個 dict
+        （23ms）、json.dumps（44ms）、gzip（45ms）——開頁、重整、每一個開著的分頁、手機
+        App 冷啟動都各付一次。有了 ETag，內容沒變的重整只剩一個 304；gzip 的結果也依
+        etag 記下來，內容沒變時連壓縮都不用重跑。
+
+        用 no-cache（不是 max-age）：收藏、稀有度、分數、生成狀態隨時會變，一定要每次
+        問伺服器，只是問完通常不需要重送。"""
+        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        etag = '"%s"' % hashlib.sha1(body).hexdigest()[:20]
+        if self.headers.get("If-None-Match") == etag:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            return
+        ct = "application/json; charset=utf-8"
+        enc = None
+        if self._gzip_ok(body, ct):
+            with _json_gz_lock:
+                ent = _json_gz_cache.get(key)
+            if ent is not None and ent[0] == etag:
+                body = ent[1]
+            else:
+                body = gzip.compress(body, 5)
+                with _json_gz_lock:
+                    _json_gz_cache[key] = (etag, body)
+            enc = "gzip"
+        self.send_response(200)
+        self.send_header("Content-Type", ct)
+        self.send_header("Content-Length", str(len(body)))
+        if enc:
+            self.send_header("Content-Encoding", enc)
+        self.send_header("Vary", "Accept-Encoding")
+        self.send_header("ETag", etag)
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def _parse_range(self, total: int):
         """解析 Range header,回傳 (start, end) 閉區間;沒帶／不處理回 None;
@@ -2397,19 +2502,16 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if u.path in STATIC_FILES:
                 fname, ctype = STATIC_FILES[u.path]
-                try:
-                    self._send_bytes((DARKROOM_DIR / fname).read_bytes(), ctype)
-                except OSError:
-                    self._send_bytes(b"darkroom asset missing", "text/plain", 404)
+                self._send_static(fname, ctype)
                 return
             if u.path == "/api/libs":
-                self._send_json({
+                self._send_json_etag({
                     "items": scan_libraries(force=qs.get("force", [""])[0] == "1"),
                     "workflow": str(STATE["workflow_path"]),
                     "comfy": ensure_comfy_base(),
                     "steps": STATE["steps"],
                     "special_dir": str(SPECIAL_DIR),
-                })
+                }, "libs")
                 return
             if u.path == "/api/intro":
                 self._send_json(intro_payload())
@@ -2475,7 +2577,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(get_batch())
                 return
             if u.path == "/api/loras":
-                self._send_json(list_loras())
+                self._send_json_etag(list_loras(), "loras")
                 return
             if u.path == "/api/checkpoints":
                 try:
