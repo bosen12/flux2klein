@@ -849,7 +849,24 @@ _thumb_locks_guard = threading.Lock()
 # 併發上限:伺服器是多執行緒,瀏覽時瀏覽器會同時要一堆縮圖,若每個都馬上用 PIL
 # 縮放(LANCZOS+webp 編碼)會把所有 CPU 核心塞滿(實測 CPU 一直 55%+/溫度飆高)。
 # 用 semaphore 把「同時現場生成」的張數壓到 2,快取命中的不受限、照樣快。
-_thumb_gen_sem = threading.Semaphore(2)
+#
+# 用 PrioritySemaphore 而不是原生 Semaphore:名額只有 2,而開機的 _warm_all_thumbs
+# 會連續好幾分鐘一直搶這兩個名額。原生 Semaphore 沒有優先權概念,背景暖快取的
+# thread 從 release 到下一次 acquire 幾乎同一瞬間就搶線,真人請求(HTTP handler
+# 才臨時起 thread,多了建立成本)幾乎穩輸——這跟 gen_sem 那條「批次幾乎穩贏單張
+# 生成」的坑是同一件事,解法也一樣。真人請求 priority 0、背景暖快取 priority 1,
+# 開機期間點進去的人不用排在幾千張暖快取後面。
+_thumb_gen_sem = PrioritySemaphore(2)
+
+
+@contextlib.contextmanager
+def thumb_slot(priority: int = 0):
+    """縮圖現場生成的名額。priority 0 = 真人請求,1 = 背景暖快取。"""
+    _thumb_gen_sem.acquire(priority)
+    try:
+        yield
+    finally:
+        _thumb_gen_sem.release()
 
 
 def _thumb_lock(key: str) -> threading.Lock:
@@ -876,11 +893,14 @@ def thumb_size_for(raw: str) -> int:
     return THUMB_MAX
 
 
-def make_thumb(src: Path, size: int = THUMB_MAX) -> tuple[bytes, str]:
+def make_thumb(src: Path, size: int = THUMB_MAX, priority: int = 0) -> tuple[bytes, str]:
     """回傳 (webp bytes, etag)。磁碟快取,靠來源 mtime+size 失效。
 
     size 必須是 THUMB_SIZES 裡的值(由 thumb_size_for 收斂),它會進 etag/快取鍵,
     不同尺寸各自一份快取檔,不會互相覆蓋。
+
+    priority 只影響「要現場生成」時的排隊順序(見 thumb_slot):真人請求用 0、
+    背景暖快取用 1。快取命中的路徑根本不進 semaphore,不受影響。
 
     Pillow 不可用時,退回原圖(較大但仍可顯示)。
     """
@@ -903,7 +923,7 @@ def make_thumb(src: Path, size: int = THUMB_MAX) -> tuple[bytes, str]:
                 return cache_file.read_bytes(), '"' + etag + '"'
             # 只有「真的要現場生成」才佔用併發額度;快取命中在上面就回了、不進這裡。
             # method=1 比預設 4 快很多、檔案只大一點點(縮圖不在意)。
-            with _thumb_gen_sem:
+            with thumb_slot(priority):
                 t0 = time.time()
                 plog(f"[thumb] Pillow 縮圖 {src.parent.name}/{src.name}")
                 with Image.open(src) as im:
@@ -958,13 +978,23 @@ def _lower_thread_priority_background():
         pass
 
 
+def _warm_one_thumb(img: Path):
+    """單張圖的背景暖快取（生成／重新生成完成後呼叫）。只做 THUMB_MAX 這一個級距，
+    跟 _warm_all_thumbs 的行為一致——其他級距用得少，真的被要到時現場生成即可。"""
+    try:
+        make_thumb(img, THUMB_MAX, priority=1)
+    except Exception:
+        pass
+
+
 def _warm_all_thumbs():
     """開機背景任務：圖庫縮圖／LoRA 預覽縮圖全部先跑過一輪，快取全部建好。
     不這麼做的話，永遠是「誰先點到誰倒楣」——第一個瀏覽某張圖/某個 LoRA 的人
     要付冷快取生成的成本，遠端連線碰上這個又疊加傳輸延遲，就是我們這幾輪抓到
     的那種「感覺卡」。開機後不管是本機還是遠端，第一次點開永遠都是暖快取（幾
     毫秒），不用等。用既有的 _thumb_gen_sem（同時最多 2 張現場生成，見上面）
-    自然節流，不會把 CPU/上傳頻寬榨乾，背景慢慢跑完就好，不趕時間、不卡主執行緒。
+    自然節流，不會把 CPU/上傳頻寬榨乾，背景慢慢跑完就好，不趕時間、不卡主執行緒；
+    這裡一律用 priority=1，開機暖快取的幾千張不會擋到同時間真人點開的那一張。
     make_thumb() 本身有磁碟快取，重複呼叫（例如上次開機已經暖過的）幾乎零成本，
     每次開機重跑這個不是浪費，是自我修復——手動加了新圖/新 LoRA 也會自動補上。
 
@@ -988,7 +1018,7 @@ def _warm_all_thumbs():
             img = find_image(py_of(it["rel"]))
             if img is None:
                 continue
-            make_thumb(img, THUMB_MAX)
+            make_thumb(img, THUMB_MAX, priority=1)
             n_gallery += 1
             # 這張圖在「所有」合法尺寸級距下都算活的，不是只有這次現場生成的
             # THUMB_MAX——不然開場動畫等地方用到的其他尺寸快取會被孤兒清理誤刪。
@@ -1011,7 +1041,7 @@ def _warm_all_thumbs():
             p = lora_preview_path(l["folder"], preview)
             if p is None:
                 continue
-            make_thumb(p, THUMB_MAX)
+            make_thumb(p, THUMB_MAX, priority=1)
             n_lora += 1
             st = p.stat()
             sig = f"{p}|{int(st.st_mtime)}|{st.st_size}|{THUMB_MAX}"
@@ -1619,6 +1649,12 @@ def do_generate(rel: str, seed: int | None = None, in_batch: bool = False):
                 except OSError:
                     pass
             _scan_note_image(rel, out_img)
+            # 生完立刻把縮圖也做好。開機的 _warm_all_thumbs 只暖「開機當下已存在」的
+            # 圖，這張是剛寫出來的新檔（mtime 變了＝全新的 etag），對快取而言是冷的；
+            # 不預先做的話，成本會落在「生成完成後第一個看到它的人」身上——批次補圖
+            # 尤其明顯，一次幾十張全部冷快取，捲到哪張就在那張現場等。背景執行緒
+            # priority=1，不跟真人請求搶那 2 個名額。
+            threading.Thread(target=_warm_one_thumb, args=(out_img,), daemon=True).start()
             threading.Thread(target=_score_and_persist, args=(rel, img_bytes),
                              daemon=True).start()
             threading.Thread(target=_tag_and_persist, args=(rel, img_bytes, py, out_img.name),
@@ -2264,17 +2300,89 @@ class Handler(BaseHTTPRequestHandler):
     def _send_bytes(self, body: bytes, content_type: str = "application/octet-stream", code: int = 200):
         self._write_body(body, content_type, code, {"Cache-Control": "no-store"})
 
+    def _parse_range(self, total: int):
+        """解析 Range header,回傳 (start, end) 閉區間;沒帶／不處理回 None;
+        範圍不合法回字串 "416"(呼叫端要回 416 Range Not Satisfiable)。
+
+        只支援單一區間。多區間(`bytes=0-99,200-299`)要回 multipart/byteranges,
+        沒有任何客戶端真的需要(播放器一次只要一段),直接當作沒帶 Range 退回整包
+        200——規格允許伺服器忽略 Range。
+
+        suffix 形式(`bytes=-500` = 檔案最後 500 bytes)一定要照規格實作:那正是
+        播放器讀檔尾 moov atom 用的形式,把 start 空字串當成 0 解析等於整條沒修。
+        """
+        raw = (self.headers.get("Range") or "").strip()
+        if not raw or not raw.lower().startswith("bytes=") or "," in raw:
+            return None
+        spec = raw[6:].strip()
+        if "-" not in spec:
+            return None
+        start_s, _, end_s = spec.partition("-")
+        start_s, end_s = start_s.strip(), end_s.strip()
+        try:
+            if not start_s:
+                n = int(end_s)
+                if n <= 0:
+                    return "416"
+                start, end = max(0, total - n), total - 1
+            else:
+                start = int(start_s)
+                end = int(end_s) if end_s else total - 1
+        except ValueError:
+            return None     # 語法壞掉:忽略 Range,照樣送整包
+        if total == 0 or start >= total or start > end:
+            return "416"
+        return start, min(end, total - 1)
+
     def _send_cacheable(self, body: bytes, content_type: str, etag: str, max_age: int = 604800):
-        """帶 ETag + max-age;若 If-None-Match 命中則回 304(不重送 body)。"""
+        """帶 ETag + max-age;若 If-None-Match 命中則回 304(不重送 body)。
+        支援單段 Range(206 Partial Content),見 _parse_range。
+
+        為什麼需要 Range:這支 helper 是 /api/thumb、/api/image、/api/lora-preview、
+        /api/gen-preview、/api/gen-result 共用的「送檔案位元組」出口,以前不管有沒有
+        帶 Range 一律回 200 整包、連 Accept-Ranges 都不宣告。iOS 的 AVPlayer 播 LoRA
+        的 .mp4/.webm 預覽片時,只要那支檔案不是 faststart(moov atom 在檔尾),它一定
+        要先用 Range 把檔尾的 metadata 讀回來才知道怎麼解碼——拿不到就永遠卡在載入中,
+        不是慢,是完全播不出來(iOS App 端目前是「整支下載到本機暫存檔再交給
+        AVPlayer」繞過去的,那是治標)。順帶讓將來任何拖曳進度條／續傳的場景都能用。
+        """
         if self.headers.get("If-None-Match") == etag:
             self.send_response(304)
             self.send_header("ETag", etag)
+            self.send_header("Accept-Ranges", "bytes")
             self.send_header("Cache-Control", f"private, max-age={max_age}")
             self.end_headers()
             return
+        total = len(body)
+        # If-Range:客戶端說「只有在檔案還是這個版本時才給我那一段」。版本對不上就
+        # 必須回整包 200,不能回 206,否則它會把新舊兩份檔案的片段拼在一起。
+        if_range = self.headers.get("If-Range")
+        rng = None if (if_range and if_range != etag) else self._parse_range(total)
+        if rng == "416":
+            self.send_response(416)
+            self.send_header("Content-Range", f"bytes */{total}")
+            self.send_header("Content-Length", "0")
+            self.send_header("Accept-Ranges", "bytes")
+            self.end_headers()
+            return
+        if rng:
+            start, end = rng
+            chunk = body[start:end + 1]
+            self.send_response(206)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(chunk)))
+            self.send_header("Content-Range", f"bytes {start}-{end}/{total}")
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", f"private, max-age={max_age}")
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(chunk)
+            return
         self.send_response(200)
         self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Length", str(total))
+        self.send_header("Accept-Ranges", "bytes")   # 沒帶 Range 的請求也要宣告支援
         self.send_header("ETag", etag)
         self.send_header("Cache-Control", f"private, max-age={max_age}")
         self.end_headers()

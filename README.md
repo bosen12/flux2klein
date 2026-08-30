@@ -186,6 +186,8 @@ Windows 雙擊即可（會自動啟動 Groq 多 key 代理）：
 - **面板按鈕**：主面板頂部「AI Assistant」旁有「**詞庫暗房**」按鈕，點了用新視窗開這個工具（不嵌入面板）。工具沒啟動的話新視窗會連不上——先跑 `darkroom/preview_ui.bat`。
 - **設定**：機器相關路徑放 `darkroom/preview_config.json`（已 gitignore，複製 `darkroom/preview_config.example.json` 來改）——`special_dir`（詞庫資料夾，預設指向 `C:\projects\special_prompts`）、`comfy`、`workflow`、`port` 等。**面板的詞庫選單（`serve.py`）也讀同一個 `special_dir`**（從 `darkroom/preview_config.json` 讀），所以兩邊看的是同一份詞庫。
 - **兩份詞庫別搞混**：`darkroom/preview_ui.bat`（`special_prompts`）與 `darkroom/preview_ui_animebot.bat`（`animebot\special_prompts`）**共用同一個 port 7860、一次只能開一個**。改名等操作在後端就被限制在啟動時的 `special_dir` 內、**動不到另一份**；但兩個頁面長得一樣，所以頂列會顯示**目前操作的資料夾**（如 `animebot/special_prompts`），切換 bat 時看一眼就知道現在是哪份。
+- **縮圖不用等**：開機時背景會把整份詞庫與 LoRA 預覽的縮圖先跑過一輪存進 `darkroom/.thumb_cache/`，之後不管本機還是手機遠端連，第一次點開都是暖快取（幾毫秒）。暖快取跑在**低優先權**，開機那幾分鐘你自己點進去要看的那張永遠排在它前面，不用等它跑完。生成／重新生成／批次補圖產生的新圖也會在生成完成當下順手把縮圖做好，不會留給「第一個看到它的人」現場等。
+- **圖片與影片端點支援續傳（HTTP Range）**：`/api/thumb`、`/api/image`、`/api/lora-preview`、`/api/gen-preview`、`/api/gen-result` 都會回應 `Range` 請求（206 Partial Content，含「讀檔尾」的 `bytes=-N` 形式）。影響到的是**影片播放器**：LoRA 的 `.mp4/.webm` 預覽片如果不是 faststart 編碼（metadata 在檔尾），播放器一定要能先讀檔尾才播得起來，以前一律回整包會讓它卡在載入中；行動端 App 也不必再「整支下載完才交給播放器」。一般瀏覽行為完全不變。
 - **「重掃」鈕的用途**：詞庫清單在伺服器端有快取，開頁／重整都直接吃快取（秒回）。**在暗房外面新增或刪除詞庫檔之後，按「重掃」才會看到**（重掃是唯一會重走檔案系統的操作，約 1 秒）。快取超過 60 秒會自動在背景更新，不會擋住畫面；用暗房自己生成的圖則是立刻反映，不用重掃。
 - **收藏**：每張縮圖右上角有**星號**，點一下就收藏（金色實心星常駐）、再點取消。桌面平常藏起、hover 卡片才浮現，已收藏的則一直亮著。收藏清單存後端 `darkroom/favorites.json`（已 gitignore，跟品質旗標 `darkroom/flags.json` 同一套機制），只記錄、不影響抽卡與顯示。
 - **稀有度**：四個等級——`普通版`（灰、無光環）、`稀有版`（黃光）、`特別版`（藍光）、`傳奇版`（彩色循環光暈）。存**側檔** `darkroom/.darkroom_meta/rarities.<dataset>.json`（不改檔名，見打標頁一節），格線與**抽卡**都會顯示對應顏色的光暈＋角標。舊版寫在檔名前綴（`傳奇版xxx.py`）的檔案仍會被辨識、顯示名稱自動去掉前綴。
