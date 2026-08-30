@@ -141,3 +141,96 @@ etag，對快取而言是冷的。不預先做的話，成本會落在「生成�
    一致）。
 3. **優先權**：先佔滿 2 個名額，再依序排 4 個 priority=1 與 2 個 priority=0 的工作，
    放開名額後檢查真人請求確實排在已經在等的背景工作前面。
+
+---
+
+# 追加（2026-08-30 晚）：JSON 端點加了 ETag
+
+commit `bdca114`。上面那三項（Range／縮圖優先權／生成後暖快取）之外，又做了一輪快取
+優化。**對 App 只有一件事值得動手，其餘只要知道就好。**
+
+## 1. `/api/libs`、`/api/loras` 現在帶 ETag（值得動手）
+
+以前是 `Cache-Control: no-store`，每次都得整包重下。現在：
+
+```
+Cache-Control: no-cache
+ETag: "45a5e1042c0f012f282a"
+Content-Encoding: gzip
+```
+
+`no-cache` 不是「不要快取」，是「可以存，但每次用之前要問一下」。帶
+`If-None-Match: <上次的 ETag>` 再打一次，內容沒變就回 **304、body 0 bytes**。
+
+**這件事的量級**：`/api/libs` 實測 **12.65MB 原始 / 1.81MB gzip**（30785 筆）。App 每次
+冷啟動都會在背景打一次這支——現在只要詞庫沒變動（沒生新圖、沒改收藏/稀有度/評分），
+那 1.81MB 可以整包省掉。
+
+**建議做法：自己存 ETag，不要依賴 `URLCache`。** App 本來就有
+`Caches/libs-cache.json` 那套自己的快取，順手把 ETag 一起存起來最省事也最好預測：
+
+```swift
+// 存：連同 libs-cache.json 一起寫進 UserDefaults 或旁邊的小檔
+// 讀：
+var req = URLRequest(url: libsURL)
+if let etag = savedLibsETag {
+    req.setValue(etag, forHTTPHeaderField: "If-None-Match")
+}
+req.cachePolicy = .reloadIgnoringLocalCacheData   // 走自己的條件請求，不要讓 URLCache 插手
+let (data, resp) = try await session.data(for: req)
+guard let http = resp as? HTTPURLResponse else { ... }
+if http.statusCode == 304 {
+    return cachedLibs          // 本機那份還是對的，直接用，不用解碼
+}
+savedLibsETag = http.value(forHTTPHeaderField: "ETag")
+// 照原本的流程解碼 data、覆蓋 libs-cache.json
+```
+
+**為什麼不建議直接靠 `URLSession` 自動處理**：預設的 `URLCache.shared` 容量不大，而且
+它對「單一回應能不能進快取」有大小門檻——1.81MB 這種尺寸有可能根本不會被存下來，於是
+`If-None-Match` 永遠不會被送出、看起來像「加了 ETag 但沒效果」。要走自動路線的話，得先
+在 `DarkroomAPI.session` 的 `URLSessionConfiguration` 上換一個夠大的 `URLCache`（例如
+記憶體 8MB／磁碟 200MB）**並實測確認真的有送出 `If-None-Match`**。自己管 ETag 沒有這個
+不確定性，而且跟現有的 `libs-cache.json` 邏輯天然吻合。
+
+**⚠️ 一定要處理 304**：只要你手動送了 `If-None-Match`，就會拿到 **HTTP 304 加上空的
+body**。這時候不能往 `JSONDecoder` 丟——會直接丟解碼錯誤，症狀是「明明伺服器好好的，
+App 卻說載入失敗」。上面範例裡那個 `if http.statusCode == 304` 分支不能省。
+
+## 2. 靜態檔也加了 ETag（App 用不到，知道就好）
+
+`/`、`/darkroom.css`、`/darkroom.js` 從 `no-store` 改成 ETag + `no-cache`。那是給瀏覽器
+用的，App 不載這些檔案。
+
+## 3. 圖片端點完全沒動
+
+`/api/thumb`、`/api/image`、`/api/lora-preview`、`/api/gen-preview`、`/api/gen-result`
+維持 `private, max-age=604800` + ETag（跟以前一樣），Range 支援也還在。
+`RemoteImageLoader` 那套 `NSCache` ＋ ImageIO ＋ 重試機制**一行都不用改**。
+
+## 4. payload 瘦身：要 App 先動，後端才能跟上（有興趣再說）
+
+我逐欄位量過 `/api/libs` 的 9.68MB 欄位內容：
+
+| 欄位 | 佔比 | 說明 |
+|---|---|---|
+| `score` | **45.1%** | 整包 7 個欄位都送（`blackroot`/`waifu`/`kawai_tier`/`kawai_score`/`kawai_norm`/`final`/`at`），但格線徽章只用得到 `final` |
+| `display_name` | 7.6% | 絕大多數跟 `name` 一模一樣 |
+| `favorited` + `flagged` | 10.3% | 目前幾乎全部是 `false` |
+| `rarity` | 3.4% | 多數是空字串 |
+| `job` | 2.4% | **30785 筆全部都是 `{}`** |
+
+網頁前端那邊全部是真值判斷（`it.display_name || it.name`、`it.job && ...`、
+`it.favorited ?`、`!x.rarity`），所以後端「預設值就不送」不會弄壞瀏覽器。**卡住的是
+App**：Swift 的 `Codable` 只要少一個非 optional 欄位就整包解碼失敗，所以我沒有單方面改
+——欄位形狀是跨客戶端的契約。
+
+想做的話順序是：**App 先把這些欄位改成 optional（`decodeIfPresent`／`var favorited:
+Bool?`＋預設值），確認新舊 payload 都能解，後端再改成稀疏輸出。** 效果是 `/api/libs`
+大約砍半（第一次冷啟動 1.81MB → 約 0.95MB）。不急——加了 ETag 之後，真正會付這 1.81MB
+的只剩「詞庫真的變動過」的那幾次。
+
+## 5. 主面板（`serve.py`，port 7801）那邊的改動跟 App 無關
+
+同一個 commit 系列還改了 KLEIN 主面板的 gzip 與快取（`5634f23`）。那是給瀏覽器面板用
+的，跟 App 講話的是 `preview_ui.py`（port 7860）。**看到那份 diff 不用管。**
