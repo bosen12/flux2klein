@@ -287,18 +287,58 @@ def asset_version():
     return hashlib.md5("|".join(stamps).encode("utf-8")).hexdigest()[:8]
 
 
-def send_body(client, body, ctype):
+# ---- 回應輸出：gzip + 快取標頭 ------------------------------------------
+# 這裡以前一律「不壓縮 + no-store」。實測一次開頁要送 868KB 未壓縮的 js/css
+# （three.min.js 601KB、app.js 143KB、styles.css 71KB）加 352KB 的 workflow.json，
+# 而 index.html 裡的資產網址**早就帶了 ?v=<檔案 mtime 雜湊>**（見 asset_version），
+# 等於「做了內容定址的網址，然後又叫瀏覽器不要快取」，兩件事互相抵銷。
+#
+# 現在：帶 ?v= 的資產可以永久快取（改了檔案→雜湊變→網址變→瀏覽器自然重抓，
+# 不可能吃到舊版）；沒帶 ?v= 的（直接輸網址進來、或 app.js 裡寫死 fetch 的
+# workflow.json）走 ETag 重新驗證，內容沒變就回 304。index.html 本身維持
+# no-store——它是版本雜湊的來源，永遠要拿最新的。
+GZIP_MIN = 1400          # 跟 darkroom/preview_ui.py 同一個門檻：小回應壓了反而虧
+GZIP_TYPES = ("json", "text/", "javascript", "image/svg")
+NO_STORE = "no-store, no-cache, must-revalidate, max-age=0"
+IMMUTABLE = "public, max-age=31536000, immutable"
+
+
+def _gzip_for(body, ctype, initial):
+    """回傳 (body, Content-Encoding 標頭字串)。initial=None 代表呼叫端沒把原始請求
+    傳進來（不知道對方支不支援 gzip），一律不壓，維持舊行為。"""
+    if initial is None or len(body) < GZIP_MIN:
+        return body, ""
+    if not any(t in ctype for t in GZIP_TYPES):
+        return body, ""
+    if "gzip" not in (header_value(initial, "Accept-Encoding") or "").lower():
+        return body, ""
+    return gzip.compress(body, 5), "Content-Encoding: gzip\r\n"
+
+
+def send_body(client, body, ctype, initial=None, cache=NO_STORE, etag=None):
+    if etag and initial is not None and header_value(initial, "If-None-Match") == etag:
+        client.sendall((
+            "HTTP/1.1 304 Not Modified\r\n"
+            f"ETag: {etag}\r\n"
+            f"Cache-Control: {cache}\r\n"
+            "Connection: close\r\n\r\n"
+        ).encode("utf-8"))
+        return
+    body, enc = _gzip_for(body, ctype, initial)
     header = (
         "HTTP/1.1 200 OK\r\n"
         f"Content-Type: {ctype}; charset=utf-8\r\n"
         f"Content-Length: {len(body)}\r\n"
-        "Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\n"
+        + enc +
+        "Vary: Accept-Encoding\r\n"
+        + (f"ETag: {etag}\r\n" if etag else "") +
+        f"Cache-Control: {cache}\r\n"
         "Connection: close\r\n\r\n"
     ).encode("utf-8")
     client.sendall(header + body)
 
 
-def send_file(client, filename):
+def send_file(client, filename, initial=None, raw_path=""):
     if filename is None:  # favicon 之類
         client.sendall(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
         return
@@ -307,7 +347,7 @@ def send_file(client, filename):
         # config.js 是選用的（含 API key，不進版控），沒有就回空檔避免 console 噴 404
         if filename == "config.js":
             send_body(client, b"/* config.js \xe4\xb8\x8d\xe5\xad\x98\xe5\x9c\xa8 */\n",
-                      "application/javascript")
+                      "application/javascript", initial)
             return
         body = ("找不到檔案：" + filename).encode("utf-8")
         client.sendall(
@@ -317,39 +357,40 @@ def send_file(client, filename):
         )
         return
     ctype = mimetypes.guess_type(path)[0] or "application/octet-stream"
+    if filename == "index.html":
+        # index.html 不快取：它負責把 ?v=1 換成目前的資產雜湊，永遠要拿最新的。
+        with open(path, "rb") as f:
+            body = f.read()
+        send_body(client, body.replace(b"?v=1", b"?v=" + asset_version().encode("ascii")),
+                  ctype, initial, NO_STORE)
+        return
+    st = os.stat(path)
+    etag = '"%s"' % hashlib.md5(
+        ("%s|%d|%d" % (filename, st.st_mtime_ns, st.st_size)).encode("utf-8")
+    ).hexdigest()[:16]
+    # 網址帶 ?v= 就是 index.html 產生的內容定址網址 → 可以永久快取；直接輸網址
+    # 進來的（沒有 ?v=）走 ETag 重新驗證，跟以前一樣不可能吃到舊版。
+    cache = IMMUTABLE if "?v=" in raw_path else "no-cache"
+    if initial is not None and header_value(initial, "If-None-Match") == etag:
+        send_body(client, b"", ctype, initial, cache, etag)   # 命中 → 回 304，不用讀檔
+        return
     with open(path, "rb") as f:
         body = f.read()
-    if filename == "index.html":
-        body = body.replace(b"?v=1", b"?v=" + asset_version().encode("ascii"))
-    header = (
-        "HTTP/1.1 200 OK\r\n"
-        f"Content-Type: {ctype}; charset=utf-8\r\n"
-        f"Content-Length: {len(body)}\r\n"
-        "Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\n"
-        "Connection: close\r\n\r\n"
-    ).encode("utf-8")
-    client.sendall(header + body)
+    send_body(client, body, ctype, initial, cache, etag)
 
 
-_lora_list_cache = {"payload": None, "at": 0.0}
+_lora_list_cache = {"payload": None, "at": 0.0, "etag": None, "refreshing": False}
+_lora_list_lock = threading.Lock()
 _LORA_LIST_TTL = 300.0   # 跟 darkroom/preview_ui.py 的 list_loras() 同一套 TTL：LoRA
                           # 很少變動，逐檔讀 metadata.json 本來就慢（本機約 5s，經
                           # Docker bind mount 讀 PROMPTS_ROOT／LORA_ROOT 這種掛載更慢，
                           # 實測 ~10s），沒快取的話每次打開選單都要重掃一次。
 
 
-def serve_lora_list(client):
-    """列出各分類子夾（含任意深度的子資料夾）內每個 LoRA 的觸發詞與預覽圖，給 Illustrious
-    面板選單用。LoRA Manager 允許在 style/Character/HENTAI/illus 底下建子資料夾整理
-    （例如 Character/Hanime、HENTAI/concepts），舊版只掃頂層會讓子資料夾裡的 LoRA
-    完全消失不見——暗房那邊（darkroom/preview_ui.py 的 list_loras()）已經用 rglob
-    修過同一個問題，這裡比照辦理。item 的 "folder" 是完整相對路徑（如 "Character/Hanime"，
-    用 "/" 分隔，送 ComfyUI 前要轉成 "\\"），"category" 才是頂層四分類（給左欄篩選
-    晶片分組計數用，前端比對用這個欄位、不是 folder）。"""
+def _build_lora_list_payload():
+    """真正去掃 LORA_ROOT 組出 JSON bytes。要讀數百個 metadata.json，本機約 5 秒、
+    走 Docker bind mount 更慢，所以呼叫端一律經過 serve_lora_list() 的快取。"""
     import json as _json
-    if _lora_list_cache["payload"] is not None and (time.time() - _lora_list_cache["at"]) < _LORA_LIST_TTL:
-        send_body(client, _lora_list_cache["payload"], "application/json")
-        return
     items = []
     counts = {}
     errs = []
@@ -404,9 +445,52 @@ def serve_lora_list(client):
     if errs:
         payload["error"] = "；".join(errs)
     body = _json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    _lora_list_cache["payload"] = body
-    _lora_list_cache["at"] = time.time()
-    send_body(client, body, "application/json")
+    with _lora_list_lock:
+        _lora_list_cache["payload"] = body
+        _lora_list_cache["at"] = time.time()
+        _lora_list_cache["etag"] = '"%s"' % hashlib.md5(body).hexdigest()[:16]
+        _lora_list_cache["refreshing"] = False
+    return body
+
+
+def _refresh_lora_list_bg():
+    def work():
+        try:
+            _build_lora_list_payload()
+        except Exception:
+            with _lora_list_lock:
+                _lora_list_cache["refreshing"] = False
+    threading.Thread(target=work, daemon=True).start()
+
+
+def serve_lora_list(client, initial=None):
+    """列出各分類子夾（含任意深度的子資料夾）內每個 LoRA 的觸發詞與預覽圖，給 Illustrious
+    面板選單用。LoRA Manager 允許在 style/Character/HENTAI/illus 底下建子資料夾整理
+    （例如 Character/Hanime、HENTAI/concepts），舊版只掃頂層會讓子資料夾裡的 LoRA
+    完全消失不見——暗房那邊（darkroom/preview_ui.py 的 list_loras()）已經用 rglob
+    修過同一個問題，這裡比照辦理。item 的 "folder" 是完整相對路徑（如 "Character/Hanime"，
+    用 "/" 分隔，送 ComfyUI 前要轉成 "\\"），"category" 才是頂層四分類（給左欄篩選
+    晶片分組計數用，前端比對用這個欄位、不是 folder）。
+
+    快取是 stale-while-revalidate，不是純 TTL：純 TTL 的話「時間一到的下一個人」要在
+    前景等完整重掃（暗房那支同樣寫法實測 5.93 秒，快取命中只要 11ms），使用者的感受
+    就是「LoRA 面板偶爾會卡好幾秒」，而且因為只在剛好過期時發生、很難歸因。改成過期
+    先回舊的、同時背景重掃，永遠不會有人等到那 5 秒；代價是剛加的 LoRA 可能晚一次
+    請求才出現。"""
+    with _lora_list_lock:
+        body = _lora_list_cache["payload"]
+        etag = _lora_list_cache["etag"]
+        stale = (time.time() - _lora_list_cache["at"]) >= _LORA_LIST_TTL
+        need_bg = stale and body is not None and not _lora_list_cache["refreshing"]
+        if need_bg:
+            _lora_list_cache["refreshing"] = True
+    if body is None:
+        body = _build_lora_list_payload()       # 第一次沒有舊資料可回，只能等
+        with _lora_list_lock:
+            etag = _lora_list_cache["etag"]
+    elif need_bg:
+        _refresh_lora_list_bg()
+    send_body(client, body, "application/json", initial, "no-cache", etag)
 
 
 _LORA_THUMB_DIR = os.path.join(BASE, ".lora_thumb_cache")
@@ -656,42 +740,64 @@ def _prompt_folders():
         return []
 
 
-def serve_prompt_list(client):
-    """列出各分類夾內的詞庫（.py）與是否有預覽圖，給 Illustrious 詞庫選單用。內容不解析（清單要輕）。"""
+_prompt_list_cache = {"payload": None, "at": 0.0, "etag": None}
+_PROMPT_LIST_TTL = 60.0   # 詞庫檔案會被暗房生成預覽圖就地改變（preview 欄位），不能像
+                           # LoRA 那樣快取 5 分鐘；60 秒足以吃掉「開選單→搜尋→再開」
+                           # 這種連續操作，又不會讓剛生成的預覽狀態太久才反映。
+_prompt_list_lock = threading.Lock()
+
+
+def serve_prompt_list(client, initial=None):
+    """列出各分類夾內的詞庫（.py）與是否有預覽圖，給 Illustrious 詞庫選單用。內容不解析（清單要輕）。
+
+    實測 194 個資料夾、30714 筆詞庫：掃描加序列化 108ms、payload 3.86MB。以前是每次
+    開選單都重掃一次、而且未壓縮直送——gzip 之後只剩 0.36MB（10.7 倍），再加 TTL 快取
+    與 ETag，第二次之後幾乎不用付任何代價。"""
     import json as _json
-    items, counts = [], {}
-    folders = _prompt_folders()
-    for folder in folders:
-        d = os.path.join(PROMPTS_ROOT, folder)
-        try:
-            names = sorted(os.listdir(d))
-        except OSError:
-            counts[folder] = 0
-            continue
-        # 判斷有沒有預覽圖，直接查 names 這個 set（已經是這次 listdir 的結果），
-        # 不要對每個 .py 各自再開一次 os.path.isfile()——資料夾在本機磁碟上這樣
-        # 寫沒差，但這支服務常常是透過 Docker bind mount／網路磁碟讀取
-        # PROMPTS_ROOT，每一次獨立的檔案系統呼叫都要跨一層掛載開銷，詞庫上萬個
-        # .py 檔案時，逐檔 isfile() 會讓這支 API 從幾百毫秒變成幾十秒。
-        name_set = set(names)
-        n = 0
-        for fn in names:
-            if not fn.endswith(".py") or fn.startswith("__"):
+    with _prompt_list_lock:
+        body = _prompt_list_cache["payload"]
+        etag = _prompt_list_cache["etag"]
+        fresh = body is not None and (time.time() - _prompt_list_cache["at"]) < _PROMPT_LIST_TTL
+    if not fresh:
+        items, counts = [], {}
+        folders = _prompt_folders()
+        for folder in folders:
+            d = os.path.join(PROMPTS_ROOT, folder)
+            try:
+                names = sorted(os.listdir(d))
+            except OSError:
+                counts[folder] = 0
                 continue
-            stem = fn[:-3]
-            items.append({
-                "folder": folder,
-                "file": fn,
-                "name": stem,
-                "preview": (stem + ".webp") in name_set,
-            })
-            n += 1
-        counts[folder] = n
-    send_body(client, _json.dumps({"items": items, "counts": counts, "folders": folders},
-                                  ensure_ascii=False).encode("utf-8"), "application/json")
+            # 判斷有沒有預覽圖，直接查 names 這個 set（已經是這次 listdir 的結果），
+            # 不要對每個 .py 各自再開一次 os.path.isfile()——資料夾在本機磁碟上這樣
+            # 寫沒差，但這支服務常常是透過 Docker bind mount／網路磁碟讀取
+            # PROMPTS_ROOT，每一次獨立的檔案系統呼叫都要跨一層掛載開銷，詞庫上萬個
+            # .py 檔案時，逐檔 isfile() 會讓這支 API 從幾百毫秒變成幾十秒。
+            name_set = set(names)
+            n = 0
+            for fn in names:
+                if not fn.endswith(".py") or fn.startswith("__"):
+                    continue
+                stem = fn[:-3]
+                items.append({
+                    "folder": folder,
+                    "file": fn,
+                    "name": stem,
+                    "preview": (stem + ".webp") in name_set,
+                })
+                n += 1
+            counts[folder] = n
+        body = _json.dumps({"items": items, "counts": counts, "folders": folders},
+                           ensure_ascii=False).encode("utf-8")
+        etag = '"%s"' % hashlib.md5(body).hexdigest()[:16]
+        with _prompt_list_lock:
+            _prompt_list_cache["payload"] = body
+            _prompt_list_cache["at"] = time.time()
+            _prompt_list_cache["etag"] = etag
+    send_body(client, body, "application/json", initial, "no-cache", etag)
 
 
-def serve_prompt_detail(client, raw_path):
+def serve_prompt_detail(client, raw_path, initial=None):
     """解析單一詞庫 .py，回 REQUIRED_POSITIVE / POSITIVE / NEGATIVE 三個 list。用 ast，不 import／不執行。"""
     import json as _json
     import ast as _ast
@@ -724,7 +830,8 @@ def serve_prompt_detail(client, raw_path):
     except OSError:
         client.sendall(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
         return
-    send_body(client, _json.dumps(out, ensure_ascii=False).encode("utf-8"), "application/json")
+    send_body(client, _json.dumps(out, ensure_ascii=False).encode("utf-8"),
+               "application/json", initial)
 
 
 def serve_prompt_preview(client, raw_path):
@@ -892,7 +999,7 @@ def log_task(client, initial):
 
 # ---- /object_info 壓縮快取（10MB JSON gzip 後約 1MB，手機/遠端載入快很多）----
 _oi_lock = threading.Lock()
-_oi_cache = {"raw": None, "gz": None}
+_oi_cache = {"raw": None, "gz": None, "etag": None}
 
 
 def get_object_info():
@@ -906,15 +1013,30 @@ def get_object_info():
                 raw = resp.read()
             _oi_cache["raw"] = raw
             _oi_cache["gz"] = gzip.compress(raw, 5)
+            _oi_cache["etag"] = '"%s"' % hashlib.md5(raw).hexdigest()[:16]
     return _oi_cache["raw"], _oi_cache["gz"]
 
 
 def serve_object_info(client, initial):
-    """用壓縮快取回應 /object_info。成功回 True；失敗回 False（讓外層改用一般代理）。"""
+    """用壓縮快取回應 /object_info。成功回 True；失敗回 False（讓外層改用一般代理）。
+
+    實測這份 JSON 現在是 14.16MB（gzip 後 2.44MB）——程式碼註解裡寫的「約 10MB」是
+    裝更多自訂節點之前的數字。它只有在 ComfyUI 重啟或裝新節點時才會變（快取是伺服器
+    生命週期內有效），所以帶 ETag 讓瀏覽器重新驗證：第一次照樣 2.44MB，之後每次開頁
+    只要一個 304。不用 max-age 是因為「ComfyUI 換了模型/節點」要能立刻反映。"""
     try:
         raw, gz = get_object_info()
     except Exception:
         return False
+    etag = _oi_cache["etag"]
+    if etag and header_value(initial, "If-None-Match") == etag:
+        client.sendall((
+            "HTTP/1.1 304 Not Modified\r\n"
+            f"ETag: {etag}\r\n"
+            "Cache-Control: no-cache\r\n"
+            "Connection: close\r\n\r\n"
+        ).encode("utf-8"))
+        return True
     accepts_gzip = "gzip" in (header_value(initial, "Accept-Encoding") or "").lower()
     body = gz if accepts_gzip else raw
     enc = "Content-Encoding: gzip\r\n" if accepts_gzip else ""
@@ -923,7 +1045,9 @@ def serve_object_info(client, initial):
         "Content-Type: application/json; charset=utf-8\r\n"
         f"Content-Length: {len(body)}\r\n"
         + enc +
-        "Cache-Control: no-store\r\n"
+        "Vary: Accept-Encoding\r\n"
+        + (f"ETag: {etag}\r\n" if etag else "") +
+        "Cache-Control: no-cache\r\n"
         "Connection: close\r\n\r\n"
     ).encode("utf-8")
     client.sendall(header + body)
@@ -967,11 +1091,11 @@ def handle(client, ssl_ctx=None):
             # 快取失敗 → 落到下面走一般代理
 
         if path in STATIC_FILES and not is_ws:
-            send_file(client, STATIC_FILES[path])
+            send_file(client, STATIC_FILES[path], initial, raw_path)
             client.close()
         elif method == "GET" and path == "/panel/loras" and not is_ws:
             # 面板專屬端點（不轉發給 ComfyUI）：列出 loras/style 的觸發詞與預覽圖
-            serve_lora_list(client)
+            serve_lora_list(client, initial)
             client.close()
         elif method == "GET" and path == "/panel/lora-preview" and not is_ws:
             serve_lora_preview(client, raw_path)
@@ -986,10 +1110,10 @@ def handle(client, ssl_ctx=None):
             serve_lora_push_options(client)
             client.close()
         elif method == "GET" and path == "/panel/prompts" and not is_ws:
-            serve_prompt_list(client)
+            serve_prompt_list(client, initial)
             client.close()
         elif method == "GET" and path == "/panel/prompt" and not is_ws:
-            serve_prompt_detail(client, raw_path)
+            serve_prompt_detail(client, raw_path, initial)
             client.close()
         elif method == "GET" and path == "/panel/prompt-preview" and not is_ws:
             serve_prompt_preview(client, raw_path)
