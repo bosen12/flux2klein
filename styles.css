@@ -72,7 +72,9 @@ body {
 ::selection { background: color-mix(in srgb, var(--accent) 24%, transparent); }
 
 /* ---------- 版面 ---------- */
-.app { display: flex; flex-direction: column; height: 100vh; }
+/* 100dvh 而不是 100vh：Safari 的網址列／工具列會收合，100vh 永遠是「工具列收起後」
+   的高度，工具列還在時頁面底部會被蓋住。舊瀏覽器沒有 dvh，前一行的 100vh 當退路。 */
+.app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
 
 header.topbar {
   display: flex; align-items: center; gap: 14px;
@@ -82,6 +84,11 @@ header.topbar {
   -webkit-backdrop-filter: saturate(1.1) blur(12px);
   border-bottom: 1px solid var(--border);
   position: sticky; top: 0; z-index: 5;
+  /* 安全區：直向是瀏海／狀態列，橫向（landscape）是左右兩側的圓角與感測器區。
+     max() 而不是加法——沒有安全區時要退回原本的內距，不是 0。 */
+  padding-top: max(12px, env(safe-area-inset-top));
+  padding-left: max(22px, env(safe-area-inset-left));
+  padding-right: max(22px, env(safe-area-inset-right));
 }
 .brand { display: flex; align-items: center; gap: 11px; font-weight: 700; letter-spacing: -.01em; }
 .brand .logo {
@@ -287,6 +294,8 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .mask-stage canvas { display: block; max-width: 100%; touch-action: none; cursor: crosshair; }
 .mask-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: var(--fs-sm); color: var(--text-dim); }
 .mask-tools input[type=range] { flex: 1; min-width: 90px; }
+/* gap 跟 .mask-tools 一致，包起來之後桌面的排版與間距完全不變 */
+.mask-grow { display: inline-flex; align-items: center; gap: 12px; flex: none; }
 
 /* ---------- 按鈕 ---------- */
 .actions {
@@ -577,7 +586,12 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
    820~1180px 之間品牌副標與連線膠囊會一起折行，頂部列從 88px 撐到 278px。*/
 @media (max-width: 1180px) {
   /* 頂部列：第一行 品牌 + 連線狀態；第二行 三個開關平均分佈 */
-  header.topbar { flex-wrap: wrap; gap: 10px; padding: 10px 14px; }
+  /* padding 是簡寫，會蓋掉基礎規則裡的安全區 longhand，所以這裡要自己再寫一次 */
+  header.topbar {
+    flex-wrap: wrap; gap: 10px;
+    padding: max(10px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right))
+             10px max(14px, env(safe-area-inset-left));
+  }
   .brand { font-size: var(--fs-base); }
   .brand small { display: none; }
   .spacer { display: none; }
@@ -588,20 +602,35 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   .engine-switch::-webkit-scrollbar { display: none; }
   .engine-switch button { flex: none; white-space: nowrap; }
   .toggle-inline { order: 4; width: 100%; justify-content: space-between; gap: 8px; font-size: var(--fs-sm); }
-  .brand { width: auto; flex: 1 1 auto; }
+  .brand { width: auto; flex: 1 1 auto; min-width: 0; }
+  /* 品牌標題是唯一會被不定長度引擎名撐開的東西，min-width:0 + 截斷才收得住 */
+  .brand > div { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 
-@media (max-width: 680px) {
+/* 條件裡的第二段是橫向手機：寬度 812px 跳出 680 斷點，但高度只有 375px，
+   左右欄各自捲動會把表單壓成 250px 高的小窗。整頁一起捲才用得下去。 */
+@media (max-width: 680px), (max-height: 500px) and (pointer: coarse) {
   /* 整頁自然捲動，不要左右欄各自捲動 */
-  .app { height: auto; min-height: 100vh; }
+  .app { height: auto; min-height: 100vh; min-height: 100dvh; }
   .main { display: block; min-height: 0; }
   .left, .right { overflow: visible; }
   .right { padding: 14px; gap: 14px; }
 
   .form { padding: 14px; gap: 14px; }
   .tabs { padding: 12px 14px 0; }
-  .tab { padding: 8px 13px; }               /* 觸控目標大一點 */
-  .actions { position: static; margin: 4px 0 0; padding: 0; background: none; }  /* 手機：不要 sticky/負邊距 */
+
+  /* 頂部列的手機重排在檔案最後（元件基礎規則之後才蓋得掉），見「手機頂部列」一節 */
+
+  /* 生成鈕改回 sticky：Illustrious 把 LoRA／詞庫／增強全開時，表單長到要捲
+     2.2 個螢幕才碰得到「生成」。手機整頁一起捲，sticky 會黏在視窗底部直到
+     捲出表單範圍，正是想要的行為。原本關掉 sticky 的理由（負邊距）改成用
+     手機的 14px 內距重算。 */
+  .actions {
+    position: sticky; bottom: 0; z-index: 4;
+    margin: 4px -14px -14px; padding: 12px 14px;
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
+    background: linear-gradient(transparent, var(--panel) 26%);
+  }
 
   .progress-pct { font-size: 26px; }
   .metrics { gap: 8px; }
@@ -609,6 +638,8 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   .metric .v { font-size: 17px; }
   .preview-live img { max-height: 260px; }
 }
+
+
 
 /* 生成中星星 loader — uiverse #11 (VashonG)，改色靛紫/青綠 */
 .run-loader { display:none; margin-left:auto; line-height:0; }
@@ -728,9 +759,12 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   --accent-soft: #fff0e8;
 }
 
-/* 引擎切換器在手機自成一列 */
+/* 引擎切換器在手機自成一列。
+   不設 justify-content:center——四顆按鈕加大觸控目標後一定會溢出（實測 320px 寬
+   時 327 > 290），置中會把捲動起點裁掉，選中的那顆由 scrollActiveEngineIntoView()
+   捲進視野即可。 */
 @media (max-width: 680px) {
-  .engine-switch { order: 4; width: 100%; justify-content: center; }
+  .engine-switch { order: 2; width: 100%; justify-content: flex-start; }
 }
 
 /* 品牌固定寬度 → 引擎切換器位置不隨引擎文字長短跳動 */
@@ -947,6 +981,24 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 /* 詞庫暗房按鈕：琥珀色調，呼應它開啟的暗房工具 */
 .darkroom-btn:hover { border-color: color-mix(in srgb, #e0a044 55%, transparent); color: #b8791f; }
 :root[data-engine] .darkroom-btn svg { color: #d69a3f; }
+
+/* 偏好開關的摺疊鈕：只在手機出現（由 680px 區塊改成 inline-flex）。
+   造型刻意跟 .assistant-btn 同一套（同邊框、同底色、同按壓回饋），只是收成正方形，
+   免得頂列多出一種沒見過的按鈕語言。 */
+.topbar-more {
+  display: none; order: 1; flex: none;
+  width: 40px; height: 40px; align-items: center; justify-content: center;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--panel-2); color: var(--text-dim); cursor: pointer;
+  transition: color var(--dur-1), border-color var(--dur-1), background var(--dur-1),
+              transform var(--dur-2) var(--ease-out);
+}
+.topbar-more svg { width: 17px; height: 17px; }
+.topbar-more:active { transform: scale(.94); }
+.topbar-more[aria-expanded="true"] {
+  border-color: var(--accent); color: var(--accent); background: var(--accent-soft);
+  transform: rotate(60deg);
+}
 
 .assistant {
   position: fixed; top: 0; right: 0; bottom: 0; width: min(380px, 100vw);
@@ -1344,4 +1396,175 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 @media (prefers-reduced-motion: reduce) {
   .lora-menu, .chip, .lora-hover { animation: none; }
   .lora-hover, .lora-hover.show { transition: none; }
+}
+
+/* ==================================================================
+   觸控裝置：目標尺寸、安全區、點擊行為
+   ==================================================================
+   全部包在 @media (pointer: coarse) 裡，桌面（滑鼠）完全不受影響——這是刻意的，
+   加大到 44px 在滑鼠上只會讓介面變鬆散。用 pointer 而不是寬度做條件，是因為
+   決定「按不按得準」的是手指不是螢幕寬度（平板橫放也該吃到這組）。
+   44px 的來源是 WCAG 2.2 Target Size (Minimum) 與 Apple HIG 的建議值。
+   ------------------------------------------------------------------ */
+@media (pointer: coarse) {
+  /* 點擊行為：
+     touch-action: manipulation 關掉「等 300ms 看是不是雙擊縮放」的延遲，
+     按鈕按下去才不會覺得慢半拍；tap-highlight 是 Android/iOS 預設的藍灰方塊，
+     跟這套介面自己的按壓縮放與焦點環重覆，關掉但保留 :focus-visible。 */
+  button, a[href], label, select, summary, [role="button"], [tabindex]:not([tabindex="-1"]) {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* --- 觸控目標 --- */
+  .engine-switch button { min-height: 40px; padding: 9px 14px; }
+  .tab { min-height: 44px; padding: 11px 15px; }
+  .aspect { min-height: 40px; padding: 8px 13px 8px 11px; }
+  .btn-mini { min-height: 44px; }
+  .btn-ghost { min-height: 44px; }
+  .card-head .head-btn { min-height: 34px; padding: 7px 14px; }
+  .drop .clear { width: 30px; height: 30px; }
+  .cmp-overlay .cmp-close { width: 44px; height: 44px; line-height: 44px; }
+
+  /* 勾選框原本 13×13，是全頁最小的目標。放大方塊本身，再讓包住它的 label
+     撐到 44px 高——label 與 input 共用同一個命中區，點文字也算數。
+     選擇器不侷限在 .chk：LoRA 的「注入觸發詞」等勾選框不在 .chk 裡，同樣是 13px。 */
+  .chk { min-height: 44px; }
+  input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; flex: none; }
+  /* 開關類的 input 是視覺隱藏的（寬高 0，焦點環畫在它控制的開關上），不能放大 */
+  .yz-switch input, .enh input, .lora-head > input { width: 0; height: 0; }
+
+  /* 文字/數字輸入與下拉：42px 差一點點，補到 44。
+     textarea 刻意不列入——它自己的 min-height 是 92px，寫在這裡反而會被這條較晚的
+     規則調低成 44px（實測 getComputedStyle 真的變成 44px），使用者拖拉縮放時就能把
+     提示詞框縮成一行高。 */
+  input[type="text"], input[type="number"], input[type="search"], select { min-height: 44px; }
+
+  /* 拉桿：元素盒高只有 16px，垂直方向幾乎沒有容錯。把盒子撐到 32px，
+     拇指維持原生樣式（自訂 thumb 會連桌面外觀一起換掉）。 */
+  input[type="range"] { min-height: 32px; }
+
+  /* 助理抽屜 */
+  .asst-close { width: 44px; height: 44px; }
+  .asst-modes button { min-height: 44px; }
+  .asst-mic { min-height: 44px; }
+  .asst-type input, .asst-send { min-height: 44px; }
+
+  /* LoRA 分類 chip 是上百顆的標籤雲，一律 44px 會把清單撐到不能用。
+     34px 是折衷：仍高於 WCAG 2.2 的 24px 絕對下限，chip 間距同時放大到 8px，
+     讓相鄰目標之間有足夠的間隔（間隔也算命中容錯的一部分）。 */
+  .lora-cat { min-height: 34px; }
+  .lora-cats, .cat-chips { gap: 8px; }
+  .cat-summary { min-height: 44px; }
+
+  /* 提示詞框右下的麥克風／AI 鈕：28px 太小，而且蓋在文字上。
+     放大到 40px，同時把 textarea 的下內距讓開，文字不會鑽到按鈕底下。 */
+  .mic-btn, .ai-btn { width: 40px; height: 40px; }
+  .ai-btn { right: 10px; bottom: 10px; font-size: var(--fs-lg); line-height: 40px; }
+  .mic-btn { right: 56px; bottom: 10px; }
+  .mic-btn svg { width: 18px; height: 18px; }
+  .prompt-wrap textarea { padding-bottom: 56px; }
+  /* 觸控沒有 hover，兩顆鈕要一直看得清楚（原本靠 .prompt-wrap:hover 才轉深） */
+  .mic-btn, .ai-btn { opacity: .82; }
+
+  /* 疊層捲動不要帶動背後的頁面 */
+  .lightbox, .assistant, .log, .cmp-overlay { overscroll-behavior: contain; }
+}
+
+/* --- 安全區：瀏海、Home 條、橫向的圓角 --- */
+/* 只補「內容會貼到螢幕邊緣」的容器。頂列在它自己的規則裡處理過了。
+   橫向手機的左右安全區（圓角與感測器）比直向更需要，條件跟著一起帶。 */
+@media (max-width: 680px), (max-height: 500px) and (pointer: coarse) {
+  .right {
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
+  }
+  .form, .tabs {
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+  }
+  /* .actions 用負邊距貼齊表單兩側，安全區變大時要跟著往外拉才不會露出邊 */
+  .actions {
+    margin-left: calc(-1 * max(14px, env(safe-area-inset-left)));
+    margin-right: calc(-1 * max(14px, env(safe-area-inset-right)));
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+  }
+}
+
+/* 大圖 lightbox：疊在最上層、四邊都可能碰到安全區。
+   桌面維持原本的 30px（max() 的下限就是原值），手機另外收窄成 14px 讓圖大一點。 */
+.lightbox {
+  padding: max(30px, env(safe-area-inset-top)) max(30px, env(safe-area-inset-right))
+           max(30px, env(safe-area-inset-bottom)) max(30px, env(safe-area-inset-left));
+}
+.lightbox img { max-height: 92dvh; }
+@media (max-width: 680px), (max-height: 500px) and (pointer: coarse) {
+  .lightbox {
+    padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right))
+             max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  }
+}
+
+/* 助理抽屜：滿版時同樣要避開瀏海與 Home 條，高度也改 dvh */
+.assistant { height: 100dvh; }
+@media (max-width: 680px) {
+  .assistant { width: 100vw; padding-bottom: env(safe-area-inset-bottom); }
+  .asst-head { padding-top: max(14px, env(safe-area-inset-top)); }
+}
+
+/* ==================================================================
+   手機頂部列：五行壓成兩行
+   ==================================================================
+   這一段刻意放在檔案最後。.assistant-btn / .conn / .engine-switch 的基礎規則
+   分散在 900~1000 行，寫在前面的斷點區塊特異性相同、順序在前，會被整條蓋掉
+   （第一版就是這樣，量出來 topbar 只從 216px 降到 148px，齒輪鈕根本沒出現）。
+
+   原本手機的頂部列是五行：品牌 / 助理+暗房 / 連線 / 引擎 / 三個開關，
+   375px 寬時 216px、320px 寬時 246px，而且 sticky——整片螢幕永遠少掉
+   四分之一到三分之一。三個壓法：
+   ① 助理與暗房兩顆鈕只留圖示（名稱改由 aria-label 提供，見 index.html）
+   ② 連線膠囊不再獨佔一行
+   ③ 三個偏好開關（音效／通知／預覽）收進齒輪鈕後面——它們是設定一次就不再動的
+      偏好，不值得長駐一整行
+
+   條件除了寬度還要看高度：手機轉橫向時寬度變成 812px、跳出 680 斷點，頂列卻回到
+   五行的排法——實測 812×375 下佔掉 131.8px，也就是螢幕的 35%，比直向還糟，而橫向
+   正好是想把畫面讓給遮罩畫布或預覽圖的時候。max-height 那條再加 pointer: coarse，
+   是為了不要波及到把視窗拉很扁的桌面使用者。
+   ------------------------------------------------------------------ */
+@media (max-width: 680px), (max-height: 500px) and (pointer: coarse) {
+  header.topbar { gap: 8px 10px; }
+  /* 品牌只留 logo。標題文字的內容就是目前的引擎名，而引擎名在下一行的切換器裡
+     已經是選中的膠囊——留著只是重覆，而且擠到剩 65px 寬只會顯示成「Flux2 K…」，
+     比拿掉更難看。logo 保留品牌識別，完整名稱在瀏覽器分頁標題上。 */
+  /* width:auto 要明寫——「品牌固定寬度 280px」那條規則在這個檔案更前面，
+     但特異性相同、順序在前，只設 flex 蓋不掉它的 width */
+  .brand { flex: 0 0 auto; width: auto; }
+  .brand > div { display: none; }
+  .conn { order: 1; margin-left: auto; flex: 0 0 auto; padding: 5px 10px; font-size: var(--fs-xs); }
+
+  .assistant-btn {
+    order: 1; flex: none;
+    width: 40px; height: 40px; padding: 0; justify-content: center;
+  }
+  .assistant-btn > span { display: none; }        /* 只留圖示；名稱走 aria-label */
+  .assistant-btn svg { width: 17px; height: 17px; }
+
+  .topbar-more { display: inline-flex; }
+  .engine-switch { order: 2; }
+
+  /* 偏好開關預設收起。展開時三顆排成「一列」而不是三列，頂列只多 44px。 */
+  .toggle-inline { order: 3; width: 100%; justify-content: space-between; }
+  .topbar:not(.opts-open) .toggle-inline { display: none; }
+  .toggle-inline label.opt { min-height: 44px; }
+}
+
+/* 橫向且寬度夠：引擎切換器不必獨佔一列，整條頂列收成一行。
+   740×375 實測 117px（31%）→ 68px（18%）。600px 是切換器自然寬度（約 350px）
+   加上 logo、連線膠囊與三顆圖示鈕之後還有餘裕的界線。 */
+@media (max-height: 500px) and (pointer: coarse) and (min-width: 600px) {
+  .engine-switch { width: auto; order: 1; }
+  .conn { order: 1; }
 }

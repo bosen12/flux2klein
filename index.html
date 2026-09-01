@@ -2,7 +2,8 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- viewport-fit=cover：iOS 上沒有這個，env(safe-area-inset-*) 一律回 0，安全區的規則等於沒寫 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#eceef5">
   <title>Flux2 Klein · ComfyUI 面板</title>
   <!-- SVG 優先（各尺寸都銳利）；不支援的瀏覽器才退回 png / ico -->
@@ -44,7 +45,8 @@
     <!-- 助理不是第五個引擎：它自己不產圖，而是操作那四個，所以放在切換器外面、
          不參與 engine-pill 的滑動，也不會改 data-engine 主題色。 -->
     <button type="button" class="assistant-btn" id="assistant-btn"
-            aria-expanded="false" aria-controls="assistant" title="AI 助理（語音操作面板）">
+            aria-expanded="false" aria-controls="assistant" aria-label="AI 助理"
+            title="AI 助理（語音操作面板）">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M12 3a4 4 0 0 1 4 4v4a4 4 0 0 1-8 0V7a4 4 0 0 1 4-4Z"/>
@@ -54,6 +56,7 @@
     </button>
     <!-- 詞庫暗房：獨立工具（darkroom/preview_ui.py），按鈕開新視窗，不嵌入面板 -->
     <button type="button" class="assistant-btn darkroom-btn" id="darkroom-btn"
+            aria-label="詞庫暗房"
             title="詞庫暗房（開新視窗，需先啟動 darkroom/preview_ui.bat）">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -63,7 +66,18 @@
       <span>詞庫暗房</span>
     </button>
     <div class="spacer"></div>
-    <div class="toggle-inline">
+    <!-- 偏好開關的摺疊鈕：只在手機出現（桌面 CSS 設 display:none）。
+         這三個開關是「設定一次就不再動」的偏好，在 375px 寬的螢幕上卻永久佔掉
+         頂列一整行，所以手機收進來、要調再展開。 -->
+    <button type="button" class="topbar-more" id="topbar-more"
+            aria-expanded="false" aria-controls="toggle-inline" aria-label="顯示偏好開關">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6 1.65 1.65 0 0 0 10 3.09V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/>
+      </svg>
+    </button>
+    <div class="toggle-inline" id="toggle-inline">
       <label class="opt"><span>完成音效</span><span class="yz-switch"><input type="checkbox" id="opt-sound" checked><span class="yz-slider"></span><span class="yz-knob"></span></span></label>
       <label class="opt"><span>桌面通知</span><span class="yz-switch"><input type="checkbox" id="opt-notify"><span class="yz-slider"></span><span class="yz-knob"></span></span></label>
       <label class="opt"><span>即時預覽</span><span class="yz-switch"><input type="checkbox" id="opt-preview" checked><span class="yz-slider"></span><span class="yz-knob"></span></span></label>
@@ -104,8 +118,12 @@
               <span>筆刷</span>
               <input type="range" id="brush" min="8" max="120" value="45">
               <button class="btn-mini" id="mask-clear">清除</button>
-              <label class="chk"><span>擴張/羽化</span></label>
-              <input type="number" id="grow" value="10" min="0" max="200" style="max-width:80px">
+              <!-- 標籤與輸入框包在一起：mask-tools 是會換行的 flex，兩者各自是 flex 項目時
+                   手機上會被拆到不同行，變成一個沒有輸入框的標籤加一個沒有標籤的數字框 -->
+              <span class="mask-grow">
+                <label class="chk" for="grow"><span>擴張/羽化</span></label>
+                <input type="number" id="grow" value="10" min="0" max="200" style="max-width:80px">
+              </span>
             </div>
           </div>
         </div>

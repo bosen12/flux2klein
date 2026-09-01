@@ -2569,6 +2569,17 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleLog(); }
     };
     $('assistant-btn').onclick = () => setAssistant(!asst.open);
+    // 頂列偏好開關的摺疊（只有手機看得到這顆鈕，桌面 CSS 設 display:none）。
+    // 展開狀態掛在 .topbar 上而不是開關容器上，因為 CSS 要靠父層是否 .opts-open
+    // 決定子層顯不顯示；aria-expanded 同步給輔助技術。
+    const moreBtn = $('topbar-more');
+    if (moreBtn) moreBtn.onclick = () => {
+      const open = document.querySelector('header.topbar').classList.toggle('opts-open');
+      moreBtn.setAttribute('aria-expanded', String(open));
+      moreBtn.setAttribute('aria-label', open ? '收起偏好開關' : '顯示偏好開關');
+      // 展開讓頂列變高，膠囊的座標跟著位移，要重算
+      requestAnimationFrame(movePill);
+    };
     // 詞庫暗房：獨立工具，開新視窗。埠可用 config.js 的 PREVIEW_PORT 覆寫（預設 7860）。
     // 用 location.hostname 讓手機/區網也能連（工具綁 0.0.0.0）。
     const drBtn = $('darkroom-btn');
