@@ -125,6 +125,15 @@ async function loadAll(force = false) {
   const r = await fetch('/api/libs' + (force ? '?force=1' : ''));
   const j = await r.json();
   ALL = j.items;
+  // job 不再進 /api/libs 指紋；重整時另抓這份小 JSON 疊回去，才會對 running 起輪詢。
+  try {
+    const jobs = await (await fetch('/api/jobs')).json();
+    if (jobs && typeof jobs === 'object' && !Array.isArray(jobs)) {
+      for (const it of ALL) {
+        if (jobs[it.rel]) it.job = jobs[it.rel];
+      }
+    }
+  } catch (e) { /* 舊後端沒這支端點就維持 libs 裡可能帶的 job */ }
   indexAll();
   const conn = $('conn');
   conn.classList.toggle('on', !!j.comfy);

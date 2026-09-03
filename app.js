@@ -1030,8 +1030,30 @@
     dropEl.classList.add('has-img');
     dropEl.querySelectorAll('img').forEach(x => x.remove());
     const img = document.createElement('img');
+    img.onload = () => {
+      const rec = state.images[nodeId];
+      if (rec) { rec.w = img.naturalWidth; rec.h = img.naturalHeight; }
+    };
     img.src = url;
     dropEl.insertBefore(img, dropEl.firstChild);
+  }
+
+  function currentCanvasSize() {
+    // 文生圖走尺寸欄位；編輯／局部重繪／擴圖沒有那個欄位，改讀已上傳圖的像素。
+    const m = currentModes()[state.mode];
+    if (m && m.size) {
+      const field = $('size-field');
+      if (field && field.style.display !== 'none') {
+        const w = +$('width').value, h = +$('height').value;
+        if (w && h) return [w, h];
+      }
+    }
+    if (state.mask && state.mask.img)
+      return [state.mask.img.naturalWidth, state.mask.img.naturalHeight];
+    for (const rec of Object.values(state.images)) {
+      if (rec && rec.w && rec.h) return [rec.w, rec.h];
+    }
+    return null;
   }
 
   /* ---------------- 遮罩畫布（局部重繪） ---------------- */
@@ -2141,7 +2163,12 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
         if (a.prompt && GROQ_READY) { await aiOptimizePrompt(); return '提示詞已填入並用 AI 優化'; }
         return '提示詞已填入';
       case 'set_aspect': {
-        if (!$('size-field') || $('size-field').style.display === 'none') return '目前模式沒有尺寸欄位';
+        if (!$('size-field') || $('size-field').style.display === 'none') {
+          const sz = currentCanvasSize();
+          return sz
+            ? `目前模式沒有尺寸欄位，畫布是上傳圖的 ${sz[0]}×${sz[1]}`
+            : '目前模式沒有尺寸欄位（先上傳圖片才知道畫布形狀）';
+        }
         const preset = ASPECT_PRESETS.find(x => x[0] === a.aspect);
         if (!preset) return '沒有這個比例：' + a.aspect;
         const [, w, h] = preset;
@@ -2887,11 +2914,15 @@ EXPLICIT CONTENT:
     ta.value = '';
     try {
       const sys = (AI_SYSTEM[state.engine] || AI_SYSTEM.flux2klein) + CONTENT_RULE + NSFW_RULE;
+      const sz = currentCanvasSize();
+      const user = sz
+        ? text + `\n\n(The image canvas is ${sz[0]}×${sz[1]} pixels. Keep the subject suited to this shape; do not add camera or framing instructions.)`
+        : text;
       const res = await groqChatFetch({
         model: 'llama-3.3-70b-versatile',
         messages: [
           { role: 'system', content: sys },
-          { role: 'user', content: text },
+          { role: 'user', content: user },
         ],
         temperature: 1, max_completion_tokens: 2048, top_p: 1, stream: true,
       });

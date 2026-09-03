@@ -1180,7 +1180,9 @@ def set_job(rel: str, status: str, message: str = ""):
                     if v.get("status") in ("done", "error", "") and (v.get("updated") or 0) < cutoff]
             for k in dead:
                 del STATE["jobs"][k]
-    bump_libs()
+    # job 狀態不 bump_libs：/api/libs 的 wire 快取含 3 萬筆 JSON，生成中每個
+    # queued/running/done 都失效的話，重整或第二個分頁就要重建 12MB。前端用
+    # /api/status、/api/jobs、pollBatch 看進度，不靠 libs 裡那份快照。
 
 
 def get_job(rel: str) -> dict:
@@ -2696,6 +2698,11 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if u.path == "/api/status":
                 self._send_json(get_job(qs.get("rel", [""])[0]))
+                return
+            if u.path == "/api/jobs":
+                with STATE["jobs_lock"]:
+                    snap = {k: dict(v) for k, v in STATE["jobs"].items()}
+                self._send_json(snap)
                 return
             if u.path == "/api/score":
                 # 給前端在瀏覽模式生成完成後短暫輪詢用：評分是 do_generate() 完成後
