@@ -321,7 +321,7 @@ Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188
 
 ## 運作原理
 
-- **`serve.py` 同源反向代理** — 瀏覽器直接打 ComfyUI 會被 CORS 擋。`serve.py` 把靜態網頁與 API 變成同源，所有請求（`/prompt`、`/object_info`、`/upload/image`、`/view`、`/ws`）透明轉發到 ComfyUI。純 Python 標準函式庫，免安裝。
+- **`serve.py` 同源反向代理** — 瀏覽器直接打 ComfyUI 會被 CORS 擋。`serve.py` 把靜態網頁與 API 變成同源，所有請求（`/prompt`、`/object_info`、`/upload/image`、`/view`、`/ws`）透明轉發到 ComfyUI。純 Python 標準函式庫，免安裝。本機靜態檔與 `/panel/*`（LoRA／詞庫縮圖）走 HTTP/1.1 keep-alive，一頁 80 張縮圖不必重開 80 次 TCP；轉發到 ComfyUI／Groq 串流仍關連線。
 
 - **UI → API 轉換** — Flux2 Klein 的 `workflow.json` 是 ComfyUI UI 格式，`converter.js` 在瀏覽器內即時轉為 API 格式（重建 `graphToPrompt`）。其他引擎（Z-Image / Krea2 / Illustrious）的 JSON 本身就是 API 格式，直接注入欄位送出。
 

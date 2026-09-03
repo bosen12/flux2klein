@@ -304,6 +304,9 @@ GZIP_MIN = 1400          # 跟 darkroom/preview_ui.py 同一個門檻：小回�
 GZIP_TYPES = ("json", "text/", "javascript", "image/svg")
 NO_STORE = "no-store, no-cache, must-revalidate, max-age=0"
 IMMUTABLE = "public, max-age=31536000, immutable"
+KEEPALIVE_S = 30         # 跟暗房 ThreadingHTTPServer.timeout 同一檔。面板以前每請求
+                         # Connection: close，LoRA 選單一頁 80 張縮圖 = 80 次 TCP（HTTPS
+                         # 還要 80 次 TLS）。暗房已經 keep-alive，這裡比照辦理。
 _GROQ_ARR_RE = re.compile(r"GROQ_API_KEYS\s*:\s*\[[^\]]*\]\s*,?", re.S)
 _GROQ_KEY_RE = re.compile(r"GROQ_API_KEY\s*:\s*['\"][^'\"]*['\"]\s*,?")
 
@@ -332,6 +335,34 @@ def _serve_config_js():
     return s.encode("utf-8")
 
 
+def _want_keepalive(initial):
+    """HTTP/1.1 預設 keep-alive，除非對方寫 Connection: close。HTTP/1.0 要明確要求。"""
+    if not initial:
+        return False
+    first = initial.split(b"\r\n", 1)[0].decode("latin1", "replace")
+    ver = first.rsplit(" ", 1)[-1] if first else ""
+    conn = (header_value(initial, "Connection") or "").lower()
+    if "close" in conn:
+        return False
+    if "HTTP/1.0" in ver:
+        return "keep-alive" in conn
+    return True   # HTTP/1.1 與未知版本：我們自己是 1.1，預設開
+
+
+def _conn_hdr(keep):
+    if keep:
+        return "Connection: keep-alive\r\nKeep-Alive: timeout=%d\r\n" % KEEPALIVE_S
+    return "Connection: close\r\n"
+
+
+def _empty(client, code, keep=False):
+    reason = {400: "Bad Request", 404: "Not Found"}.get(code, "Error")
+    client.sendall((
+        "HTTP/1.1 %d %s\r\nContent-Length: 0\r\n" % (code, reason)
+        + _conn_hdr(keep) + "\r\n"
+    ).encode("utf-8"))
+
+
 def _gzip_for(body, ctype, initial):
     """回傳 (body, Content-Encoding 標頭字串)。initial=None 代表呼叫端沒把原始請求
     傳進來（不知道對方支不支援 gzip），一律不壓，維持舊行為。"""
@@ -345,12 +376,14 @@ def _gzip_for(body, ctype, initial):
 
 
 def send_body(client, body, ctype, initial=None, cache=NO_STORE, etag=None):
+    keep = _want_keepalive(initial)
     if etag and initial is not None and header_value(initial, "If-None-Match") == etag:
         client.sendall((
             "HTTP/1.1 304 Not Modified\r\n"
             f"ETag: {etag}\r\n"
             f"Cache-Control: {cache}\r\n"
-            "Connection: close\r\n\r\n"
+            + _conn_hdr(keep) +
+            "\r\n"
         ).encode("utf-8"))
         return
     body, enc = _gzip_for(body, ctype, initial)
@@ -362,7 +395,8 @@ def send_body(client, body, ctype, initial=None, cache=NO_STORE, etag=None):
         "Vary: Accept-Encoding\r\n"
         + (f"ETag: {etag}\r\n" if etag else "") +
         f"Cache-Control: {cache}\r\n"
-        "Connection: close\r\n\r\n"
+        + _conn_hdr(keep) +
+        "\r\n"
     ).encode("utf-8")
     client.sendall(header + body)
 
@@ -525,8 +559,9 @@ def serve_lora_preview(client, raw_path, initial=None):
     folder = unquote((q.get("folder") or [""])[0])
     fn = unquote((q.get("file") or [""])[0])
     p = lora_scan.preview_path(folder, fn)
+    keep = _want_keepalive(initial)
     if p is None:
-        client.sendall(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        _empty(client, 404, keep)
         return
     path = str(p)
     if lora_scan.is_video_preview(fn):
@@ -543,7 +578,8 @@ def serve_lora_preview(client, raw_path, initial=None):
             "HTTP/1.1 304 Not Modified\r\n"
             f"ETag: {etag}\r\n"
             "Cache-Control: no-cache\r\n"
-            "Connection: close\r\n\r\n"
+            + _conn_hdr(keep) +
+            "\r\n"
         ).encode("utf-8"))
         return
     header = (
@@ -552,12 +588,13 @@ def serve_lora_preview(client, raw_path, initial=None):
         f"Content-Length: {len(body)}\r\n"
         f"ETag: {etag}\r\n"
         "Cache-Control: no-cache\r\n"
-        "Connection: close\r\n\r\n"
+        + _conn_hdr(keep) +
+        "\r\n"
     ).encode("utf-8")
     client.sendall(header + body)
 
 
-def _lora_push_json(client, obj, status=200):
+def _lora_push_json(client, obj, status=200, initial=None):
     """跟 send_body() 類似但可指定狀態碼、固定帶 CORS 標頭——只有 /panel/lora-push
     需要（LoRA Manager 站在 7861 跨源打過來，瀏覽器要看到 Access-Control-Allow-Origin
     才會把回應交給呼叫端的 JS；GET 是面板自己同源輪詢用不到，但一起帶不影響行為，
@@ -571,12 +608,13 @@ def _lora_push_json(client, obj, status=200):
         f"Content-Length: {len(body)}\r\n"
         "Access-Control-Allow-Origin: *\r\n"
         "Cache-Control: no-store\r\n"
-        "Connection: close\r\n\r\n"
+        + _conn_hdr(_want_keepalive(initial)) +
+        "\r\n"
     ).encode("utf-8")
     client.sendall(header + body)
 
 
-def serve_lora_push_get(client, raw_path):
+def serve_lora_push_get(client, raw_path, initial=None):
     """前端每 ~1s 輪詢一次；帶 since 才回新資料，版本沒變就只回 ver（省流量）。"""
     from urllib.parse import urlparse, parse_qs
     q = parse_qs(urlparse(raw_path).query)
@@ -589,7 +627,7 @@ def serve_lora_push_get(client, raw_path):
     out = {"ver": ver}
     if ver > since:
         out["data"] = data
-    _lora_push_json(client, out)
+    _lora_push_json(client, out, initial=initial)
 
 
 def serve_lora_push_post(client, initial):
@@ -619,25 +657,27 @@ def serve_lora_push_post(client, initial):
     folder = str(data.get("folder") or "").strip()
     name = str(data.get("name") or "").strip()
     if not name:
-        _lora_push_json(client, {"error": "缺少 name"}, 400)
+        _lora_push_json(client, {"error": "缺少 name"}, 400, initial=initial)
         return
     with _LORA_PUSH_LOCK:
         _LORA_PUSH["ver"] += 1
         _LORA_PUSH["data"] = {"folder": folder, "name": name}
         ver = _LORA_PUSH["ver"]
     print(f"[lora-push] {folder}/{name} (ver={ver})")
-    _lora_push_json(client, {"ok": True, "ver": ver})
+    _lora_push_json(client, {"ok": True, "ver": ver}, initial=initial)
 
 
-def serve_lora_push_options(client):
+def serve_lora_push_options(client, initial=None):
     """CORS 預檢：7861 跨源打 7801，application/json 的 POST 瀏覽器一定先送 OPTIONS。"""
-    client.sendall(
-        b"HTTP/1.1 204 No Content\r\n"
-        b"Access-Control-Allow-Origin: *\r\n"
-        b"Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n"
-        b"Access-Control-Allow-Headers: Content-Type\r\n"
-        b"Content-Length: 0\r\n\r\n"
-    )
+    client.sendall((
+        "HTTP/1.1 204 No Content\r\n"
+        "Access-Control-Allow-Origin: *\r\n"
+        "Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n"
+        "Access-Control-Allow-Headers: Content-Type\r\n"
+        "Content-Length: 0\r\n"
+        + _conn_hdr(_want_keepalive(initial)) +
+        "\r\n"
+    ).encode("utf-8"))
 
 
 def _prompt_folders():
@@ -739,7 +779,7 @@ def serve_prompt_detail(client, raw_path, initial=None):
     bad = (folder not in _prompt_folders() or not fn.endswith(".py")
            or "/" in fn or "\\" in fn or ".." in fn)
     if bad:
-        client.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        _empty(client, 400, _want_keepalive(initial))
         return
     path = os.path.join(PROMPTS_ROOT, folder, fn)
     out = {"required": [], "positive": [], "negative": []}
@@ -759,26 +799,27 @@ def serve_prompt_detail(client, raw_path, initial=None):
                     if isinstance(val, list):
                         out[keymap[t.id]] = [str(x) for x in val]
     except OSError:
-        client.sendall(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        _empty(client, 404, _want_keepalive(initial))
         return
     send_body(client, _json.dumps(out, ensure_ascii=False).encode("utf-8"),
                "application/json", initial)
 
 
-def serve_prompt_preview(client, raw_path):
+def serve_prompt_preview(client, raw_path, initial=None):
     """送出詞庫的 .webp 預覽圖。cat 須在分類白名單、file 純檔名，擋目錄穿越。"""
     from urllib.parse import urlparse, parse_qs, unquote
     q = parse_qs(urlparse(raw_path).query)
     folder = unquote((q.get("cat") or [""])[0])
     fn = unquote((q.get("file") or [""])[0])
+    keep = _want_keepalive(initial)
     bad = (folder not in _prompt_folders() or not fn
            or "/" in fn or "\\" in fn or ".." in fn)
     if bad:
-        client.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        _empty(client, 400, keep)
         return
     path = os.path.join(PROMPTS_ROOT, folder, fn)
     if not os.path.isfile(path):
-        client.sendall(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        _empty(client, 404, keep)
         return
     ctype = mimetypes.guess_type(path)[0] or "image/webp"
     with open(path, "rb") as f:
@@ -788,7 +829,8 @@ def serve_prompt_preview(client, raw_path):
         f"Content-Type: {ctype}\r\n"
         f"Content-Length: {len(body)}\r\n"
         "Cache-Control: max-age=86400\r\n"
-        "Connection: close\r\n\r\n"
+        + _conn_hdr(keep) +
+        "\r\n"
     ).encode("utf-8")
     client.sendall(header + body)
 
@@ -966,12 +1008,14 @@ def serve_object_info(client, initial):
     except Exception:
         return False
     etag = _oi_cache["etag"]
+    keep = _want_keepalive(initial)
     if etag and header_value(initial, "If-None-Match") == etag:
         client.sendall((
             "HTTP/1.1 304 Not Modified\r\n"
             f"ETag: {etag}\r\n"
             "Cache-Control: no-cache\r\n"
-            "Connection: close\r\n\r\n"
+            + _conn_hdr(keep) +
+            "\r\n"
         ).encode("utf-8"))
         return True
     accepts_gzip = "gzip" in (header_value(initial, "Accept-Encoding") or "").lower()
@@ -985,7 +1029,8 @@ def serve_object_info(client, initial):
         "Vary: Accept-Encoding\r\n"
         + (f"ETag: {etag}\r\n" if etag else "") +
         "Cache-Control: no-cache\r\n"
-        "Connection: close\r\n\r\n"
+        + _conn_hdr(keep) +
+        "\r\n"
     ).encode("utf-8")
     client.sendall(header + body)
     return True
@@ -1093,9 +1138,72 @@ def serve_groq(client, initial, raw_path, method):
             pass
 
 
+def _dispatch(client, initial):
+    """處理一個 HTTP 請求。回傳 "taken" 表示 socket 已交給 WS／上游代理（呼叫端
+    不要關、也不要再讀）；其餘本機回應走 keep-alive，呼叫端依對方標頭決定要不要
+    繼續讀下一個請求。"""
+    first_line = initial.split(b"\r\n", 1)[0].decode("latin1", "replace")
+    parts = first_line.split(" ")
+    method = parts[0].upper() if parts else ""
+    raw_path = parts[1] if len(parts) > 1 else "/"
+    path = raw_path.split("?", 1)[0]
+    is_ws = b"upgrade: websocket" in initial.lower()
+
+    if method == "POST" and path.startswith("/prompt"):
+        log_task(client, initial)
+
+    if method == "GET" and path == "/object_info" and not is_ws:
+        if serve_object_info(client, initial):
+            return "local"
+        # 快取失敗 → 落到下面走一般代理
+
+    if path in STATIC_FILES and not is_ws:
+        send_file(client, STATIC_FILES[path], initial, raw_path)
+        return "local"
+    if method == "GET" and path == "/panel/loras" and not is_ws:
+        serve_lora_list(client, initial)
+        return "local"
+    if method == "GET" and path == "/panel/lora-preview" and not is_ws:
+        serve_lora_preview(client, raw_path, initial)
+        return "local"
+    if method == "GET" and path == "/panel/lora-push" and not is_ws:
+        serve_lora_push_get(client, raw_path, initial)
+        return "local"
+    if method == "POST" and path == "/panel/lora-push" and not is_ws:
+        serve_lora_push_post(client, initial)
+        return "local"
+    if method == "OPTIONS" and path == "/panel/lora-push" and not is_ws:
+        serve_lora_push_options(client, initial)
+        return "local"
+    if method == "GET" and path == "/panel/prompts" and not is_ws:
+        serve_prompt_list(client, initial)
+        return "local"
+    if method == "GET" and path == "/panel/prompt" and not is_ws:
+        serve_prompt_detail(client, raw_path, initial)
+        return "local"
+    if method == "GET" and path == "/panel/prompt-preview" and not is_ws:
+        serve_prompt_preview(client, raw_path, initial)
+        return "local"
+    if path.startswith("/panel/groq") and not is_ws:
+        # 串流、沒有 Content-Length，必須關連線才能讓對方知道 body 結束。
+        serve_groq(client, initial, raw_path, method)
+        return "taken"
+    if is_ws and path.startswith("/assistant"):
+        initial = rewrite_request_path(initial, "/v1/realtime")
+        proxy_upstream(client, initial, ASST_HOST, ASST_PORT, True, "語音服務（請先啟動 voice-assistant/start_assistant.py）")
+        return "taken"
+    if path in LT_PATHS and not is_ws:
+        proxy_upstream(client, initial, LT_HOST, LT_PORT, False,
+                       "對嘴服務（請先啟動 start_livetalking_qwen.bat）")
+        return "taken"
+    proxy_to_comfy(client, initial, is_ws)
+    return "taken"
+
+
 def handle(client, ssl_ctx=None):
+    taken = False
     try:
-        client.settimeout(30)
+        client.settimeout(KEEPALIVE_S)
         # HTTPS：在 worker thread 內做 TLS 交握（不擋 accept 迴圈）。
         # 非 TLS 連線打到 HTTPS 埠會交握失敗，直接丟掉。
         if ssl_ctx is not None:
@@ -1107,75 +1215,26 @@ def handle(client, ssl_ctx=None):
                 except OSError:
                     pass
                 return
-        initial = recv_headers(client)
-        if not initial:
-            client.close()
-            return
-        client.settimeout(None)
-        first_line = initial.split(b"\r\n", 1)[0].decode("latin1", "replace")
-        parts = first_line.split(" ")
-        method = parts[0].upper() if parts else ""
-        raw_path = parts[1] if len(parts) > 1 else "/"
-        path = raw_path.split("?", 1)[0]
-        is_ws = b"upgrade: websocket" in initial.lower()
-
-        if method == "POST" and path.startswith("/prompt"):
-            log_task(client, initial)
-
-        # /object_info 走壓縮快取（大幅減少手機/遠端載入時間）
-        if method == "GET" and path == "/object_info" and not is_ws:
-            if serve_object_info(client, initial):
-                client.close()
+        while True:
+            client.settimeout(KEEPALIVE_S)
+            initial = recv_headers(client)
+            if not initial:
+                break
+            client.settimeout(None)
+            result = _dispatch(client, initial)
+            if result == "taken":
+                taken = True
                 return
-            # 快取失敗 → 落到下面走一般代理
-
-        if path in STATIC_FILES and not is_ws:
-            send_file(client, STATIC_FILES[path], initial, raw_path)
-            client.close()
-        elif method == "GET" and path == "/panel/loras" and not is_ws:
-            # 面板專屬端點（不轉發給 ComfyUI）：列出 loras/style 的觸發詞與預覽圖
-            serve_lora_list(client, initial)
-            client.close()
-        elif method == "GET" and path == "/panel/lora-preview" and not is_ws:
-            serve_lora_preview(client, raw_path, initial)
-            client.close()
-        elif method == "GET" and path == "/panel/lora-push" and not is_ws:
-            serve_lora_push_get(client, raw_path)
-            client.close()
-        elif method == "POST" and path == "/panel/lora-push" and not is_ws:
-            serve_lora_push_post(client, initial)
-            client.close()
-        elif method == "OPTIONS" and path == "/panel/lora-push" and not is_ws:
-            serve_lora_push_options(client)
-            client.close()
-        elif method == "GET" and path == "/panel/prompts" and not is_ws:
-            serve_prompt_list(client, initial)
-            client.close()
-        elif method == "GET" and path == "/panel/prompt" and not is_ws:
-            serve_prompt_detail(client, raw_path, initial)
-            client.close()
-        elif method == "GET" and path == "/panel/prompt-preview" and not is_ws:
-            serve_prompt_preview(client, raw_path)
-            client.close()
-        elif path.startswith("/panel/groq") and not is_ws:
-            serve_groq(client, initial, raw_path, method)
-            client.close()
-        elif is_ws and path.startswith("/assistant"):
-            # 助理語音 WS：同源代理到本機語音服務，路徑改寫成它期望的 /v1/realtime。
-            # 手機走 HTTPS 面板時，這條走同源 wss，本代理做 TLS 終止再轉明文到 8765。
-            initial = rewrite_request_path(initial, "/v1/realtime")
-            proxy_upstream(client, initial, ASST_HOST, ASST_PORT, True, "語音服務（請先啟動 voice-assistant/start_assistant.py）")
-        elif path in LT_PATHS and not is_ws:
-            # 對嘴數字人：同源轉發到 LiveTalking。路徑原樣送過去，不改寫。
-            proxy_upstream(client, initial, LT_HOST, LT_PORT, False,
-                           "對嘴服務（請先啟動 start_livetalking_qwen.bat）")
-        else:
-            proxy_to_comfy(client, initial, is_ws)
+            if not _want_keepalive(initial):
+                break
     except Exception:
-        try:
-            client.close()
-        except OSError:
-            pass
+        pass
+    finally:
+        if not taken:
+            try:
+                client.close()
+            except OSError:
+                pass
 
 
 def main():
