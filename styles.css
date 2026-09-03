@@ -1357,7 +1357,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 }
 .tw-chip:hover { border-color: var(--border-strong); color: var(--text); }
 .tw-chip.on { border-color: var(--accent); background: var(--accent-soft); color: var(--text); font-weight: 600; }
-.lora-current img { width: 36px; height: 36px; border-radius: var(--radius-xs); object-fit: cover; flex: none; }
+.lora-current img, .lora-current video { width: 36px; height: 36px; border-radius: var(--radius-xs); object-fit: cover; flex: none; }
 .lora-cur-name { flex: 1; min-width: 0; font-size: var(--fs-sm); font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lora-clear {
   flex: none; border: none; background: transparent; cursor: pointer;
@@ -1399,7 +1399,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   opacity: 1; transform: none;
   transition: opacity var(--dur-2) var(--ease-entrance), transform var(--dur-2) var(--ease-entrance);
 }
-.lora-hover img { display: block; width: 100%; height: auto; }
+.lora-hover img, .lora-hover video { display: block; width: 100%; height: auto; }
 
 @media (prefers-reduced-motion: reduce) {
   .lora-menu, .chip, .lora-hover { animation: none; }

@@ -63,6 +63,7 @@ API 格式的範本在啟動時一次 fetch 進 `state.zTemplates`，送出前 d
 | `darkroom/agent_draw.py` | 給外部 AI agent 用的抽卡 CLI／函式庫，呼叫 `preview_ui.py` 的 `/api/agent-draw` 等端點，不重複實作抽卡邏輯。`--discord-dm` 額外直接用 bot token 送真正的 Discord embed（繞過 agent 框架的訊息工具） |
 | `darkroom/AGENT_DRAW.md` | 給只能打 HTTP API（function calling）的 agent 看的端點說明與呼叫範例 |
 | `groq_proxy.py` | Groq 多 key 輪替代理。留根目錄（跟 `config.js` 同層），被面板 AI 優化與 `voice-assistant/` 的語音助理／LiveTalking 三邊共用 |
+| `lora_scan.py` | LoRA 清單掃描（副檔名／`<lora:…>` 剝除／SWR）。面板與暗房共用，留根目錄。改副檔名表或剝標規則只改這一支 |
 
 ## 引擎設定的結構
 

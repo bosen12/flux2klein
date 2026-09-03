@@ -52,7 +52,9 @@ except Exception:
     _HAS_PIL = False
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import generate_special_previews as gsp
+import lora_scan
 from generate_special_previews import (
     SPECIAL_DIR,
     DEFAULT_WORKFLOW,
@@ -693,15 +695,16 @@ def _tag_and_persist(rel: str, img_bytes: bytes, py: Path, img_name: str):
 
 
 # ---------------------------------------------------------------------------
-# LoRA（給「生圖」模式用）：讀 ComfyUI 的 loras 資料夾，列出每個 .safetensors 的觸發詞
-# 與預覽圖。沿用主面板 serve.py 的做法與路徑（可用環境變數 LORA_ROOT 覆寫）。這些檔在
-# ComfyUI 磁碟上、不透過 ComfyUI API，直接讀資料夾。
+# LoRA（給「生圖」模式用）：掃描／SWR／副檔名／<lora:…> 剝除都在根目錄 lora_scan.py，
+# 跟面板 serve.py 同一支，避免兩邊各掃一次之後副檔名表開始漂移。
 # ---------------------------------------------------------------------------
-LORA_ROOT = Path(os.environ.get(
-    "LORA_ROOT",
-    r"E:\Comfyui\loras",
-))
-LORA_FOLDERS = ["style", "Character", "HENTAI", "illus"]
+LORA_ROOT = lora_scan.LORA_ROOT
+LORA_FOLDERS = lora_scan.LORA_FOLDERS
+LORA_PREVIEW_EXTS = lora_scan.LORA_PREVIEW_EXTS
+LORA_VIDEO_EXTS = lora_scan.LORA_VIDEO_EXTS
+list_loras = lora_scan.list_loras
+lora_preview_path = lora_scan.preview_path
+_strip_angle_tags = lora_scan.strip_angle_tags
 # /api/agent-draw 沒帶 loras 欄位時套用的預設 LoRA——給外部 agent 用，讓它不用每次
 # 抽卡都要知道確切的 LoRA 檔名。想抽「不套 LoRA」要明確傳 `"loras": []`——不給
 # loras 這個欄位才會落到這個預設值。
@@ -721,136 +724,7 @@ DARKROOM_CHECKPOINT_ROOT = Path(os.environ.get(
     r"C:\ComfyUI\ComfyUI_windows_portable_nvidia\ComfyUI_windows_portable\ComfyUI\models\checkpoints\illurtrious",
 ))
 DARKROOM_DEFAULT_CHECKPOINT = "waiIllustriousSDXL_v170.safetensors"
-LORA_PREVIEW_EXTS = (".preview.png", ".preview.jpeg", ".preview.jpg", ".preview.webp",
-                     ".preview.mp4", ".preview.webm",
-                     ".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm")
 mimetypes.add_type("image/webp", ".webp")   # 有些 Python 的 mimetypes 不認 webp
-LORA_VIDEO_EXTS = (".mp4", ".webm")   # 有些 LoRA 的預覽是短片，前端要改用 <video> 渲染
-
-
-_lora_cache = {"data": None, "at": 0.0, "refreshing": False}
-_lora_cache_lock = threading.Lock()
-_LORA_TTL = 300.0   # LoRA 很少變動，快取 5 分鐘（每次要讀數百個 metadata.json，約 5 秒）
-
-# 有些 LoRA 的 trainedWords 是直接從 CivitAI 頁面複製貼上的，會混進 A1111/Forge 用的
-# <lora:xxx:1> 語法（那邊的提示詞處理器認得這個、ComfyUI 不認得，送進去只是沒意義的
-# 文字 token）。這裡只是「讀取時清掉、不落地」——不改 metadata.json 本身，每次讀都重新
-# 過濾一次，之後 LoRA Manager 或使用者自己改了原始檔也不會被這裡卡住。
-_ANGLE_TAG_RE = re.compile(r"<[^<>]*>")
-
-
-def _strip_angle_tags(word: str) -> str:
-    """拿掉 <...> 這類標籤，並清掉因此留下的空白/多餘逗點（不然「, , 」這種空段會殘留）。"""
-    cleaned = _ANGLE_TAG_RE.sub("", word)
-    parts = [p.strip() for p in cleaned.split(",")]
-    parts = [p for p in parts if p]
-    return ", ".join(parts)
-
-
-def _build_lora_list() -> dict:
-    """真的去掃 LORA_ROOT 組出清單（實測 5.93 秒）。呼叫端一律走 list_loras()，它有快取。
-
-    用 rglob 遞迴掃描（不是只掃頂層）：LoRA Manager 那邊本來就允許在 style/Character/
-    HENTAI/illus 底下建子資料夾整理（例如 Character/other、Character/manhwa），舊版只掃
-    頂層會讓子資料夾裡的 LoRA 在暗房完全消失不見——LoRA Manager 點「送到 workflow」推送
-    時帶的 folder 是完整相對路徑（如 "Character/other"），暗房這邊的清單卻找不到對應項目、
-    比對永遠失敗，大面板開了卻是空的。item 的 "folder" 現在是完整相對路徑（用來跟推送比對、
-    顯示、組預覽/詳情連結），"category" 才是頂層四分類（用來給左欄篩選晶片分組計數）。"""
-    items, counts = [], {}
-    for category in LORA_FOLDERS:
-        base = LORA_ROOT / category
-        try:
-            paths = sorted(base.rglob("*.safetensors"),
-                           key=lambda p: (p.parent.as_posix(), p.name))
-        except OSError:
-            counts[category] = 0
-            continue
-        n = 0
-        for p in paths:
-            fn = p.name
-            d = p.parent
-            folder = d.relative_to(LORA_ROOT).as_posix()
-            stem = fn[: -len(".safetensors")]
-            words, title, base_model = [], stem, ""
-            meta = d / (stem + ".metadata.json")
-            if meta.is_file():
-                try:
-                    md = json.loads(meta.read_text(encoding="utf-8"))
-                    raw_words = (md.get("civitai") or {}).get("trainedWords") or []
-                    words = [_strip_angle_tags(w) for w in raw_words]
-                    title = md.get("model_name") or stem
-                    # base_model 是頂層欄位(LoRA Manager 掃描時寫入)，civitai.baseModel
-                    # 當備援(理論上兩者同值,防極少數 metadata.json 只有其中一個)。
-                    base_model = md.get("base_model") or (md.get("civitai") or {}).get("baseModel") or ""
-                except Exception:
-                    pass
-            preview = None
-            for ext in LORA_PREVIEW_EXTS:
-                if (d / (stem + ext)).is_file():
-                    preview = stem + ext
-                    break
-            items.append({"folder": folder, "category": category, "file": fn, "name": stem,
-                          "title": title, "trainedWords": words, "preview": preview,
-                          "base_model": base_model})
-            n += 1
-        counts[category] = n
-    data = {"items": items, "counts": counts, "folders": LORA_FOLDERS}
-    with _lora_cache_lock:
-        _lora_cache["data"] = data
-        _lora_cache["at"] = time.time()
-        _lora_cache["refreshing"] = False
-    return data
-
-
-def list_loras() -> dict:
-    """帶 stale-while-revalidate 快取的 LoRA 清單。
-
-    以前是純 TTL：時間一到，「下一個開 LoRA 面板的人」要在前景等完整重掃。實測那一次
-    是 5.93 秒，而快取命中只要 11ms——使用者的感受是「暗房偶爾會卡住好幾秒」，而且因為
-    只在剛好過期的那一次發生，很難歸因到 LoRA 清單。scan_libraries() 早就是 SWR 了，
-    這支沒跟上。現在過期先回舊的、同時背景重掃，沒有人會等到那 5.9 秒；代價是剛加的
-    LoRA 可能晚一次請求才出現（下一次開面板就會有）。"""
-    with _lora_cache_lock:
-        data = _lora_cache["data"]
-        stale = (time.time() - _lora_cache["at"]) >= _LORA_TTL
-        need_bg = stale and data is not None and not _lora_cache["refreshing"]
-        if need_bg:
-            _lora_cache["refreshing"] = True
-    if data is None:
-        return _build_lora_list()      # 第一次沒有舊資料可回，只能等
-    if need_bg:
-        def work():
-            try:
-                _build_lora_list()
-            except Exception as e:
-                with _lora_cache_lock:
-                    _lora_cache["refreshing"] = False
-                plog(f"[lora] 背景重掃失敗：{type(e).__name__}: {e}")
-        threading.Thread(target=work, daemon=True).start()
-    return data
-
-
-def lora_preview_path(folder: str, fn: str):
-    """回傳 LoRA 預覽圖的實體路徑。folder 現在可能帶子資料夾（如 "Character/other"，見
-    list_loras()），所以驗證改成：第一段須在白名單、每一段不得是 ".."；fn 仍是純檔名
-    （擋目錄穿越），最後再確認解析後的路徑真的落在 LORA_ROOT 底下，雙重保險。
-
-    fn 的traversal 檢查用「整段等於 ".."」而不是「字串包含 ".."」——後者會誤傷合法檔名
-    裡剛好連續兩個點的情況（實測踩到：某個 LoRA 原始檔名是 "...with....jpeg"，字面上
-    含 ".."，但沒有路徑分隔符，整段當一個檔名用完全安全，不構成目錄穿越）。fn 已經先
-    擋過 "/" 和 "\\"，不可能被拆成多段，所以只有「fn 剛好整個等於 ".." 或 "."」才是
-    真正的穿越風險，字串包含不是。"""
-    if not fn or "/" in fn or "\\" in fn or fn in (".", ".."):
-        return None
-    parts = (folder or "").split("/")
-    if not parts or parts[0] not in LORA_FOLDERS or any(part in ("", "..") for part in parts) or "\\" in folder:
-        return None
-    p = LORA_ROOT / folder / fn
-    try:
-        p.resolve().relative_to(LORA_ROOT.resolve())
-    except ValueError:
-        return None
-    return p if p.is_file() else None
 
 
 # ---------------------------------------------------------------------------

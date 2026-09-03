@@ -35,6 +35,7 @@ import re
 import json as _json
 
 import groq_proxy
+import lora_scan
 
 try:
     from PIL import Image
@@ -106,15 +107,8 @@ ASST_HOST, ASST_PORT = "127.0.0.1", 8765
 LT_HOST, LT_PORT = "127.0.0.1", 8010
 # 需要同源轉發給 LiveTalking 的路徑（見它的 docs/api.md）
 LT_PATHS = ("/offer", "/human", "/humanaudio", "/interrupt_talk", "/is_speaking", "/set_audiotype")
-# Illustrious 的 LoRA 選單來源：ComfyUI 的 loras 資料夾底下這幾個分類子夾。
-# 面板要讀每個 .safetensors 旁的 .metadata.json（trainedWords）與 .preview.png，
-# 這些檔在 ComfyUI 那端的磁碟上、不透過 ComfyUI API 取得，所以直接讀資料夾。
-# 換機器或改路徑時設環境變數 LORA_ROOT 覆寫根目錄即可。新增分類就加進 LORA_FOLDERS。
-LORA_ROOT = os.environ.get(
-    "LORA_ROOT",
-    r"E:\Comfyui\loras",
-)
-LORA_FOLDERS = ["style", "Character", "HENTAI", "illus"]
+# Illustrious 的 LoRA 選單來源：跟暗房共用 lora_scan.py（同一份 LORA_ROOT／副檔名／剝標）。
+# 換機器或改路徑時設環境變數 LORA_ROOT 覆寫根目錄即可。新增分類改 lora_scan.LORA_FOLDERS。
 # LoRA Manager（獨立埠 7861，見 lora-manager/）點「送到 workflow」時 POST 這裡；
 # 暗房（darkroom/preview_ui.py 的 /api/lora-push）已經有一份一模一樣的機制，這裡
 # 是 KLEIN 面板自己的版本——單一格、版本號遞增、最新覆蓋前一個（不排隊）。
@@ -412,117 +406,11 @@ def send_file(client, filename, initial=None, raw_path=""):
     send_body(client, body, ctype, initial, cache, etag)
 
 
-_lora_list_cache = {"payload": None, "at": 0.0, "etag": None, "refreshing": False}
-_lora_list_lock = threading.Lock()
-_LORA_LIST_TTL = 300.0   # 跟 darkroom/preview_ui.py 的 list_loras() 同一套 TTL：LoRA
-                          # 很少變動，逐檔讀 metadata.json 本來就慢（本機約 5s，經
-                          # Docker bind mount 讀 PROMPTS_ROOT／LORA_ROOT 這種掛載更慢，
-                          # 實測 ~10s），沒快取的話每次打開選單都要重掃一次。
-
-
-def _build_lora_list_payload():
-    """真正去掃 LORA_ROOT 組出 JSON bytes。要讀數百個 metadata.json，本機約 5 秒、
-    走 Docker bind mount 更慢，所以呼叫端一律經過 serve_lora_list() 的快取。"""
-    import json as _json
-    items = []
-    counts = {}
-    errs = []
-    for category in LORA_FOLDERS:
-        base = os.path.join(LORA_ROOT, category)
-        if not os.path.isdir(base):
-            errs.append(f"{category}: 資料夾不存在")
-            counts[category] = 0
-            continue
-        found = []
-        for dirpath, _dirnames, filenames in os.walk(base):
-            for fn in filenames:
-                if fn.lower().endswith(".safetensors"):
-                    found.append(os.path.join(dirpath, fn))
-        found.sort()
-        n = 0
-        for full in found:
-            d = os.path.dirname(full)
-            fn = os.path.basename(full)
-            folder = os.path.relpath(d, LORA_ROOT).replace(os.sep, "/")
-            stem = fn[: -len(".safetensors")]
-            words, title = [], stem
-            meta_path = os.path.join(d, stem + ".metadata.json")
-            if os.path.isfile(meta_path):
-                try:
-                    with open(meta_path, "r", encoding="utf-8") as f:
-                        md = _json.load(f)
-                    words = (md.get("civitai") or {}).get("trainedWords") or []
-                    title = md.get("model_name") or stem
-                except Exception:
-                    pass
-            preview = None
-            # 預覽圖不限 .png——ComfyUI/civitai 常見 .webp、也可能 jpeg。先找明確的
-            # .preview.* ，再找同名 stem.* 。副檔名順序＝優先序（先命中先用）。
-            for ext in (".preview.png", ".preview.jpeg", ".preview.jpg", ".preview.webp",
-                        ".png", ".jpg", ".jpeg", ".webp"):
-                if os.path.isfile(os.path.join(d, stem + ext)):
-                    preview = stem + ext
-                    break
-            items.append({
-                "folder": folder,           # 完整相對路徑，送 ComfyUI 時轉 "\\" 當前綴
-                "category": category,       # 頂層分類，給篩選晶片比對用
-                "file": fn,
-                "name": stem,
-                "title": title,
-                "trainedWords": words,
-                "preview": preview,
-            })
-            n += 1
-        counts[category] = n
-    payload = {"items": items, "counts": counts, "folders": LORA_FOLDERS}
-    if errs:
-        payload["error"] = "；".join(errs)
-    body = _json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    with _lora_list_lock:
-        _lora_list_cache["payload"] = body
-        _lora_list_cache["at"] = time.time()
-        _lora_list_cache["etag"] = '"%s"' % hashlib.md5(body).hexdigest()[:16]
-        _lora_list_cache["refreshing"] = False
-    return body
-
-
-def _refresh_lora_list_bg():
-    def work():
-        try:
-            _build_lora_list_payload()
-        except Exception:
-            with _lora_list_lock:
-                _lora_list_cache["refreshing"] = False
-    threading.Thread(target=work, daemon=True).start()
-
-
 def serve_lora_list(client, initial=None):
-    """列出各分類子夾（含任意深度的子資料夾）內每個 LoRA 的觸發詞與預覽圖，給 Illustrious
-    面板選單用。LoRA Manager 允許在 style/Character/HENTAI/illus 底下建子資料夾整理
-    （例如 Character/Hanime、HENTAI/concepts），舊版只掃頂層會讓子資料夾裡的 LoRA
-    完全消失不見——暗房那邊（darkroom/preview_ui.py 的 list_loras()）已經用 rglob
-    修過同一個問題，這裡比照辦理。item 的 "folder" 是完整相對路徑（如 "Character/Hanime"，
-    用 "/" 分隔，送 ComfyUI 前要轉成 "\\"），"category" 才是頂層四分類（給左欄篩選
-    晶片分組計數用，前端比對用這個欄位、不是 folder）。
-
-    快取是 stale-while-revalidate，不是純 TTL：純 TTL 的話「時間一到的下一個人」要在
-    前景等完整重掃（暗房那支同樣寫法實測 5.93 秒，快取命中只要 11ms），使用者的感受
-    就是「LoRA 面板偶爾會卡好幾秒」，而且因為只在剛好過期時發生、很難歸因。改成過期
-    先回舊的、同時背景重掃，永遠不會有人等到那 5 秒；代價是剛加的 LoRA 可能晚一次
-    請求才出現。"""
-    with _lora_list_lock:
-        body = _lora_list_cache["payload"]
-        etag = _lora_list_cache["etag"]
-        stale = (time.time() - _lora_list_cache["at"]) >= _LORA_LIST_TTL
-        need_bg = stale and body is not None and not _lora_list_cache["refreshing"]
-        if need_bg:
-            _lora_list_cache["refreshing"] = True
-    if body is None:
-        body = _build_lora_list_payload()       # 第一次沒有舊資料可回，只能等
-        with _lora_list_lock:
-            etag = _lora_list_cache["etag"]
-    elif need_bg:
-        _refresh_lora_list_bg()
+    """列出各分類子夾內每個 LoRA 的觸發詞與預覽圖，給 Illustrious 面板選單用。
+    掃描／SWR／副檔名／<lora:…> 剝除都在 lora_scan.py，跟暗房同一支。"""
+    body = _json.dumps(lora_scan.list_loras(), ensure_ascii=False).encode("utf-8")
+    etag = '"%s"' % hashlib.md5(body).hexdigest()[:16]
     send_body(client, body, "application/json", initial, "no-cache", etag)
 
 
@@ -586,41 +474,30 @@ def _lower_thread_priority_background():
 
 
 def _warm_lora_thumbs():
-    """開機背景任務：LORA_ROOT 底下所有 LoRA 的預覽圖先跑過 _lora_thumb() 一輪，
-    快取全部先建好——理由跟暗房那邊一樣：不預熱的話「誰先點開 LoRA 選單誰倒楣」，
-    要付冷快取生成的成本，遠端連線碰上又疊加傳輸延遲。_lora_thumb() 本身有磁碟
-    快取，重複呼叫（例如上次已經暖過的）幾乎零成本，每次開機重跑不是浪費，是
-    自我修復——手動加了新 LoRA 也會自動補上。副檔名優先序跟 serve_lora_list()
-    保持一致，不然兩邊「這顆 LoRA 的預覽圖是哪一張」對不上。
-
-    順便清掉 .lora_thumb_cache 裡的孤兒縮圖（來源 LoRA 被刪掉/改名，快取檔案
-    永遠不會自動消失，見暗房 darkroom/preview_ui.py 的 _warm_all_thumbs() 同一套
-    做法）：把目前所有還存在的預覽圖該有的 etag 算出來，資料夾裡不在這份清單的
-    就是孤兒，刪掉。"""
+    """開機背景任務：清單裡所有圖片預覽先跑過 _lora_thumb() 一輪。走 list_loras()
+    而不是自己再 walk 一遍——副檔名優先序跟選單對得上，也順便把 SWR 快取暖好。
+    影片略過（Pillow 縮不了）。順便清 .lora_thumb_cache 孤兒。"""
     _lower_thread_priority_background()
     n = 0
     live_etags = set()
-    for category in LORA_FOLDERS:
-        base = os.path.join(LORA_ROOT, category)
-        if not os.path.isdir(base):
+    try:
+        items = lora_scan.list_loras().get("items") or []
+    except Exception as e:
+        print(f"[warm] 掃描 LoRA 失敗：{type(e).__name__}: {e}", flush=True)
+        return
+    for l in items:
+        preview = l.get("preview")
+        if not preview or lora_scan.is_video_preview(preview):
             continue
-        for dirpath, _dirnames, filenames in os.walk(base):
-            names = set(filenames)
-            for fn in filenames:
-                if not fn.lower().endswith(".safetensors"):
-                    continue
-                stem = fn[: -len(".safetensors")]
-                for ext in (".preview.png", ".preview.jpeg", ".preview.jpg", ".preview.webp",
-                            ".png", ".jpg", ".jpeg", ".webp"):
-                    if (stem + ext) in names:
-                        full = os.path.join(dirpath, stem + ext)
-                        try:
-                            _, _, etag = _lora_thumb(full)
-                            live_etags.add(etag)
-                            n += 1
-                        except Exception:
-                            pass
-                        break
+        p = lora_scan.preview_path(l.get("folder") or "", preview)
+        if p is None:
+            continue
+        try:
+            _, _, etag = _lora_thumb(str(p))
+            live_etags.add(etag)
+            n += 1
+        except Exception:
+            pass
     removed = 0
     try:
         if os.path.isdir(_LORA_THUMB_DIR):
@@ -639,43 +516,42 @@ def _warm_lora_thumbs():
           + (f"，清掉 {removed} 個孤兒快取" if removed else ""), flush=True)
 
 
-def serve_lora_preview(client, raw_path):
-    """送出單一 LoRA 的預覽圖。folder 現在可能帶子資料夾（如 "Character/Hanime"，見
-    serve_lora_list()），驗證比照 darkroom/preview_ui.py 的 lora_preview_path()：第一段
-    須在白名單、每一段不得是空字串或 ".."，file 仍須為純檔名（擋目錄穿越），最後再確認
-    解析後的路徑真的落在 LORA_ROOT 底下，雙重保險。"""
+def serve_lora_preview(client, raw_path, initial=None):
+    """送出單一 LoRA 的預覽。路徑驗證走 lora_scan.preview_path()（跟暗房同一支）。
+    帶 ETag：換檔會重抓，沒換就 304。以前只掛 max-age=86400 且丟掉 etag，來源
+    被換成同名檔後面板會鎖舊圖 24 小時。"""
     from urllib.parse import urlparse, parse_qs, unquote
     q = parse_qs(urlparse(raw_path).query)
     folder = unquote((q.get("folder") or [""])[0])
     fn = unquote((q.get("file") or [""])[0])
-    parts = folder.split("/") if folder else []
-    bad = (not fn or "/" in fn or "\\" in fn or fn in (".", "..")
-           or "\\" in folder or not parts or parts[0] not in LORA_FOLDERS
-           or any(p in ("", "..") for p in parts))
-    if bad:
-        client.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
-        return
-    path = os.path.join(LORA_ROOT, *parts, fn)
-    root_abs = os.path.abspath(LORA_ROOT)
-    path_abs = os.path.abspath(path)
-    if path_abs != root_abs and not path_abs.startswith(root_abs + os.sep):
-        client.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
-        return
-    if not os.path.isfile(path):
+    p = lora_scan.preview_path(folder, fn)
+    if p is None:
         client.sendall(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
         return
-    if fn.lower().endswith((".mp4", ".webm")):
+    path = str(p)
+    if lora_scan.is_video_preview(fn):
         # 影片 Pillow 縮不了，本來就不大（實測 ~700KB 級別），維持原樣直送。
         ctype = mimetypes.guess_type(path)[0] or "video/mp4"
+        st = os.stat(path)
+        etag = hashlib.sha1(f"{path}|{int(st.st_mtime)}|{st.st_size}".encode("utf-8")).hexdigest()
         with open(path, "rb") as f:
             body = f.read()
     else:
-        body, ctype, _etag = _lora_thumb(path)
+        body, ctype, etag = _lora_thumb(path)
+    if etag and initial is not None and header_value(initial, "If-None-Match") == etag:
+        client.sendall((
+            "HTTP/1.1 304 Not Modified\r\n"
+            f"ETag: {etag}\r\n"
+            "Cache-Control: no-cache\r\n"
+            "Connection: close\r\n\r\n"
+        ).encode("utf-8"))
+        return
     header = (
         "HTTP/1.1 200 OK\r\n"
         f"Content-Type: {ctype}\r\n"
         f"Content-Length: {len(body)}\r\n"
-        "Cache-Control: max-age=86400\r\n"
+        f"ETag: {etag}\r\n"
+        "Cache-Control: no-cache\r\n"
         "Connection: close\r\n\r\n"
     ).encode("utf-8")
     client.sendall(header + body)
@@ -1261,7 +1137,7 @@ def handle(client, ssl_ctx=None):
             serve_lora_list(client, initial)
             client.close()
         elif method == "GET" and path == "/panel/lora-preview" and not is_ws:
-            serve_lora_preview(client, raw_path)
+            serve_lora_preview(client, raw_path, initial)
             client.close()
         elif method == "GET" and path == "/panel/lora-push" and not is_ws:
             serve_lora_push_get(client, raw_path)

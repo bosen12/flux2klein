@@ -543,6 +543,18 @@
   const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const LORA_RENDER_CAP = 80;   // 一次最多渲染幾列（Character 有數百個，全渲染會卡）
   const loraPreviewUrl = (l) => '/panel/lora-preview?folder=' + encodeURIComponent(l.folder || '') + '&file=' + encodeURIComponent(l.preview || '');
+  const isLoraPreviewVideo = (l) => {
+    const p = (l.preview || '').toLowerCase();
+    return p.endsWith('.mp4') || p.endsWith('.webm');
+  };
+  const loraThumbHtml = (l, extraClass) => {
+    const cls = extraClass ? 'lora-thumb ' + extraClass : 'lora-thumb';
+    if (!l.preview) return '<span class="lora-thumb ph"></span>';
+    const url = loraPreviewUrl(l);
+    if (isLoraPreviewVideo(l))
+      return `<video class="${cls}" muted loop playsinline autoplay preload="metadata" src="${url}"></video>`;
+    return `<img class="${cls}" src="${url}" alt="" loading="lazy">`;
+  };
 
   function setupLora(E) {
     const on = $('lora-on');
@@ -726,9 +738,7 @@
       const sel = state.lora.selected && state.lora.selected.folder === l.folder && state.lora.selected.file === l.file;
       const row = document.createElement('div');
       row.className = 'lora-opt' + (sel ? ' sel' : '');
-      const thumb = l.preview
-        ? `<img class="lora-thumb" src="${loraPreviewUrl(l)}" alt="" loading="lazy">`
-        : '<span class="lora-thumb ph"></span>';
+      const thumb = loraThumbHtml(l);
       const badge = cat === 'all' ? `<span class="lora-opt-folder">${esc(l.folder)}</span>` : '';
       row.innerHTML = `${thumb}<span class="lora-opt-body"><span class="lora-opt-name">${badge}${esc(l.title)}</span>` +
         `<span class="lora-opt-sub">${l.trainedWords.length ? esc(l.trainedWords.join(', ')) : '無觸發詞'}</span></span>`;
@@ -780,7 +790,7 @@
     const box = $('lora-current'); if (!box) return;
     const l = state.lora.selected;
     if (!l) { box.innerHTML = '<span class="lora-none">尚未選擇 LoRA</span>'; box.classList.remove('has'); return; }
-    const thumb = l.preview ? `<img src="${loraPreviewUrl(l)}" alt="">` : '<span class="lora-thumb ph"></span>';
+    const thumb = loraThumbHtml(l);
     const tw = l.trainedWords || [];
     const multi = tw.length > 1;   // 只有多組時才顯示晶片；單組/無詞維持原樣
     box.innerHTML =
@@ -820,7 +830,9 @@
   function showLoraHover(l, row) {
     const h = $('lora-hover'); if (!h) return;
     if (!l.preview) { h.classList.remove('show'); return; }
-    h.innerHTML = `<img src="${loraPreviewUrl(l)}" alt="">`;
+    h.innerHTML = isLoraPreviewVideo(l)
+      ? `<video muted loop playsinline autoplay preload="metadata" src="${loraPreviewUrl(l)}"></video>`
+      : `<img src="${loraPreviewUrl(l)}" alt="">`;
     const r = row.getBoundingClientRect(), w = 180;
     let left = r.right + 10;
     if (left + w > window.innerWidth) left = r.left - w - 10;   // 右側放不下改放左側

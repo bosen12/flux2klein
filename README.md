@@ -68,9 +68,9 @@
 ### LoRA 風格（Illustrious 專用）
 - 開關開啟後可從 ComfyUI 的多個 LoRA 分類夾（`style` / `Character` / `HENTAI` / `illus`）**單選**一個
 - **分類 chip 列**（各帶數量）快速縮小範圍，搭配搜尋框跨全部搜（名稱／觸發詞）；LoRA 數百個也好找
-- 可搜尋的縮圖清單，**滑鼠移到某個 LoRA 會浮出預覽圖**（讀該檔旁的同名圖，支援 `.preview.png/.jpeg/.jpg/.webp` 與 `.png/.jpg/.jpeg/.webp`，先命中先用），每頁 80 個、底部可**翻上一頁／下一頁**（切分類或搜尋會回第 1 頁）
+- 可搜尋的縮圖清單，**滑鼠移到某個 LoRA 會浮出預覽**（讀該檔旁的同名圖或短片，支援 `.preview.png/.jpeg/.jpg/.webp/.mp4/.webm` 與同名 `.png/.jpg/.jpeg/.webp/.mp4/.webm`，先命中先用；影片靜音循環），每頁 80 個、底部可**翻上一頁／下一頁**（切分類或搜尋會回第 1 頁）
 - 一支 **0~1 強度滑桿**（預設 0.8），同時套用在 model 與 clip
-- 自動把該 LoRA 的**觸發詞**（讀 `.metadata.json` 的 `trainedWords`）帶進一個
+- 自動把該 LoRA 的**觸發詞**（讀 `.metadata.json` 的 `trainedWords`，會剝掉 CivitAI 複製來的 `<lora:…>` 語法——ComfyUI 不認得）帶進一個
   **像提示詞的文字框**，可直接打字自由增刪（**只改面板這份、不動原始檔**），
   並用開關決定要不要把框裡的內容加進提示詞
 - 送出時面板會即時插入一個 `LoraLoader` 節點、把 model/clip 從 checkpoint 改接到它（VAE 不受影響）
@@ -327,7 +327,7 @@ Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188
 
 - **增強分支裁剪** — Krea2 和 Illustrious 的增強功能（放大、二次採樣等）透過開關控制：關閉時從 prompt 物件刪除該分支的所有節點，ComfyUI 就不會執行。
 
-- **LoRA 清單端點** — `serve.py` 另外提供兩個面板專屬端點（不轉發給 ComfyUI）：`/panel/loras` 掃多個分類夾（`LORA_FOLDERS`）、回每個 LoRA 的所屬分類、觸發詞與預覽圖檔名；`/panel/lora-preview?folder=…&file=…` 送出預覽圖（分類須在白名單、擋目錄穿越）。LoRA 根目錄可用環境變數 `LORA_ROOT` 覆寫。
+- **LoRA 清單端點** — `serve.py` 另外提供兩個面板專屬端點（不轉發給 ComfyUI）：`/panel/loras` 掃多個分類夾、回每個 LoRA 的所屬分類、觸發詞與預覽檔名；`/panel/lora-preview?folder=…&file=…` 送出預覽（圖或短片；分類須在白名單、擋目錄穿越）。掃描邏輯在根目錄 `lora_scan.py`，跟暗房共用同一份（副檔名表、`<lora:…>` 剝除、SWR 快取），避免兩邊各掃一次之後開始漂移。LoRA 根目錄可用環境變數 `LORA_ROOT` 覆寫。
 
 - **詞庫端點** — 同樣是面板專屬（不轉發）：`/panel/prompts` 掃 `PROMPTS_ROOT`（`special_prompts`）的分類夾、回每個詞庫的分類/名稱/有無預覽；`/panel/prompt?cat=…&file=…` 用 `ast` 安全解析單一 `.py` 回三個 list；`/panel/prompt-preview?cat=…&file=…` 送 `.webp`。根目錄用 `PROMPTS_ROOT` 覆寫。
 
@@ -358,6 +358,7 @@ Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188
 | `vanta.fog.min.js` | Vanta.js FOG WebGL 背景（vendored） |
 | `config.js` | 本地設定（Groq API Key，不進版控）。**面板 AI 優化、`groq_proxy.py`、語音助理都讀這份**，所以留根目錄，沒有跟著語音助理搬進 `voice-assistant/` |
 | `groq_proxy.py` | Groq 多 key 輪替代理（429 打到上限自動換下一把）。同時被面板 AI 優化與 `voice-assistant/` 的語音助理／LiveTalking 用，是三邊共用的檔案，所以留根目錄 |
+| `lora_scan.py` | LoRA 清單掃描（副檔名、觸發詞剝標、SWR）。面板 `serve.py` 與暗房 `preview_ui.py` 共用，留根目錄 |
 | `_test_convert.js` | 離線驗證 `converter.js` 的 UI→API 轉換，`node _test_convert.js` 從根目錄執行 |
 | `start.bat` / `start_https.bat` | 啟動面板（後者走 HTTPS，手機麥克風要用） |
 | `panel_funnel.bat` / `panel_funnel_off.bat` | Tailscale funnel 開關（讓面板能從外網連） |
