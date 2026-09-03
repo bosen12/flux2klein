@@ -74,7 +74,7 @@
   --z-modal: 400;
 
   --nav-clear: 5.5rem;
-  --dur-drop: 240ms;
+  --dur-drop: 300ms;
 }
 
 @font-face {
@@ -293,10 +293,16 @@ section[id], header[id] { scroll-margin-top: var(--nav-clear); }
 }
 .mini-wall--row .cell.dev::after { opacity: 0; }
 
+.feat-stage[data-demo="draw"] { background: #050506; }
+.feat-stage[data-demo="draw"].lamp-on {
+  background:
+    linear-gradient(180deg, rgba(255, 228, 186, .12), transparent 42%),
+    #0a0806;
+}
 .mini-tarot {
   display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-2xs); height: 100%; padding: var(--space-xs);
-  align-content: center;
+  align-content: center; position: relative;
 }
 .mini-tarot.leaving .tcard {
   animation: none;
@@ -307,24 +313,32 @@ section[id], header[id] { scroll-margin-top: var(--nav-clear); }
 .tcard {
   min-width: 0;
   animation: tarotDrop var(--dur-drop) var(--ease-out) backwards;
-  animation-delay: calc(80ms + var(--i, 0) * 28ms);
+  animation-delay: calc(80ms + var(--i, 0) * 24ms);
 }
 @keyframes tarotDrop {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: none; }
+  0%   { opacity: 0; transform: translateY(22px); }
+  82%  { opacity: 1; transform: translateY(1px); }
+  100% { opacity: 1; transform: none; }
 }
 .tfront {
   position: relative; aspect-ratio: 1; overflow: hidden; border-radius: 6px;
   background: oklch(88% 0.03 80);
   border: var(--rule-hair) solid oklch(72% 0.04 75);
+  transition: filter 110ms linear, background 110ms linear;
 }
+.tcard.exposing .tfront { filter: brightness(1.35); background: oklch(94% 0.02 80); }
 .tfront img {
   width: 100%; height: 100%; aspect-ratio: 1; object-fit: cover; display: block;
-  filter: contrast(0.08) brightness(2.35);
-  transition: filter 640ms var(--ease-out);
+  filter: contrast(0) brightness(3.2);
 }
 .tfront img:not(.ld) { opacity: 0; }
-.tcard.revealed .tfront img { filter: none; }
+.tcard.printed .tfront img.ld { animation: tarotDensity 720ms var(--ease-out) both; }
+@keyframes tarotDensity {
+  0%   { filter: contrast(0) brightness(3.2); }
+  32%  { filter: contrast(.06) brightness(2.6); }
+  48%  { filter: contrast(.45) brightness(1.5); }
+  100% { filter: none; }
+}
 
 /* ── 本機：藥液流程單 ── */
 .slip { padding: var(--space-3xl) var(--page-gutter) var(--space-2xl); }
@@ -383,8 +397,8 @@ section[id], header[id] { scroll-margin-top: var(--nav-clear); }
   html { scroll-behavior: auto; }
   .intro-fb-run, .mini-wall, .hero-pin h1 em::after { animation: none; }
   .hero-pin h1 em::after { transform: none; }
-  .cta-fill, .tag-dot, .mini-wall--row .cell, .mini-wall--row .cell::after, .tfront img,
+  .cta-fill, .tag-dot, .mini-wall--row .cell, .mini-wall--row .cell::after, .tfront img, .tfront,
   .age-gate-actions button { transition: none; }
   .tcard { animation: none; }
-  .tcard.revealed .tfront img { filter: none; }
+  .tcard.printed .tfront img { animation: none; filter: none; }
 }

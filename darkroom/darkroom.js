@@ -1731,14 +1731,16 @@ function isTyping() {
   return !!el && (/^(input|textarea|select)$/i.test(el.tagName) || el.isContentEditable);
 }
 
-/* ---------------- 抽卡（暗房顯影：落紙 → 等藥 → 密度長出來） ---------------- */
-const TAROT_DROP_MS = 240;
-const TAROT_DROP_DELAY = 80;     // 等覆蓋層先暗下來再落第一張
-const TAROT_HOLD_MS = 220;
-const TAROT_DEVELOP_MS = 640;
-const TAROT_STAGGER_MS = 28;
+/* ---------------- 抽卡（關燈 → 放大機點燈 → 落紙曝光 → 密度壓出來） ---------------- */
+const TAROT_LAMP_MS = 70;        // 全黑之後放大機點燈
+const TAROT_DROP_MS = 300;
+const TAROT_DROP_DELAY = 100;    // 燈亮了才落第一張
+const TAROT_EXPOSE_MS = 160;     // 整板一起曝光（相紙仍是白的）
+const TAROT_HOLD_MS = 200;       // 曝光後、密度壓出來前
+const TAROT_DEVELOP_MS = 820;
+const TAROT_STAGGER_MS = 24;
 const TAROT_LEAVE_MS = 120;
-const TAROT_NAME_AT = 0.8;       // 名稱在顯影約 80% 時浮現
+const TAROT_NAME_AT = 0.5;       // 名稱對準密度突然進來的那一拍
 let _tarotDrawGen = 0;
 
 function tarotStaggerMs() {
@@ -1783,15 +1785,18 @@ function playPrintSheen(card) {
   if (b.animate) {
     b.animate(
       [{ transform: 'translateX(-130%) skewX(-16deg)' }, { transform: 'translateX(170%) skewX(-16deg)' }],
-      { duration: 720, easing: 'cubic-bezier(.22,.61,.36,1)' }
+      { duration: 900, easing: 'cubic-bezier(.22,.61,.36,1)' }
     ).finished.then(done).catch(done);
   }
-  setTimeout(done, 800);   // 分頁在背景時 finished 不結算
+  setTimeout(done, 980);   // 分頁在背景時 finished 不結算
 }
 
 function armTarotDevelop(cards, { onReveal } = {}) {
   const gen = _tarotDrawGen;
+  const overlay = $('tarot');
   const stag = tarotStaggerMs();
+  const alreadyLit = overlay.classList.contains('lamp-on');
+  const dropDelay = (REDUCE_MOTION || alreadyLit) ? (alreadyLit ? 40 : 0) : TAROT_DROP_DELAY;
   const markReady = (c) => {
     const img = c.querySelector('.tarot-front img');
     if (img && img.complete && img.naturalWidth) {
@@ -1806,36 +1811,55 @@ function armTarotDevelop(cards, { onReveal } = {}) {
       if (front) front.classList.remove('loading');
     }
   };
-  const revealOne = (c, i) => {
+  const printOne = (c, i) => {
     if (gen !== _tarotDrawGen) return;
     c.classList.add('revealed');
+    if (!c.classList.contains('pending')) c.classList.add('printed');
     markReady(c);
     if (onReveal) onReveal(c, i);
   };
   if (REDUCE_MOTION) {
+    overlay.classList.add('lamp-on');
     cards.forEach((c, i) => {
       c.style.animation = 'none';
-      c.classList.add('dropped', 'revealed', 'settled');
+      c.classList.add('dropped', 'revealed', 'printed', 'settled');
       markReady(c);
       if (onReveal) onReveal(c, i);
     });
     return;
   }
-  const lastDropEnd = TAROT_DROP_DELAY + Math.max(0, cards.length - 1) * stag + TAROT_DROP_MS;
+  if (!alreadyLit) {
+    setTimeout(() => { if (gen === _tarotDrawGen) overlay.classList.add('lamp-on'); }, TAROT_LAMP_MS);
+  }
+  cards.forEach((c, i) => {
+    c.style.setProperty('--i', i);
+    c.style.animationDelay = (dropDelay + i * stag) + 'ms';
+  });
+  const lastLand = dropDelay + Math.max(0, cards.length - 1) * stag + TAROT_DROP_MS;
   setTimeout(() => {
     if (gen !== _tarotDrawGen) return;
     cards.forEach(c => {
       c.style.animation = 'none';
       c.classList.add('dropped');
     });
-  }, lastDropEnd + 20);
+  }, lastLand + 20);
+  const exposeAt = lastLand + 30;
+  setTimeout(() => {
+    if (gen !== _tarotDrawGen) return;
+    overlay.classList.add('exposing');
+    cards.forEach(c => c.classList.add('exposing'));
+  }, exposeAt);
+  setTimeout(() => {
+    if (gen !== _tarotDrawGen) return;
+    overlay.classList.remove('exposing');
+    cards.forEach(c => c.classList.remove('exposing'));
+  }, exposeAt + TAROT_EXPOSE_MS);
+  const develop0 = exposeAt + TAROT_EXPOSE_MS + TAROT_HOLD_MS;
   cards.forEach((c, i) => {
-    c.style.setProperty('--i', i);
-    const land = TAROT_DROP_DELAY + i * stag + TAROT_DROP_MS;
-    const developAt = land + TAROT_HOLD_MS;
+    const developAt = develop0 + i * stag;
     const namesAt = developAt + Math.round(TAROT_DEVELOP_MS * TAROT_NAME_AT);
-    const sheenAt = developAt + Math.round(TAROT_DEVELOP_MS * 0.75);
-    setTimeout(() => revealOne(c, i), developAt);
+    const sheenAt = developAt + Math.round(TAROT_DEVELOP_MS * 0.72);
+    setTimeout(() => printOne(c, i), developAt);
     setTimeout(() => { if (gen === _tarotDrawGen) c.classList.add('settled'); }, namesAt);
     setTimeout(() => {
       if (gen !== _tarotDrawGen) return;
@@ -1950,6 +1974,7 @@ function tiltReset(card) {
 function closeTarot() {
   const el = $('tarot');
   fadeCloseOverlay(el, el.querySelector('.tarot-stage'), () => {
+    el.classList.remove('lamp-on', 'exposing');
     TAROT_FOCUS = -1;
     if (MODE === 'tag') { render(); updateTagbar(); }   // 反映剛標的
     if (LORA_TAROT) { LORA_TAROT = false; document.body.classList.remove('lora-tarot-open'); }
@@ -4071,6 +4096,9 @@ function applyGenState(gid, s) {
       const wasPending = card.classList.contains('pending');
       card.classList.remove('pending');
       if (img) img.src = '/api/gen-result?id=' + gid;
+      if (card.classList.contains('tarot-card') && card.classList.contains('revealed')) {
+        card.classList.add('printed');   // 預覽期間不是 printed，生完才跑密度 keyframe
+      }
       if (wasPending) triggerFinishFlourish(card);   // 「收成」瞬間：只在真的從生成中轉為完成時播
       if (s.score && !card.querySelector('.score-badge')) {
         // .gen-front/.tarot-front 把名稱/資料夾文字跟圖片放在同一個 flex 欄位裡，徽章要塞進

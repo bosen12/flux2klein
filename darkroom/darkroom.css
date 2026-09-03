@@ -667,80 +667,119 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
 }
 .menu-btn { display: none; }
 
-/* ==================== 抽卡（暗房顯影：落紙 → 等藥 → 密度長出來） ==================== */
+/* ==================== 抽卡（關燈 → 放大機點燈 → 落紙曝光 → 密度壓出來） ==================== */
 .tarot-overlay {
   position: fixed; inset: 0; z-index: 120; display: flex;
   align-items: center; justify-content: center; padding: 24px;
-  background: var(--void);   /* 實底，不加 backdrop-filter——暗房是關燈，不是霧面玻璃 */
-  overscroll-behavior: contain; overflow: auto;   /* 手機捲動不穿透到背後清單 */
+  background: #030304;   /* 先全黑；lamp-on 才轉成微暖的暗房 */
+  overscroll-behavior: contain; overflow: auto;
   opacity: 0; pointer-events: none; visibility: hidden;
-  transition: opacity 120ms var(--ease-in);
+  transition: opacity 120ms var(--ease-in), background 400ms var(--ease-out);
 }
-/* 放大機光錐：硬邊梯形，不是柔光徑向。pointer-events:none 讓點擊落到牌上。 */
+/* 放大機光錐：硬邊梯形。預設關，.lamp-on 才點亮——開場先是全黑。 */
 .tarot-overlay::before {
   content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0;
-  background: rgba(255, 228, 186, .055);
-  clip-path: polygon(32% 0%, 68% 0%, 94% 100%, 6% 100%);
+  background: rgba(255, 220, 170, .13);
+  clip-path: polygon(36% 0%, 64% 0%, 90% 100%, 10% 100%);
+  opacity: 0;
+  transition: opacity 220ms var(--ease-out);
 }
+.tarot-overlay.lamp-on::before { opacity: 1; }
+.tarot-overlay.exposing::before { opacity: 1; background: rgba(255, 236, 200, .22); }
+.tarot-overlay.lamp-on { background: #0a0806; }
 .tarot-overlay.open { opacity: 1; pointer-events: auto; visibility: visible;
-  transition: opacity 200ms var(--ease-out); }
+  transition: opacity 160ms var(--ease-out), background 400ms var(--ease-out); }
 .tarot-overlay.open.is-closing { transition: opacity 120ms var(--ease-in); }
 .tarot-stage { position: relative; z-index: 1; width: 100%; max-width: 1160px;
                display: flex; flex-direction: column; align-items: center; gap: 20px; }
-.tarot-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; flex-wrap: wrap; }
+.tarot-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; flex-wrap: wrap;
+              opacity: 0; transition: opacity 280ms var(--ease-out); }
+.tarot-overlay.lamp-on .tarot-head { opacity: 1; }
 .tarot-title { font-size: 17px; font-weight: 650; letter-spacing: 2px; color: var(--amber); }
 .tarot-actions { display: flex; gap: 8px; margin-left: auto; }
-.tarot-hint { font-family: var(--mono); font-size: 11px; color: var(--faint); letter-spacing: .5px; }
+.tarot-hint { font-family: var(--mono); font-size: 11px; color: var(--faint); letter-spacing: .5px;
+              opacity: 0; transition: opacity 280ms var(--ease-out); }
+.tarot-overlay.lamp-on .tarot-hint { opacity: 1; }
 
 .tarot-cards { display: grid; grid-template-columns: repeat(4, auto); justify-content: center;
-               gap: 18px; perspective: 1100px; }   /* 4 欄 → 8 張自動排成上下各 4 */
+               gap: 18px; perspective: 1100px; position: relative; }   /* 4 欄 → 8 張自動排成上下各 4 */
 @media (max-width: 760px) { .tarot-cards { grid-template-columns: repeat(2, auto); } }
+/* 畫板上的硬光矩形：放大機片匣投下來的那塊，不是柔光。從上方展開。 */
+.tarot-cards::before {
+  content: ""; position: absolute; inset: -20px -24px -24px; z-index: 0; pointer-events: none;
+  background: rgba(255, 236, 210, .08);
+  box-shadow: inset 0 0 0 1px rgba(255, 228, 186, .28);
+  opacity: 0;
+  transform: scaleY(.06);
+  transform-origin: 50% 0;
+  transition: opacity 180ms var(--ease-out), transform 300ms var(--ease-out), background 120ms linear, box-shadow 120ms linear;
+}
+.tarot-overlay.lamp-on .tarot-cards::before { opacity: 1; transform: none; }
+.tarot-overlay.exposing .tarot-cards::before {
+  background: rgba(255, 248, 230, .26);
+  box-shadow: inset 0 0 0 1px rgba(255, 245, 220, .6);
+}
 .tarot-card {
   width: clamp(180px, 22vw, 264px); cursor: pointer; position: relative;
-  touch-action: manipulation; -webkit-tap-highlight-color: transparent;   /* 手機：防雙擊縮放、去點按高亮 */
-  transform-style: preserve-3d;                  /* 讓 hover 3D 傾斜吃到父層 perspective */
-  /* backwards：落紙結束後回到基準（transform:none），之後 tiltCard 的內嵌 transform
-     才不會被 animation fill 蓋掉。落完 JS 會把 animation 拆掉（見 armTarotDevelop）。 */
-  animation: tarotDrop 240ms var(--ease-out) backwards;
-  animation-delay: calc(80ms + var(--i, 0) * 28ms);
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  transform-style: preserve-3d;
+  animation: tarotDrop 300ms var(--ease-out) backwards;
+  animation-delay: calc(100ms + var(--i, 0) * 24ms);
   transition: transform .13s var(--ease-out), opacity 120ms var(--ease-in);
   z-index: 1;
 }
-.tarot-card:hover { z-index: 5; }   /* 傾斜交給 JS（tiltCard），這裡只抬層級避免被鄰卡蓋住 */
+.tarot-card:hover { z-index: 5; }
 @keyframes tarotDrop {
-  from { opacity: 0; transform: translateY(18px); }   /* 只掉 18px，不縮放 */
-  to   { opacity: 1; transform: none; }
+  0%   { opacity: 0; transform: translateY(52px); }
+  82%  { opacity: 1; transform: translateY(2px); }
+  100% { opacity: 1; transform: none; }
 }
 .tarot-cards.leaving .tarot-card {
   animation: none;
   opacity: 0;
-  transform: translateY(8px);
+  transform: translateY(10px);
   pointer-events: none;
 }
-/* 相紙：沒有牌背、沒有神祕紋。圖用 contrast/brightness 從「過曝白紙」長出密度，
-   暗部先出現——對應顯影，不是 fade/wipe/rotateY。 */
+/* 相紙。密度用 keyframe 在中段突然壓出來（暗部先出現），不是線性淡入。 */
 .tarot-front {
   position: relative; display: flex; flex-direction: column;
   background:
-    linear-gradient(180deg, rgba(255,255,255,.2), transparent 28%),
+    linear-gradient(180deg, rgba(255,255,255,.22), transparent 28%),
     var(--baryta);
   color: var(--baryta-ink);
   border-radius: 16px; overflow: hidden;
   border: 1px solid var(--baryta-edge);
-  box-shadow: 0 18px 40px -12px rgba(0,0,0,.72), 0 1px 0 rgba(255,255,255,.18) inset;
+  box-shadow: 0 22px 44px -12px rgba(0,0,0,.78), 0 1px 0 rgba(255,255,255,.18) inset;
+  transition: background 110ms linear, box-shadow 110ms linear, filter 110ms linear;
+}
+.tarot-card.exposing .tarot-front {
+  background: #f6f0e4;
+  box-shadow: 0 0 36px rgba(255, 242, 214, .42), 0 1px 0 rgba(255,255,255,.45) inset;
+  filter: brightness(1.38);
 }
 .tarot-front img, .tarot-front video {
   width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; position: relative; z-index: 2;
-  filter: contrast(.08) brightness(2.35);
-  transition: filter 640ms var(--ease-out);
+  filter: contrast(0) brightness(3.4);
 }
-.tarot-front img:not(.ld), .tarot-front video:not(.ld) { opacity: 0; }   /* 還沒像素時露出相紙 */
-.tarot-card.revealed:not(.pending) .tarot-front img,
-.tarot-card.revealed:not(.pending) .tarot-front video { filter: none; }
+.tarot-front img:not(.ld), .tarot-front video:not(.ld) { opacity: 0; }
+.tarot-card.printed:not(.pending) .tarot-front img.ld,
+.tarot-card.printed:not(.pending) .tarot-front video.ld {
+  animation: tarotDensity 820ms var(--ease-out) both;
+}
 .tarot-card.revealed.pending .tarot-front img,
-.tarot-card.revealed.pending .tarot-front video { filter: contrast(.42) brightness(1.55); }
-.tarot-card:not(.settled) .tarot-front img,
-.tarot-card:not(.settled) .tarot-front video { will-change: filter; }
+.tarot-card.revealed.pending .tarot-front video {
+  filter: contrast(.28) brightness(1.85);
+  transition: filter 400ms var(--ease-out);
+}
+.tarot-card.printed:not(.settled) .tarot-front img,
+.tarot-card.printed:not(.settled) .tarot-front video { will-change: filter; }
+@keyframes tarotDensity {
+  0%   { filter: contrast(0) brightness(3.4); }
+  30%  { filter: contrast(.05) brightness(2.75); }   /* 還是一張白紙 */
+  46%  { filter: contrast(.42) brightness(1.55); }   /* 暗部突然進來 */
+  70%  { filter: contrast(.95) brightness(1.02); }
+  100% { filter: none; }
+}
 @keyframes tarotShimmer { from { background-position: 175% 0; } to { background-position: -60% 0; } }
 /* 光澤：跟著游標的高光，hover 時淡入。落在相紙上。 */
 .tarot-glare {
@@ -801,14 +840,19 @@ body[data-mode="tag"] .cat-draw-btn { display: none !important; }
 /* 傳奇：顯影後期一道金屬光掃過，只播一次，沒有彩虹迴圈 */
 .print-sheen {
   position: absolute; inset: 0; z-index: 5; pointer-events: none;
-  background: linear-gradient(105deg, transparent 36%, rgba(255,255,255,.42) 50%, transparent 64%);
+  background: linear-gradient(108deg, transparent 24%, rgba(255,255,255,.62) 50%, transparent 76%);
   transform: translateX(-130%) skewX(-16deg);
 }
 
 /* 手機：一次一張，把單張放大、置中，好按好看；落紙不 stagger */
 @media (max-width: 640px) {
   .tarot-cards { gap: 10px; }
-  .tarot-card { width: min(72vw, 300px); animation-delay: 80ms; }
+  .tarot-card { width: min(72vw, 300px); animation-delay: 100ms; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tarot-front img, .tarot-front video { filter: none !important; }
+  .tarot-head, .tarot-hint { opacity: 1; }
+  .tarot-overlay::before, .tarot-cards::before { opacity: 1; transform: none; }
 }
 
 /* ==================== 步數輸入（右上角） ==================== */

@@ -373,7 +373,7 @@ void main() {
     stage._genTick = 0;
   }
 
-  const DRAW_DROP_MS = 240, DRAW_DELAY_MS = 80, DRAW_HOLD_MS = 220, DRAW_DEVELOP_MS = 640, DRAW_STAG = 28;
+  const DRAW_DROP_MS = 300, DRAW_DELAY_MS = 80, DRAW_EXPOSE_MS = 140, DRAW_HOLD_MS = 180, DRAW_DEVELOP_MS = 720, DRAW_STAG = 24;
   const DRAW_N = 8;
 
   function clearDrawTimers(stage) {
@@ -419,19 +419,30 @@ void main() {
     const n = cards.length;
     if (!n) return;
     if (REDUCE_MOTION) {
-      cards.forEach((c) => c.classList.add('revealed', 'settled'));
+      stage.classList.add('lamp-on');
+      cards.forEach((c) => c.classList.add('revealed', 'printed', 'settled'));
       return;
     }
+    stage.classList.add('lamp-on');
     cards.forEach((c, i) => {
-      c.classList.remove('revealed', 'settled');
+      c.classList.remove('revealed', 'printed', 'settled', 'exposing');
       c.style.setProperty('--i', i);
     });
+    const lastLand = DRAW_DELAY_MS + (n - 1) * DRAW_STAG + DRAW_DROP_MS;
+    const exposeAt = lastLand + 20;
+    stage._drawTimers.push(setTimeout(() => {
+      cards.forEach((c) => c.classList.add('exposing'));
+    }, exposeAt));
+    stage._drawTimers.push(setTimeout(() => {
+      cards.forEach((c) => c.classList.remove('exposing'));
+    }, exposeAt + DRAW_EXPOSE_MS));
+    const develop0 = exposeAt + DRAW_EXPOSE_MS + DRAW_HOLD_MS;
     cards.forEach((c, i) => {
-      const developAt = DRAW_DELAY_MS + i * DRAW_STAG + DRAW_DROP_MS + DRAW_HOLD_MS;
-      stage._drawTimers.push(setTimeout(() => c.classList.add('revealed'), developAt));
-      stage._drawTimers.push(setTimeout(() => c.classList.add('settled'), developAt + Math.round(DRAW_DEVELOP_MS * 0.8)));
+      const developAt = develop0 + i * DRAW_STAG;
+      stage._drawTimers.push(setTimeout(() => c.classList.add('revealed', 'printed'), developAt));
+      stage._drawTimers.push(setTimeout(() => c.classList.add('settled'), developAt + Math.round(DRAW_DEVELOP_MS * 0.5)));
     });
-    const lastDone = DRAW_DELAY_MS + (n - 1) * DRAW_STAG + DRAW_DROP_MS + DRAW_HOLD_MS + DRAW_DEVELOP_MS;
+    const lastDone = develop0 + (n - 1) * DRAW_STAG + DRAW_DEVELOP_MS;
     const show = lastDone + 1400;
     stage._drawTimers.push(setTimeout(() => {
       if (!stage.classList.contains('is-in')) return;
@@ -507,7 +518,8 @@ void main() {
         if (on) playDraw(e.target);
         else {
           clearDrawTimers(e.target);
-          e.target.querySelectorAll('.tcard').forEach((c) => c.classList.remove('revealed'));
+          e.target.classList.remove('lamp-on');
+          e.target.querySelectorAll('.tcard').forEach((c) => c.classList.remove('revealed', 'printed', 'exposing'));
         }
       });
     }, { threshold: 0.35 });
