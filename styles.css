@@ -247,6 +247,14 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .prompt-wrap:hover .mic-btn { opacity: .8; }
 .mic-btn:hover, .mic-btn:focus-visible { opacity: 1; transform: scale(1.1); }
 /* 錄音中：紅底 + 脈動光環 */
+.prompt-undo {
+  position: absolute; right: 76px; bottom: 8px;
+  height: 28px; padding: 0 8px; border-radius: 999px; border: none;
+  background: var(--surface, #fff); color: var(--text-dim);
+  font-size: var(--fs-sm); cursor: pointer; z-index: 2;
+  box-shadow: 0 2px 8px rgba(0,0,0,.12);
+}
+.prompt-undo:hover, .prompt-undo:focus-visible { color: var(--text); }
 .mic-btn.on { opacity: 1; background: #e5484d; animation: mic-pulse 1.2s var(--ease-out) infinite; }
 @keyframes mic-pulse {
   0%, 100% { box-shadow: 0 2px 8px rgba(0,0,0,.2), 0 0 0 0 rgba(229,72,77,.5); }

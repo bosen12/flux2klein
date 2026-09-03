@@ -79,11 +79,22 @@
 
   // 背景：優先用 Vanta.js FOG（WebGL 流動彩霧）；reduced-motion 或 WebGL 失敗時
   // 退回原本的 CSS 色團漂移。兩者都在 .bg-fx 裡，Vanta 成功就把色團淡出。
-  function startBgFx() {
-    if (!prefersReduced) {
-      try { if (initVanta()) return; }
-      catch (e) { log('WebGL 背景初始化失敗，改用 CSS 光暈：' + e.message, 'warn'); }
-    }
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error('載入失敗 ' + src));
+      document.head.appendChild(s);
+    });
+  }
+  async function startBgFx() {
+    if (prefersReduced) { startBlobDrift(); return; }
+    try {
+      if (!window.THREE) await loadScript('/three.min.js');
+      if (!window.VANTA) await loadScript('/vanta.fog.min.js');
+      if (initVanta()) return;
+    } catch (e) { log('WebGL 背景初始化失敗，改用 CSS 光暈：' + e.message, 'warn'); }
     startBlobDrift();
   }
 
@@ -138,9 +149,19 @@
     })(prev);
   }
 
+  function ensureObjectInfo() {
+    if (state.objectInfoPromise) return state.objectInfoPromise;
+    state.objectInfoPromise = fetch(API + '/object_info')
+      .then(r => r.ok ? r.json() : null)
+      .then(oi => { state.objectInfo = oi; if (oi) log('節點定義就緒（object_info）', 'ok'); return oi; })
+      .catch(() => { state.objectInfo = null; log('取不到 object_info，改用內建規則（仍可運作）', 'warn'); return null; });
+    return state.objectInfoPromise;
+  }
+
   // 模式分頁的滑動膠囊。分頁會換行，所以 X 與 Y 都要補間（引擎切換器只需要 X）。
   // animate 只在使用者點擊切換時給 true；版面或字體造成的校正一律瞬移，
   // 否則字體載入完的那次重算會讓膠囊自己飄一段，看起來像 bug。
+  let tabPillReady = false;   // 換引擎重建分頁時不要從舊座標滑過來
   function moveTabPill(animate) {
     const tabs = $('tabs'), pill = $('tab-pill');
     const active = tabs && tabs.querySelector('.tab.active');
@@ -194,16 +215,13 @@
     // 先把畫面渲染出來（不等 object_info），手機/遠端才不會卡在白畫面
     bindGlobalControls();
     bindEngineSwitch();
-    selectEngine('flux2klein');
+    const saved = loadPanelState();
+    selectEngine((saved && saved.engine) || 'flux2klein');
+    if (saved) restorePanelState(saved);
     connectWS();
     startBgFx();
-    pollLoraPush();   // 要等 selectEngine('flux2klein') 跑完才能開始輪詢，見該函式上方註解
-
-    // object_info 很大（約 10MB），改成背景載入，不擋 UI；生成時才需要
-    state.objectInfoPromise = fetch(API + '/object_info')
-      .then(r => r.ok ? r.json() : null)
-      .then(oi => { state.objectInfo = oi; if (oi) log('節點定義就緒（object_info）', 'ok'); return oi; })
-      .catch(() => { state.objectInfo = null; log('取不到 object_info，改用內建規則（仍可運作）', 'warn'); return null; });
+    pollLoraPush();   // 要等 selectEngine 跑完才能開始輪詢，見該函式上方註解
+    bindPanelPersist();
   }
 
   /* ---------------- 模式分頁 ---------------- */
@@ -251,7 +269,10 @@
     $('mode-desc').textContent = m.desc;
 
     const d = modeDefaults(m);
-    $('prompt').value = d.prompt;
+    const prev = $('prompt').value;
+    const wasTemplate = !prev.trim() || prev === (state._lastModePrompt || '');
+    if (wasTemplate) $('prompt').value = d.prompt;
+    state._lastModePrompt = d.prompt;
     if (d.steps != null) $('steps').value = d.steps;
     $('prompt-hint').textContent = m.images.length >= 2 ? '可用「圖1 / 圖2 / 圖3」指涉各張圖' : '';
 
@@ -269,6 +290,7 @@
     if (eng && eng.enhance) buildEnhance(eng, m);
     show('enhance-field', !!(eng && eng.enhance));      // Krea2 / Illustrious 的增強卡片
     show('model-field', !(eng && eng.enhance));         // 有增強的引擎皆為單一固定模型，隱藏下拉
+    show('neg-field', !!(m.nodes && m.nodes.neg));      // Illustrious 負向輸入框
     const hasLora = !!(eng && eng.lora);
     show('lora-field', hasLora);                        // 目前只有 Illustrious 有
     if (hasLora) setupLora(eng);
@@ -279,6 +301,7 @@
     $('images-hint').textContent = `需 ${m.images.filter(i => !i.mask).length} 張`;
 
     if (m.size) buildAspectPresets();
+    Object.values(state.images).forEach(it => { if (it && it.url) URL.revokeObjectURL(it.url); });
     state.images = {}; // 換模式清空已選圖
     state.mask = null;
     animateSwitch($('form'), 6, formDelay);   // 表單淡入（換引擎時會延後，見 BEAT）
@@ -338,6 +361,7 @@
     state.mode = currentOrder()[0];
     buildTabs();
     selectMode(state.mode, BEAT.form);   // 內含表單淡入，依節拍延後
+    if (engine === 'flux2klein') ensureObjectInfo();
     animateSwitch($('tabs'), 0, BEAT.tabs);   // 分頁列淡入
     // 品牌區刻意不做淡入位移：logo 靠水位漲上來換色，位置保持不動
   }
@@ -987,6 +1011,8 @@
 
   function onPickImage(nodeId, file, dropEl) {
     if (!file) return;
+    const prev = state.images[nodeId];
+    if (prev && prev.url) URL.revokeObjectURL(prev.url);
     const url = URL.createObjectURL(file);
     state.images[nodeId] = { file, uploaded: null, url };
     dropEl.classList.add('has-img');
@@ -1125,6 +1151,10 @@
   /* ---------------- 送出生成 ---------------- */
   async function generate() {
     if (state.running) { log('目前有任務進行中，請稍候或按中斷。', 'warn'); return; }
+    // 進函式就鎖：上傳圖／等 object_info 期間再點或 Ctrl+Enter 會雙送。
+    // startRun() 在 /prompt 成功後才設 running 的話，那段空窗攔不住。
+    state.running = true;
+    $('run').disabled = true;
     $('run-loader').classList.add('on');   // 顯示生成中星星動畫
     $('run').dataset.state = 'loading';    // 按鈕本體：spinner 滑入
     show('compare-card', false); $('compare').innerHTML = '';   // 清掉上次對照
@@ -1136,6 +1166,7 @@
       else await runFlux2(m);
     } catch (e) {
       log('錯誤：' + e.message, 'err');
+      state.running = false;
       resetRunBtn();
     }
   }
@@ -1164,13 +1195,14 @@
     const on = {};
     for (const e of E.enhance) on[e.key] = !!($('enh-' + e.key) && $('enh-' + e.key).checked);
     for (const e of E.enhance) if (e.requires && on[e.key]) on[e.requires] = true;
-    // 放大節點：hires 關時改接 base VAEDecode 輸出
+    // 放大節點：hires 關時改接 base VAEDecode 輸出（節點 ID 寫在引擎設定，不要寫死 Illustrious graph）
     if (!on.hires) {
+      const fromId = E.hiresDecode, toId = E.baseDecode;
       for (const e of E.enhance) {
         if (!on[e.key] || !e.imageNode) continue;
         const node = tpl[e.imageNode];
-        if (node && node.inputs.image && node.inputs.image[0] === '78:57')
-          node.inputs.image = ['77:76', 0];
+        if (node && node.inputs.image && fromId && node.inputs.image[0] === fromId)
+          node.inputs.image = [toId, 0];
       }
     }
     // 各開啟分支：種子跟隨 + 參考圖上傳
@@ -1222,6 +1254,11 @@
       log(`LoRA：${sel.title}（強度 ${state.lora.strength.toFixed(2)}` +
           `${state.lora.inject && trig ? '，觸發詞 ' + trig : ''}）`, 'info');
     }
+    // 手動負向（Illustrious）。詞庫負向若啟用會在下面覆蓋。
+    if (tpl[nd.neg] && $('neg')) {
+      const nv = $('neg').value.trim();
+      if (nv) tpl[nd.neg].inputs.text = nv;
+    }
     // 詞庫：套用選定詞庫的負向到 neg 節點（正向已於選取時填進提示詞框）。
     // negSource === 'default' 時使用者主動選了保留模板預設負向，不覆蓋 tpl[nd.neg]。
     if (E.promptLib && state.lib.enabled && state.lib.selected && state.lib.negative.length && tpl[nd.neg]) {
@@ -1243,6 +1280,7 @@
     if (!res.ok || data.error) {
       log('提交被拒：' + JSON.stringify(data.error || data, null, 2), 'err');
       if (data.node_errors) log(JSON.stringify(data.node_errors, null, 2), 'err');
+      state.running = false;
       resetRunBtn();
       return;
     }
@@ -1301,8 +1339,8 @@
         setWidgetByName(g, m.pad, 'feathering', +$('pad-feather').value || 0);
       }
 
-      // 若 object_info 還在背景載入，最多等 1.5 秒（用於模型檢查/欄位過濾）；
-      // 等不到也沒關係，workflow 的模型名已正確，用內建規則照樣能生成。
+      // object_info 只給 Flux2 用（約 10MB JSON），延到第一次送出才抓。
+      ensureObjectInfo();
       if (!state.objectInfo && state.objectInfoPromise) {
         $('run').textContent = '準備中…';
         await Promise.race([state.objectInfoPromise, new Promise(r => setTimeout(r, 1500))]);
@@ -1334,6 +1372,7 @@
       if (!res.ok || data.error) {
         log('提交被拒：' + JSON.stringify(data.error || data, null, 2), 'err');
         if (data.node_errors) log(JSON.stringify(data.node_errors, null, 2), 'err');
+        state.running = false;
         resetRunBtn();
         return;
       }
@@ -1386,6 +1425,7 @@
     if (!res.ok || data.error) {
       log('提交被拒：' + JSON.stringify(data.error || data, null, 2), 'err');
       if (data.node_errors) log(JSON.stringify(data.node_errors, null, 2), 'err');
+      state.running = false;
       resetRunBtn();
       return;
     }
@@ -1554,6 +1594,7 @@
 
   function finishRun(ok = true) {
     const r = state.run;
+    clearTimeout(state._interruptT);
     state.running = false;
     resetRunBtn();
     setRunning(false);                       // 結束：停掉流動條紋
@@ -1749,18 +1790,42 @@
   function setStage(t) { $('stage').textContent = t; }
 
   /* ---------------- WebSocket ---------------- */
+  let wsBackoff = 2000;
+  let wsTimer = null;
   function connectWS() {
+    if (wsTimer) { clearTimeout(wsTimer); wsTimer = null; }
+    if (document.hidden) {
+      wsTimer = setTimeout(connectWS, 5000);
+      return;
+    }
+    const cur = state.ws;
+    if (cur && (cur.readyState === WebSocket.CONNECTING || cur.readyState === WebSocket.OPEN)) return;
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const ws = new WebSocket(`${proto}://${location.host}/ws?clientId=${clientId}`);
+    state.ws = ws;
     ws.binaryType = 'arraybuffer';
-    ws.onopen = () => setConn(true);
-    ws.onclose = () => { setConn(false); setTimeout(connectWS, 2000); };
+    ws.onopen = () => { setConn(true); wsBackoff = 2000; };
+    ws.onclose = () => {
+      if (state.ws === ws) state.ws = null;
+      setConn(false);
+      wsTimer = setTimeout(connectWS, wsBackoff);
+      wsBackoff = Math.min(wsBackoff * 2, 30000);
+    };
     ws.onerror = () => setConn(false);
     ws.onmessage = (ev) => {
       if (ev.data instanceof ArrayBuffer) { onPreviewBinary(ev.data); return; }
       let msg; try { msg = JSON.parse(ev.data); } catch { return; }
       handleWS(msg);
     };
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) connectWS();
+  });
+
+  function isOurPrompt(d) {
+    if (!state.run) return false;
+    if (d.prompt_id == null) return true;   // 少數事件沒帶 id，沿用「有 run 就更新」
+    return d.prompt_id === state.run.promptId;
   }
 
   function handleWS(msg) {
@@ -1772,10 +1837,10 @@
         break;
       }
       case 'execution_start':
-        if (state.run) { setStage('開始執行…'); }
+        if (isOurPrompt(d)) setStage('開始執行…');
         break;
       case 'execution_cached':
-        if (state.run && Array.isArray(d.nodes)) {
+        if (isOurPrompt(d) && Array.isArray(d.nodes)) {
           d.nodes.forEach(n => state.run.cached.add(String(n)));
           updateOverall();
         }
@@ -1783,7 +1848,7 @@
       case 'executing':
         if (d.node == null && d.prompt_id === state.run?.promptId) {
           finishRun(true);
-        } else if (d.node != null && state.run) {
+        } else if (d.node != null && isOurPrompt(d)) {
           const r = state.run;
           r.started.add(String(d.node));
           r.curNode = String(d.node);
@@ -1797,21 +1862,23 @@
         }
         break;
       case 'progress':
-        onProgress(d.value, d.max);
+        if (isOurPrompt(d)) onProgress(d.value, d.max);
         break;
       case 'executed':
-        if (d.output && d.output.images) {
+        if (isOurPrompt(d) && d.output && d.output.images) {
           addResults(d.output.images, d.node);
           if (state.run && state.run.compare) state.run.compare.images[String(d.node)] = viewUrl(d.output.images[0]);
         }
         break;
       case 'execution_error':
+        if (!isOurPrompt(d)) break;
         log('❌ 執行錯誤：' + (d.exception_message || JSON.stringify(d)), 'err');
         if (d.node_type) log(`  在節點：${d.node_type} (${d.node_id})`, 'err');
         finishRun(false);
         setStage('發生錯誤');
         break;
       case 'execution_interrupted':
+        if (!isOurPrompt(d)) break;
         log('已中斷。', 'warn'); finishRun(false); setStage('已中斷');
         break;
     }
@@ -1866,10 +1933,18 @@
       const url = API + '/view?' + q.toString();
       const cell = document.createElement('div');
       cell.className = 'result';
-      cell.innerHTML = `<img src="${url}" alt="">`
-        + (label ? `<span class="src-tag">${label}</span>` : '')
-        + `<a class="dl" href="${url}" download="${im.filename}">下載</a>`;
-      cell.querySelector('img').onclick = () => openLightbox(url);
+      const img = document.createElement('img');
+      img.src = url; img.alt = '';
+      img.onclick = () => openLightbox(url);
+      cell.appendChild(img);
+      if (label) {
+        const tag = document.createElement('span');
+        tag.className = 'src-tag'; tag.textContent = label;
+        cell.appendChild(tag);
+      }
+      const a = document.createElement('a');
+      a.className = 'dl'; a.href = url; a.download = im.filename || 'image'; a.textContent = '下載';
+      cell.appendChild(a);
       gal.insertBefore(cell, gal.firstChild);
     }
   }
@@ -2049,7 +2124,7 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
         $('prompt').value = a.prompt || '';
         // 自動套用面板的 AI 優化（各引擎專門的 system prompt，比助理通用 prompt 專業）。
         // aiOptimizePrompt 內部自帶 try/catch、失敗會保留原文，不會 throw。
-        if (a.prompt && GROQ_KEY) { await aiOptimizePrompt(); return '提示詞已填入並用 AI 優化'; }
+        if (a.prompt && GROQ_READY) { await aiOptimizePrompt(); return '提示詞已填入並用 AI 優化'; }
         return '提示詞已填入';
       case 'set_aspect': {
         if (!$('size-field') || $('size-field').style.display === 'none') return '目前模式沒有尺寸欄位';
@@ -2531,6 +2606,69 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
     });
   }
 
+  const PANEL_LS = 'yz-panel-state';
+  function loadPanelState() {
+    try { return JSON.parse(localStorage.getItem(PANEL_LS) || 'null'); }
+    catch (e) { return null; }
+  }
+  function savePanelState() {
+    try {
+      const enh = {};
+      document.querySelectorAll('#enhance-list input[type=checkbox]').forEach(cb => {
+        enh[cb.id.slice(4)] = cb.checked;
+      });
+      localStorage.setItem(PANEL_LS, JSON.stringify({
+        engine: state.engine,
+        mode: state.mode,
+        prompt: $('prompt').value,
+        neg: $('neg') ? $('neg').value : '',
+        steps: $('steps').value,
+        seed: $('seed').value,
+        seedFixed: $('seed-fixed').checked,
+        width: $('width').value,
+        height: $('height').value,
+        batch: $('batch').value,
+        optSound: $('opt-sound').checked,
+        optNotify: $('opt-notify').checked,
+        optPreview: $('opt-preview').checked,
+        enhance: enh,
+      }));
+    } catch (e) {}
+  }
+  function restorePanelState(s) {
+    if (!s || typeof s !== 'object') return;
+    if (s.mode && currentModes()[s.mode] && s.mode !== state.mode) selectMode(s.mode);
+    if (typeof s.prompt === 'string') $('prompt').value = s.prompt;
+    if ($('neg') && typeof s.neg === 'string') $('neg').value = s.neg;
+    if (s.steps != null) $('steps').value = s.steps;
+    if (s.seed != null) $('seed').value = s.seed;
+    if ($('seed-fixed')) $('seed-fixed').checked = !!s.seedFixed;
+    if (s.width != null) $('width').value = s.width;
+    if (s.height != null) $('height').value = s.height;
+    if (s.batch != null) $('batch').value = s.batch;
+    if ($('opt-sound') && s.optSound != null) $('opt-sound').checked = !!s.optSound;
+    if ($('opt-notify') && s.optNotify != null) $('opt-notify').checked = !!s.optNotify;
+    if ($('opt-preview') && s.optPreview != null) $('opt-preview').checked = !!s.optPreview;
+    if (s.enhance) {
+      for (const [k, v] of Object.entries(s.enhance)) {
+        const cb = $('enh-' + k);
+        if (cb) { cb.checked = !!v; cb.dispatchEvent(new Event('change')); }
+      }
+    }
+  }
+  function bindPanelPersist() {
+    let t;
+    const bump = () => { clearTimeout(t); t = setTimeout(savePanelState, 250); };
+    const form = $('form');
+    if (form) {
+      form.addEventListener('input', bump);
+      form.addEventListener('change', bump);
+    }
+    ['opt-sound', 'opt-notify', 'opt-preview'].forEach(id => {
+      const el = $(id); if (el) el.addEventListener('change', bump);
+    });
+  }
+
   /* ---------------- 雜項 UI ---------------- */
   function bindGlobalControls() {
     $('run').onclick = generate;
@@ -2538,6 +2676,14 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
     $('interrupt').onclick = async () => {
       try { await fetch(API + '/interrupt', { method: 'POST' }); log('已送出中斷指令', 'warn'); }
       catch (e) { log('中斷失敗：' + e, 'err'); }
+      clearTimeout(state._interruptT);
+      state._interruptT = setTimeout(() => {
+        if (state.running) {
+          log('中斷回應逾時，已還原按鈕（WebSocket 可能已斷）', 'warn');
+          finishRun(false);
+          setStage('已中斷（逾時）');
+        }
+      }, 2500);
     };
     // 原本只在權限為 default 時請求，被封鎖時什麼都不做、notify() 又把錯誤吞掉，
     // 結果是開關打開卻永遠不會響，使用者完全沒有線索。每種失敗都要講清楚並把開關關掉。
@@ -2557,6 +2703,13 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
     };
     $('lightbox').onclick = () => $('lightbox').classList.remove('on');
     $('ai-btn').onclick = aiOptimizePrompt;
+    $('prompt-undo').onclick = () => {
+      if (state.promptUndo == null) return;
+      $('prompt').value = state.promptUndo;
+      state.promptUndo = null;
+      $('prompt-undo').hidden = true;
+      log('已還原優化前的提示詞', 'ok');
+    };
     setupVoiceInput();
     $('gallery-clear').onclick = clearGallery;
     const toggleLog = () => {
@@ -2624,24 +2777,18 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
   }
 
   /* ---------------- AI 提示詞優化（Groq） ---------------- */
-  const GROQ_KEYS = window.YZ_CONFIG?.GROQ_API_KEYS || [];
-  const GROQ_KEY = window.YZ_CONFIG?.GROQ_API_KEY || GROQ_KEYS[0] || '';
-  // 提示詞優化直接從瀏覽器打 Groq（語音服務那條走 groq_proxy，前端這條沒代理）。
-  // 某把 key 撞每日上限（429）就換下一把重試。
+  const GROQ_READY = !!(window.YZ_CONFIG && window.YZ_CONFIG.groqConfigured);
+  // 提示詞優化走同源 /panel/groq（serve.py → groq_proxy），key 不進瀏覽器。
   async function groqChatFetch(bodyObj) {
-    const keys = GROQ_KEYS.length ? GROQ_KEYS : (GROQ_KEY ? [GROQ_KEY] : []);
-    let lastErr;
-    for (const k of keys) {
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + k },
-        body: JSON.stringify(bodyObj),
-      });
-      if (res.status === 429) { lastErr = new Error('Groq 每日上限（429）'); continue; }
-      if (!res.ok) throw new Error(`Groq API ${res.status}`);
-      return res;
-    }
-    throw lastErr || new Error('沒有可用的 Groq key');
+    const res = await fetch('/panel/groq/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(bodyObj),
+    });
+    if (res.status === 429) throw new Error('Groq 每日上限（429）');
+    if (res.status === 503) throw new Error('未設定 Groq API Key，請在本機建立 config.js');
+    if (!res.ok) throw new Error(`Groq API ${res.status}`);
+    return res;
   }
   const AI_SYSTEM = {
     flux2klein: `You are a prompt engineer for Flux 2 Klein 4B. The user gives a rough idea; you return ONLY the optimized English prompt (no explanation, no quotes).
@@ -2717,9 +2864,12 @@ EXPLICIT CONTENT:
     const ta = $('prompt');
     const text = ta.value.trim();
     if (!text) { log('請先輸入提示詞再使用 AI 優化', 'warn'); return; }
-    if (!GROQ_KEY && !GROQ_KEYS.length) { log('未設定 Groq API Key，請建立 config.js', 'err'); return; }
+    if (!GROQ_READY) { log('未設定 Groq API Key，請在本機建立 config.js', 'err'); return; }
     const btn = $('ai-btn');
     btn.classList.add('loading');
+    state.promptUndo = text;
+    const undo = $('prompt-undo');
+    if (undo) undo.hidden = false;
     ta.value = '';
     try {
       const sys = (AI_SYSTEM[state.engine] || AI_SYSTEM.flux2klein) + CONTENT_RULE + NSFW_RULE;
@@ -2888,14 +3038,16 @@ EXPLICIT CONTENT:
   --------------------------------------------------------------------------- */
   let LORA_PUSH_VER = 0;
   async function pollLoraPush() {
-    try {
-      const st = await fetch('/panel/lora-push?since=' + LORA_PUSH_VER).then(r => r.json());
-      if (st.ver > LORA_PUSH_VER) {
-        LORA_PUSH_VER = st.ver;
-        if (st.data) await applyLoraPush(st.data);
-      }
-    } catch (e) { /* 靜默；下一輪再試，不用整個工具連得上才能用 */ }
-    setTimeout(pollLoraPush, 1000);
+    if (!document.hidden) {
+      try {
+        const st = await fetch('/panel/lora-push?since=' + LORA_PUSH_VER).then(r => r.json());
+        if (st.ver > LORA_PUSH_VER) {
+          LORA_PUSH_VER = st.ver;
+          if (st.data) await applyLoraPush(st.data);
+        }
+      } catch (e) { /* 靜默；下一輪再試，不用整個工具連得上才能用 */ }
+    }
+    setTimeout(pollLoraPush, document.hidden ? 4000 : 2500);
   }
   async function applyLoraPush(d) {
     if (!ENG.illustrious) { log('Illustrious 引擎設定未載入，收到的 LoRA 推送無法套用', 'err'); return; }

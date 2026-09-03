@@ -1,5 +1,5 @@
 /* illustrious.js —— Illustrious SDXL 引擎（API 工作流，lora 已跳過）
- * 基礎文生圖 + 4 條可選分支（關閉時從 prompt 移除節點）。輸出皆為 PreviewImage。
+ * 基礎文生圖 + 4 條可選分支（關閉時從 prompt 移除節點）。輸出皆為 SaveImage。
  */
 window.YZ_I = {
   // 固定 checkpoint (node 4)。ComfyUI 認的 ckpt_name 是「資料夾\檔名」的相對路徑，
@@ -46,6 +46,10 @@ window.YZ_I = {
   // 詞庫（special_prompts）：選取時正向填進提示詞框，送出時把 negative 寫進
   // neg 節點（見 MODES.it2i.nodes.neg）。詳見 app.js 的 state.lib。
   promptLib: true,
+  // hires 關閉時，SeedVR2／SD 放大的 image 輸入從 hires VAEDecode 改接 base。
+  // 寫在設定裡，不要讓 runEnhanceEngine 認得 Illustrious 的節點 ID。
+  hiresDecode: '78:57',
+  baseDecode: '77:76',
   // 各輸出的 PreviewImage 節點（收集圖片做對照）
   outputs: { base: '73', hires: '56', controlnet: '64', seedvr2: '81', sdupscale: '83' },
   compareLabels: { hires: '第二階段', controlnet: 'ControlNet', seedvr2: 'SeedVR2', sdupscale: 'SD 放大' },
