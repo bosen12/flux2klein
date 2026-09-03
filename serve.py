@@ -972,28 +972,46 @@ def log_task(client, initial):
 
 # ---- /object_info 壓縮快取（10MB JSON gzip 後約 1MB，手機/遠端載入快很多）----
 _oi_lock = threading.Lock()
-_oi_cache = {"raw": None, "gz": None, "etag": None, "at": 0.0}
+_oi_cache = {"raw": None, "gz": None, "etag": None, "at": 0.0, "refreshing": False}
 _OI_TTL = 60.0
 
 
-def get_object_info():
-    """向 ComfyUI 取 /object_info，壓縮並快取。TTL 60 秒——生命週期快取會讓
-    ComfyUI 重啟／換模型後面板一直拿到舊節點清單（註解寫 ETag 能立刻反映，
-    但驗證打到的是這份 process 快取，不是 ComfyUI）。"""
-    now = time.time()
-    if _oi_cache["gz"] is not None and (now - _oi_cache["at"]) < _OI_TTL:
-        return _oi_cache["raw"], _oi_cache["gz"]
+def _fetch_object_info():
+    url = f"http://{COMFY_HOST}:{COMFY_PORT}/object_info"
+    req = urllib.request.Request(url, headers={"User-Agent": "flux2klein-panel"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        raw = resp.read()
     with _oi_lock:
-        if _oi_cache["gz"] is None or (time.time() - _oi_cache["at"]) >= _OI_TTL:
-            url = f"http://{COMFY_HOST}:{COMFY_PORT}/object_info"
-            req = urllib.request.Request(url, headers={"User-Agent": "flux2klein-panel"})
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                raw = resp.read()
-            _oi_cache["raw"] = raw
-            _oi_cache["gz"] = gzip.compress(raw, 5)
-            _oi_cache["etag"] = '"%s"' % hashlib.md5(raw).hexdigest()[:16]
-            _oi_cache["at"] = time.time()
+        _oi_cache["raw"] = raw
+        _oi_cache["gz"] = gzip.compress(raw, 5)
+        _oi_cache["etag"] = '"%s"' % hashlib.md5(raw).hexdigest()[:16]
+        _oi_cache["at"] = time.time()
+        _oi_cache["refreshing"] = False
     return _oi_cache["raw"], _oi_cache["gz"]
+
+
+def get_object_info():
+    """向 ComfyUI 取 /object_info，壓縮並快取。SWR：過期先回舊的、背景重抓。
+    以前純 TTL，到期那一次前景等 ComfyUI 回 14MB；LoRA／詞庫清單早已改 SWR，這支沒跟上。
+    生命週期快取也不行——ComfyUI 重啟後會一直拿到舊節點。"""
+    with _oi_lock:
+        raw, gz = _oi_cache["raw"], _oi_cache["gz"]
+        stale = raw is None or (time.time() - _oi_cache["at"]) >= _OI_TTL
+        need_bg = stale and raw is not None and not _oi_cache["refreshing"]
+        if need_bg:
+            _oi_cache["refreshing"] = True
+    if raw is None:
+        return _fetch_object_info()
+    if need_bg:
+        def work():
+            try:
+                _fetch_object_info()
+            except Exception as e:
+                with _oi_lock:
+                    _oi_cache["refreshing"] = False
+                print(f"[object_info] 背景重抓失敗：{type(e).__name__}: {e}", flush=True)
+        threading.Thread(target=work, daemon=True).start()
+    return raw, gz
 
 
 def serve_object_info(client, initial):

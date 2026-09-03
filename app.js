@@ -1352,10 +1352,12 @@
       }
 
       // object_info 只給 Flux2 用（約 10MB JSON），延到第一次送出才抓。
+      // 以前只等 1.5 秒就放棄：Tailscale 上 2.44MB gzip 很容易超時，fixModelNames
+      // 拿到空清單直接跳過，模型檔名校正沒跑。等到 promise 結束（失敗也算結束）。
       ensureObjectInfo();
       if (!state.objectInfo && state.objectInfoPromise) {
         $('run').textContent = '準備中…';
-        await Promise.race([state.objectInfoPromise, new Promise(r => setTimeout(r, 1500))]);
+        await state.objectInfoPromise;
       }
 
       // 套用選擇的模型組合（UNET + CLIP 成套）到所有 loader
