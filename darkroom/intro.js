@@ -373,7 +373,8 @@ void main() {
     stage._genTick = 0;
   }
 
-  const DRAW_DROP_MS = 300, DRAW_DELAY_MS = 80, DRAW_EXPOSE_MS = 140, DRAW_HOLD_MS = 180, DRAW_DEVELOP_MS = 720, DRAW_STAG = 24;
+  const DRAW_DROP_MS = 280, DRAW_DELAY_MS = 60, DRAW_HOLD_MS = 50, DRAW_DEVELOP_MS = 560, DRAW_STAG = 70;
+  const DRAW_APERTURE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="14.31" y1="8" x2="20.05" y2="17.94"/><line x1="9.69" y1="8" x2="21.17" y2="8"/><line x1="7.38" y1="12" x2="13.12" y2="2.06"/><line x1="9.69" y1="16" x2="3.95" y2="6.06"/><line x1="14.31" y1="16" x2="2.83" y2="16"/><line x1="16.62" y1="12" x2="10.88" y2="21.94"/></svg>';
   const DRAW_N = 8;
 
   function clearDrawTimers(stage) {
@@ -404,7 +405,10 @@ void main() {
       const img = thumb(it, 128);
       img.onload = () => img.classList.add('ld');
       if (img.complete && img.naturalWidth) img.classList.add('ld');
-      front.append(img);
+      const mark = document.createElement('div');
+      mark.className = 'tmark';
+      mark.innerHTML = DRAW_APERTURE;
+      front.append(img, mark);
       card.appendChild(front);
       wrap.appendChild(card);
     }
@@ -425,24 +429,15 @@ void main() {
     }
     stage.classList.add('lamp-on');
     cards.forEach((c, i) => {
-      c.classList.remove('revealed', 'printed', 'settled', 'exposing');
+      c.classList.remove('revealed', 'printed', 'settled');
       c.style.setProperty('--i', i);
     });
-    const lastLand = DRAW_DELAY_MS + (n - 1) * DRAW_STAG + DRAW_DROP_MS;
-    const exposeAt = lastLand + 20;
-    stage._drawTimers.push(setTimeout(() => {
-      cards.forEach((c) => c.classList.add('exposing'));
-    }, exposeAt));
-    stage._drawTimers.push(setTimeout(() => {
-      cards.forEach((c) => c.classList.remove('exposing'));
-    }, exposeAt + DRAW_EXPOSE_MS));
-    const develop0 = exposeAt + DRAW_EXPOSE_MS + DRAW_HOLD_MS;
     cards.forEach((c, i) => {
-      const developAt = develop0 + i * DRAW_STAG;
+      const developAt = DRAW_DELAY_MS + i * DRAW_STAG + DRAW_DROP_MS + DRAW_HOLD_MS;
       stage._drawTimers.push(setTimeout(() => c.classList.add('revealed', 'printed'), developAt));
-      stage._drawTimers.push(setTimeout(() => c.classList.add('settled'), developAt + Math.round(DRAW_DEVELOP_MS * 0.5)));
+      stage._drawTimers.push(setTimeout(() => c.classList.add('settled'), developAt + Math.round(DRAW_DEVELOP_MS * 0.4)));
     });
-    const lastDone = develop0 + (n - 1) * DRAW_STAG + DRAW_DEVELOP_MS;
+    const lastDone = DRAW_DELAY_MS + (n - 1) * DRAW_STAG + DRAW_DROP_MS + DRAW_HOLD_MS + DRAW_DEVELOP_MS;
     const show = lastDone + 1400;
     stage._drawTimers.push(setTimeout(() => {
       if (!stage.classList.contains('is-in')) return;

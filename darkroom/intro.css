@@ -74,7 +74,7 @@
   --z-modal: 400;
 
   --nav-clear: 5.5rem;
-  --dur-drop: 300ms;
+  --dur-drop: 280ms;
 }
 
 @font-face {
@@ -311,33 +311,38 @@ section[id], header[id] { scroll-margin-top: var(--nav-clear); }
   transition: opacity 120ms var(--ease-in), transform 120ms var(--ease-in);
 }
 .tcard {
-  min-width: 0;
+  min-width: 0; --spin: -6deg;
   animation: tarotDrop var(--dur-drop) var(--ease-out) backwards;
-  animation-delay: calc(80ms + var(--i, 0) * 24ms);
+  animation-delay: calc(60ms + var(--i, 0) * 70ms);
 }
+.tcard:nth-child(even) { --spin: 5deg; }
 @keyframes tarotDrop {
-  0%   { opacity: 0; transform: translateY(22px); }
-  82%  { opacity: 1; transform: translateY(1px); }
+  0%   { opacity: 0; transform: translateY(28px) rotate(var(--spin, -6deg)); }
+  78%  { opacity: 1; }
   100% { opacity: 1; transform: none; }
 }
 .tfront {
   position: relative; aspect-ratio: 1; overflow: hidden; border-radius: 6px;
   background: oklch(88% 0.03 80);
   border: var(--rule-hair) solid oklch(72% 0.04 75);
-  transition: filter 110ms linear, background 110ms linear;
 }
-.tcard.exposing .tfront { filter: brightness(1.35); background: oklch(94% 0.02 80); }
+.tmark {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  color: var(--color-accent); pointer-events: none; z-index: 2;
+  transition: opacity 320ms var(--ease-out);
+}
+.tmark svg { width: 40%; height: 40%; }
+.tcard.printed .tmark { opacity: 0; }
 .tfront img {
   width: 100%; height: 100%; aspect-ratio: 1; object-fit: cover; display: block;
-  filter: contrast(0) brightness(3.2);
+  opacity: 0; position: relative; z-index: 1;
 }
 .tfront img:not(.ld) { opacity: 0; }
-.tcard.printed .tfront img.ld { animation: tarotDensity 720ms var(--ease-out) both; }
+.tcard.printed .tfront img.ld { animation: tarotDensity 560ms var(--ease-out) both; }
 @keyframes tarotDensity {
-  0%   { filter: contrast(0) brightness(3.2); }
-  32%  { filter: contrast(.06) brightness(2.6); }
-  48%  { filter: contrast(.45) brightness(1.5); }
-  100% { filter: none; }
+  0%   { filter: contrast(.4) brightness(1.4); opacity: .2; }
+  40%  { filter: contrast(.75) brightness(1.1); opacity: .85; }
+  100% { filter: none; opacity: 1; }
 }
 
 /* ── 本機：藥液流程單 ── */
@@ -400,5 +405,6 @@ section[id], header[id] { scroll-margin-top: var(--nav-clear); }
   .cta-fill, .tag-dot, .mini-wall--row .cell, .mini-wall--row .cell::after, .tfront img, .tfront,
   .age-gate-actions button { transition: none; }
   .tcard { animation: none; }
-  .tcard.printed .tfront img { animation: none; filter: none; }
+  .tcard.printed .tfront img { animation: none; filter: none; opacity: 1; }
+  .tmark { display: none; }
 }

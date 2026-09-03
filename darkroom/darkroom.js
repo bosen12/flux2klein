@@ -619,6 +619,10 @@ const ICON_GALLERY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 const ICON_DNA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4c0 4 12 4 12 8s-12 4-12 8"/><path d="M18 4c0 4-12 4-12 8s12 4 12 8"/><line x1="7.5" y1="7.3" x2="16.5" y2="7.3"/><line x1="7.5" y1="16.7" x2="16.5" y2="16.7"/></svg>';
 const ICON_SETTINGS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
 const ICON_SPARKLE = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><path d="M12 2c.6 3.6 2.2 6 6 6.6-3.8.6-5.4 3-6 6.6-.6-3.6-2.2-6-6-6.6 3.8-.6 5.4-3 6-6.6z"/></svg>';
+const ICON_APERTURE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="14.31" y1="8" x2="20.05" y2="17.94"/><line x1="9.69" y1="8" x2="21.17" y2="8"/><line x1="7.38" y1="12" x2="13.12" y2="2.06"/><line x1="9.69" y1="16" x2="3.95" y2="6.06"/><line x1="14.31" y1="16" x2="2.83" y2="16"/><line x1="16.62" y1="12" x2="10.88" y2="21.94"/></svg>';
+function tarotMarkHTML() {
+  return `<div class="tarot-mark" aria-hidden="true">${ICON_APERTURE}</div>`;
+}
 const ICON_TAG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3.24L4 3a1 1 0 0 0-1 1l.24 5.59a2 2 0 0 0 .59 1.41l9.58 9.59a2 2 0 0 0 2.83 0l4.35-4.35a2 2 0 0 0 0-2.83Z"/><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/></svg>';
 const ICON_PALETTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22a9.4 9.4 0 0 1 0-18.8A8.4 8.4 0 0 1 20.4 11.6c0 1.5-1.2 2.7-2.7 2.7h-1.5a1.7 1.7 0 0 0-1 3c.4.3.6.7.6 1.1 0 1.5-1.4 2.7-2.9 2.6z"/><circle cx="7.6" cy="10.2" r="1.1" fill="currentColor" stroke="none"/><circle cx="11.5" cy="6.8" r="1.1" fill="currentColor" stroke="none"/><circle cx="16" cy="8.5" r="1.1" fill="currentColor" stroke="none"/></svg>';
 const ICON_REFRESH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>';
@@ -1731,16 +1735,15 @@ function isTyping() {
   return !!el && (/^(input|textarea|select)$/i.test(el.tagName) || el.isContentEditable);
 }
 
-/* ---------------- 抽卡（關燈 → 放大機點燈 → 落紙曝光 → 密度壓出來） ---------------- */
+/* ---------------- 抽卡（關燈 → 點燈 → 依序落紙／光圈水印 → 依序顯影） ---------------- */
 const TAROT_LAMP_MS = 70;        // 全黑之後放大機點燈
-const TAROT_DROP_MS = 300;
-const TAROT_DROP_DELAY = 100;    // 燈亮了才落第一張
-const TAROT_EXPOSE_MS = 160;     // 整板一起曝光（相紙仍是白的）
-const TAROT_HOLD_MS = 200;       // 曝光後、密度壓出來前
-const TAROT_DEVELOP_MS = 820;
-const TAROT_STAGGER_MS = 24;
-const TAROT_LEAVE_MS = 120;
-const TAROT_NAME_AT = 0.5;       // 名稱對準密度突然進來的那一拍
+const TAROT_DROP_MS = 320;
+const TAROT_DROP_DELAY = 90;     // 燈亮了才落第一張
+const TAROT_HOLD_MS = 70;        // 這張落地、看清光圈之後才顯影
+const TAROT_DEVELOP_MS = 640;
+const TAROT_STAGGER_MS = 88;     // 大到能讀出 1→2→3 的順序
+const TAROT_LEAVE_MS = 140;
+const TAROT_NAME_AT = 0.35;
 let _tarotDrawGen = 0;
 
 function tarotStaggerMs() {
@@ -1834,37 +1837,20 @@ function armTarotDevelop(cards, { onReveal } = {}) {
   cards.forEach((c, i) => {
     c.style.setProperty('--i', i);
     c.style.animationDelay = (dropDelay + i * stag) + 'ms';
-  });
-  const lastLand = dropDelay + Math.max(0, cards.length - 1) * stag + TAROT_DROP_MS;
-  setTimeout(() => {
-    if (gen !== _tarotDrawGen) return;
-    cards.forEach(c => {
+    const land = dropDelay + i * stag + TAROT_DROP_MS;
+    const developAt = land + TAROT_HOLD_MS;
+    setTimeout(() => {
+      if (gen !== _tarotDrawGen) return;
       c.style.animation = 'none';
       c.classList.add('dropped');
-    });
-  }, lastLand + 20);
-  const exposeAt = lastLand + 30;
-  setTimeout(() => {
-    if (gen !== _tarotDrawGen) return;
-    overlay.classList.add('exposing');
-    cards.forEach(c => c.classList.add('exposing'));
-  }, exposeAt);
-  setTimeout(() => {
-    if (gen !== _tarotDrawGen) return;
-    overlay.classList.remove('exposing');
-    cards.forEach(c => c.classList.remove('exposing'));
-  }, exposeAt + TAROT_EXPOSE_MS);
-  const develop0 = exposeAt + TAROT_EXPOSE_MS + TAROT_HOLD_MS;
-  cards.forEach((c, i) => {
-    const developAt = develop0 + i * stag;
-    const namesAt = developAt + Math.round(TAROT_DEVELOP_MS * TAROT_NAME_AT);
-    const sheenAt = developAt + Math.round(TAROT_DEVELOP_MS * 0.72);
+    }, land + 16);
     setTimeout(() => printOne(c, i), developAt);
-    setTimeout(() => { if (gen === _tarotDrawGen) c.classList.add('settled'); }, namesAt);
+    setTimeout(() => { if (gen === _tarotDrawGen) c.classList.add('settled'); },
+      developAt + Math.round(TAROT_DEVELOP_MS * TAROT_NAME_AT));
     setTimeout(() => {
       if (gen !== _tarotDrawGen) return;
       if (c.classList.contains('rar-legendary')) playPrintSheen(c);
-    }, sheenAt);
+    }, developAt + Math.round(TAROT_DEVELOP_MS * 0.7));
   });
 }
 
@@ -1914,9 +1900,9 @@ function drawTarot(pool, label) {
       // 圖還沒到時露出相紙；onload 加 .ld 才把像素送進 contrast/brightness 過渡。
       const face = it.has_image
         ? `<img decoding="async" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="" onload="this.classList.add('ld');this.closest('.tarot-front').classList.remove('loading')" onerror="this.closest('.tarot-front').classList.remove('loading')">`
-        : `<div class="tarot-noimg">${ICON_EMPTY}<span>尚無圖</span></div>`;
+        : `<div class="tarot-noimg"></div>`;
       card.innerHTML =
-        `<div class="tarot-front${it.has_image ? ' loading' : ''}">${face}${rarTag(it.rarity)}<div class="tarot-badges">${scoreBadgeHTML(it.score)}</div><div class="tarot-name"></div><div class="tarot-folder"></div><div class="tarot-glare"></div></div>`;
+        `<div class="tarot-front${it.has_image ? ' loading' : ''}">${face}${tarotMarkHTML()}${rarTag(it.rarity)}<div class="tarot-badges">${scoreBadgeHTML(it.score)}</div><div class="tarot-name"></div><div class="tarot-folder"></div><div class="tarot-glare"></div></div>`;
       card.querySelector('.tarot-name').textContent = it.display_name || it.name;
       card.querySelector('.tarot-folder').textContent = it.folder || '(根目錄)';
       card.addEventListener('click', () => {
@@ -2022,9 +2008,9 @@ function drawLoraTarot(pool, label) {
         ? (isLoraPreviewVideo(l)
             ? `<video muted loop playsinline preload="none" data-src="${loraPreviewUrl(l)}" onloadeddata="this.classList.add('ld');this.closest('.tarot-front').classList.remove('loading')"></video>`
             : `<img decoding="async" data-src="${loraPreviewUrl(l)}" alt="" onload="this.classList.add('ld');this.closest('.tarot-front').classList.remove('loading')" onerror="this.closest('.tarot-front').classList.remove('loading')">`)
-        : `<div class="tarot-noimg">${ICON_EMPTY}<span>尚無預覽</span></div>`;
+        : `<div class="tarot-noimg"></div>`;
       card.innerHTML =
-        `<div class="tarot-front${l.preview ? ' loading' : ''}">${face}<div class="tarot-name"></div><div class="tarot-folder"></div><div class="tarot-glare"></div></div>`;
+        `<div class="tarot-front${l.preview ? ' loading' : ''}">${face}${tarotMarkHTML()}<div class="tarot-name"></div><div class="tarot-folder"></div><div class="tarot-glare"></div></div>`;
       card.querySelector('.tarot-name').textContent = l.title || l.name;
       card.querySelector('.tarot-folder').textContent = l.folder || '(根目錄)';
       card.addEventListener('click', () => { selectGenLora(l); closeTarot(); });
@@ -2364,6 +2350,7 @@ function drawTagTarot() {
       card.innerHTML =
         `<div class="tarot-front">
            <img decoding="async" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="" onload="this.classList.add('ld')">
+           ${tarotMarkHTML()}
            <div class="tarot-name"></div>
            <div class="tarot-folder"></div>
            <div class="ttag-rar">
@@ -4048,6 +4035,7 @@ function openGenTarot(items, picks, label) {
       card.innerHTML =
         `<div class="tarot-front gen-front">
            <img class="gen-live" decoding="async" alt="" onload="this.classList.add('ld')">
+           ${tarotMarkHTML()}
            <div class="tarot-badges"></div>
            <div class="tarot-name"></div>
            <div class="tarot-folder"></div>
