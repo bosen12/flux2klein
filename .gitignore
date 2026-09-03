@@ -59,3 +59,13 @@ discord-bot/config.json
 # Discord 機器人跑起來時的 log／pid（開發時手動 nohup 用，不是原始碼）
 discord-bot/bot.out
 discord-bot/bot.pid
+
+# 一次性 Discord 排程／頻道維護腳本與 API 回包（個人伺服器，不是面板）
+darkroom/add_*_post_and_update.py
+darkroom/fix_parts_0816.py
+darkroom/post_ai_and_update_list.py
+darkroom/set_channel_topics.py
+darkroom/update_ai_and_list_channels.py
+darkroom/new_0816.json
+darkroom/old_0816.json
+darkroom/patch_resp.json
