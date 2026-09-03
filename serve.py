@@ -27,9 +27,14 @@ import datetime
 import gzip
 import hashlib
 import urllib.request
+import urllib.error
 import ssl
 import shutil
 import subprocess
+import re
+import json as _json
+
+import groq_proxy
 
 try:
     from PIL import Image
@@ -137,7 +142,9 @@ def _prompts_root_default():
 
 
 PROMPTS_ROOT = os.environ.get("PROMPTS_ROOT") or _prompts_root_default()
-LISTEN_HOST = "0.0.0.0"   # 綁所有介面，同網路的手機/其他電腦可用區網 IP 連
+LISTEN_HOST = "0.0.0.0"   # 綁所有介面是為了讓 Tailscale 虛擬網卡收得到；區網仍由 _client_allowed 擋
+_blocked_log = {}
+_blocked_log_lock = threading.Lock()
 
 
 def lan_ip():
@@ -277,12 +284,14 @@ VERSIONED_ASSETS = ("app.js", "config.js", "converter.js", "zimage.js",
 
 
 def asset_version():
-    stamps = []
+    # cfg-sanitize-1：config.js 改成送出前剝 key。舊版 ?v= 曾以 immutable 快取
+    # 含金鑰的檔，雜湊要變一次才會重抓。後續只靠各檔 mtime。
+    stamps = ["cfg-sanitize-1"]
     for name in VERSIONED_ASSETS:
         p = os.path.join(BASE, name)
         if os.path.isfile(p):
             stamps.append("%s:%d" % (name, os.path.getmtime(p)))
-    if not stamps:
+    if len(stamps) == 1:
         return "1"
     return hashlib.md5("|".join(stamps).encode("utf-8")).hexdigest()[:8]
 
@@ -301,6 +310,32 @@ GZIP_MIN = 1400          # 跟 darkroom/preview_ui.py 同一個門檻：小回�
 GZIP_TYPES = ("json", "text/", "javascript", "image/svg")
 NO_STORE = "no-store, no-cache, must-revalidate, max-age=0"
 IMMUTABLE = "public, max-age=31536000, immutable"
+_GROQ_ARR_RE = re.compile(r"GROQ_API_KEYS\s*:\s*\[[^\]]*\]\s*,?", re.S)
+_GROQ_KEY_RE = re.compile(r"GROQ_API_KEY\s*:\s*['\"][^'\"]*['\"]\s*,?")
+
+
+def _serve_config_js():
+    """給瀏覽器的 config.js：剝掉 Groq key，只留非機密欄位 + groqConfigured。
+
+    金鑰只給 groq_proxy / serve.py 的 /panel/groq 在伺服器端用。config.js 曾被
+    當靜態檔送出，區網或 Tailscale 能開面板就能讀到 key。"""
+    path = os.path.join(BASE, "config.js")
+    if not os.path.isfile(path):
+        return b"window.YZ_CONFIG = { groqConfigured: false };\n"
+    try:
+        text = open(path, encoding="utf-8").read()
+    except OSError:
+        return b"window.YZ_CONFIG = { groqConfigured: false };\n"
+    has = bool(groq_proxy.load_keys())
+    s = _GROQ_ARR_RE.sub("", text)
+    s = _GROQ_KEY_RE.sub("", s)
+    s = re.sub(
+        r"(window\.YZ_CONFIG\s*=\s*\{)",
+        r"\1 groqConfigured: %s," % ("true" if has else "false"),
+        s,
+        count=1,
+    )
+    return s.encode("utf-8")
 
 
 def _gzip_for(body, ctype, initial):
@@ -343,12 +378,10 @@ def send_file(client, filename, initial=None, raw_path=""):
         client.sendall(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
         return
     path = os.path.join(BASE, filename)
+    if filename == "config.js":
+        send_body(client, _serve_config_js(), "application/javascript", initial, NO_STORE)
+        return
     if not os.path.isfile(path):
-        # config.js 是選用的（含 API key，不進版控），沒有就回空檔避免 console 噴 404
-        if filename == "config.js":
-            send_body(client, b"/* config.js \xe4\xb8\x8d\xe5\xad\x98\xe5\x9c\xa8 */\n",
-                      "application/javascript", initial)
-            return
         body = ("找不到檔案：" + filename).encode("utf-8")
         client.sendall(
             b"HTTP/1.1 404 Not Found\r\n"
@@ -740,60 +773,82 @@ def _prompt_folders():
         return []
 
 
-_prompt_list_cache = {"payload": None, "at": 0.0, "etag": None}
+_prompt_list_cache = {"payload": None, "at": 0.0, "etag": None, "refreshing": False}
 _PROMPT_LIST_TTL = 60.0   # 詞庫檔案會被暗房生成預覽圖就地改變（preview 欄位），不能像
                            # LoRA 那樣快取 5 分鐘；60 秒足以吃掉「開選單→搜尋→再開」
                            # 這種連續操作，又不會讓剛生成的預覽狀態太久才反映。
 _prompt_list_lock = threading.Lock()
 
 
+def _build_prompt_list_payload():
+    items, counts = [], {}
+    folders = _prompt_folders()
+    for folder in folders:
+        d = os.path.join(PROMPTS_ROOT, folder)
+        try:
+            names = sorted(os.listdir(d))
+        except OSError:
+            counts[folder] = 0
+            continue
+        # 判斷有沒有預覽圖，直接查 names 這個 set（已經是這次 listdir 的結果），
+        # 不要對每個 .py 各自再開一次 os.path.isfile()——資料夾在本機磁碟上這樣
+        # 寫沒差，但這支服務常常是透過 Docker bind mount／網路磁碟讀取
+        # PROMPTS_ROOT，每一次獨立的檔案系統呼叫都要跨一層掛載開銷，詞庫上萬個
+        # .py 檔案時，逐檔 isfile() 會讓這支 API 從幾百毫秒變成幾十秒。
+        name_set = set(names)
+        n = 0
+        for fn in names:
+            if not fn.endswith(".py") or fn.startswith("__"):
+                continue
+            stem = fn[:-3]
+            items.append({
+                "folder": folder,
+                "file": fn,
+                "name": stem,
+                "preview": (stem + ".webp") in name_set,
+            })
+            n += 1
+        counts[folder] = n
+    body = _json.dumps({"items": items, "counts": counts, "folders": folders},
+                       ensure_ascii=False).encode("utf-8")
+    with _prompt_list_lock:
+        _prompt_list_cache["payload"] = body
+        _prompt_list_cache["at"] = time.time()
+        _prompt_list_cache["etag"] = '"%s"' % hashlib.md5(body).hexdigest()[:16]
+        _prompt_list_cache["refreshing"] = False
+    return body
+
+
+def _refresh_prompt_list_bg():
+    def work():
+        try:
+            _build_prompt_list_payload()
+        except Exception:
+            with _prompt_list_lock:
+                _prompt_list_cache["refreshing"] = False
+    threading.Thread(target=work, daemon=True).start()
+
+
 def serve_prompt_list(client, initial=None):
     """列出各分類夾內的詞庫（.py）與是否有預覽圖，給 Illustrious 詞庫選單用。內容不解析（清單要輕）。
 
     實測 194 個資料夾、30714 筆詞庫：掃描加序列化 108ms、payload 3.86MB。以前是每次
-    開選單都重掃一次、而且未壓縮直送——gzip 之後只剩 0.36MB（10.7 倍），再加 TTL 快取
-    與 ETag，第二次之後幾乎不用付任何代價。"""
-    import json as _json
+    開選單都重掃一次、而且未壓縮直送——gzip 之後只剩 0.36MB（10.7 倍）。快取改成
+    stale-while-revalidate：過期先回舊的、背景重掃，避免「剛好過期的那一次」由
+    使用者在前景買單（LoRA 清單同一類問題，見 serve_lora_list）。"""
     with _prompt_list_lock:
         body = _prompt_list_cache["payload"]
         etag = _prompt_list_cache["etag"]
-        fresh = body is not None and (time.time() - _prompt_list_cache["at"]) < _PROMPT_LIST_TTL
-    if not fresh:
-        items, counts = [], {}
-        folders = _prompt_folders()
-        for folder in folders:
-            d = os.path.join(PROMPTS_ROOT, folder)
-            try:
-                names = sorted(os.listdir(d))
-            except OSError:
-                counts[folder] = 0
-                continue
-            # 判斷有沒有預覽圖，直接查 names 這個 set（已經是這次 listdir 的結果），
-            # 不要對每個 .py 各自再開一次 os.path.isfile()——資料夾在本機磁碟上這樣
-            # 寫沒差，但這支服務常常是透過 Docker bind mount／網路磁碟讀取
-            # PROMPTS_ROOT，每一次獨立的檔案系統呼叫都要跨一層掛載開銷，詞庫上萬個
-            # .py 檔案時，逐檔 isfile() 會讓這支 API 從幾百毫秒變成幾十秒。
-            name_set = set(names)
-            n = 0
-            for fn in names:
-                if not fn.endswith(".py") or fn.startswith("__"):
-                    continue
-                stem = fn[:-3]
-                items.append({
-                    "folder": folder,
-                    "file": fn,
-                    "name": stem,
-                    "preview": (stem + ".webp") in name_set,
-                })
-                n += 1
-            counts[folder] = n
-        body = _json.dumps({"items": items, "counts": counts, "folders": folders},
-                           ensure_ascii=False).encode("utf-8")
-        etag = '"%s"' % hashlib.md5(body).hexdigest()[:16]
+        stale = (time.time() - _prompt_list_cache["at"]) >= _PROMPT_LIST_TTL
+        need_bg = stale and body is not None and not _prompt_list_cache["refreshing"]
+        if need_bg:
+            _prompt_list_cache["refreshing"] = True
+    if body is None:
+        body = _build_prompt_list_payload()
         with _prompt_list_lock:
-            _prompt_list_cache["payload"] = body
-            _prompt_list_cache["at"] = time.time()
-            _prompt_list_cache["etag"] = etag
+            etag = _prompt_list_cache["etag"]
+    elif need_bg:
+        _refresh_prompt_list_bg()
     send_body(client, body, "application/json", initial, "no-cache", etag)
 
 
@@ -999,21 +1054,27 @@ def log_task(client, initial):
 
 # ---- /object_info 壓縮快取（10MB JSON gzip 後約 1MB，手機/遠端載入快很多）----
 _oi_lock = threading.Lock()
-_oi_cache = {"raw": None, "gz": None, "etag": None}
+_oi_cache = {"raw": None, "gz": None, "etag": None, "at": 0.0}
+_OI_TTL = 60.0
 
 
 def get_object_info():
-    """向 ComfyUI 取一次 /object_info，壓縮並快取（伺服器生命週期內有效）。"""
-    if _oi_cache["gz"] is not None:
+    """向 ComfyUI 取 /object_info，壓縮並快取。TTL 60 秒——生命週期快取會讓
+    ComfyUI 重啟／換模型後面板一直拿到舊節點清單（註解寫 ETag 能立刻反映，
+    但驗證打到的是這份 process 快取，不是 ComfyUI）。"""
+    now = time.time()
+    if _oi_cache["gz"] is not None and (now - _oi_cache["at"]) < _OI_TTL:
         return _oi_cache["raw"], _oi_cache["gz"]
     with _oi_lock:
-        if _oi_cache["gz"] is None:
+        if _oi_cache["gz"] is None or (time.time() - _oi_cache["at"]) >= _OI_TTL:
             url = f"http://{COMFY_HOST}:{COMFY_PORT}/object_info"
-            with urllib.request.urlopen(url, timeout=30) as resp:
+            req = urllib.request.Request(url, headers={"User-Agent": "flux2klein-panel"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
                 raw = resp.read()
             _oi_cache["raw"] = raw
             _oi_cache["gz"] = gzip.compress(raw, 5)
             _oi_cache["etag"] = '"%s"' % hashlib.md5(raw).hexdigest()[:16]
+            _oi_cache["at"] = time.time()
     return _oi_cache["raw"], _oi_cache["gz"]
 
 
@@ -1052,6 +1113,108 @@ def serve_object_info(client, initial):
     ).encode("utf-8")
     client.sendall(header + body)
     return True
+
+
+def _read_http_body(client, initial, max_len=2 * 1024 * 1024):
+    """從已讀的標頭位元組接著把 POST body 收完。超過 max_len 回 None。"""
+    cl = header_value(initial, "Content-Length")
+    try:
+        need = int(cl or 0)
+    except ValueError:
+        need = 0
+    if need > max_len:
+        return None
+    sep = initial.find(b"\r\n\r\n")
+    body = initial[sep + 4:] if sep >= 0 else b""
+    while len(body) < need:
+        try:
+            chunk = client.recv(min(65536, need - len(body)))
+        except OSError:
+            break
+        if not chunk:
+            break
+        body += chunk
+    return body[:need]
+
+
+def serve_groq(client, initial, raw_path, method):
+    """同源 Groq 代理：瀏覽器只 POST /panel/groq/openai/v1/chat/completions，
+    key 留在伺服器。路徑白名單與輪替邏輯都在 groq_proxy。"""
+    rest = raw_path.split("?", 1)[0][len("/panel/groq"):] or "/"
+    if rest not in groq_proxy.ALLOWED_PATHS or method != "POST":
+        msg = b'{"error":{"message":"path not allowed"}}'
+        client.sendall(
+            b"HTTP/1.1 404 Not Found\r\n"
+            b"Content-Type: application/json\r\n"
+            b"Content-Length: " + str(len(msg)).encode() + b"\r\n"
+            b"Connection: close\r\n\r\n" + msg
+        )
+        return
+    body = _read_http_body(client, initial)
+    if body is None:
+        msg = b'{"error":{"message":"payload too large"}}'
+        client.sendall(
+            b"HTTP/1.1 413 Payload Too Large\r\n"
+            b"Content-Type: application/json\r\n"
+            b"Content-Length: " + str(len(msg)).encode() + b"\r\n"
+            b"Connection: close\r\n\r\n" + msg
+        )
+        return
+    groq_proxy.Handler.keys = groq_proxy.Handler.keys or groq_proxy.load_keys()
+    try:
+        r = groq_proxy.groq_open(
+            rest, method, body or None,
+            content_type=header_value(initial, "Content-Type"),
+            user_agent=header_value(initial, "User-Agent") or "flux2klein-panel",
+        )
+    except groq_proxy.GroqConfigError as e:
+        msg = _json.dumps({"error": {"message": str(e)}}).encode()
+        client.sendall(
+            b"HTTP/1.1 503 Service Unavailable\r\n"
+            b"Content-Type: application/json\r\n"
+            b"Content-Length: " + str(len(msg)).encode() + b"\r\n"
+            b"Connection: close\r\n\r\n" + msg
+        )
+        return
+    except urllib.error.HTTPError as e:
+        data = e.read()
+        ct = (e.headers.get("Content-Type") or "application/json").encode()
+        client.sendall(
+            ("HTTP/1.1 %d %s\r\n" % (e.code, e.reason)).encode("ascii", "replace") +
+            b"Content-Type: " + ct + b"\r\n"
+            b"Content-Length: " + str(len(data)).encode() + b"\r\n"
+            b"Connection: close\r\n\r\n" + data
+        )
+        return
+    except Exception as e:
+        msg = _json.dumps({"error": {"message": str(e)}}).encode()
+        client.sendall(
+            b"HTTP/1.1 502 Bad Gateway\r\n"
+            b"Content-Type: application/json\r\n"
+            b"Content-Length: " + str(len(msg)).encode() + b"\r\n"
+            b"Connection: close\r\n\r\n" + msg
+        )
+        return
+    try:
+        ct = (r.headers.get("Content-Type") or "application/json").encode()
+        client.sendall(
+            b"HTTP/1.1 200 OK\r\n"
+            b"Content-Type: " + ct + b"\r\n"
+            b"Cache-Control: no-store\r\n"
+            b"Connection: close\r\n\r\n"
+        )
+        while True:
+            chunk = r.read(2048)
+            if not chunk:
+                break
+            client.sendall(chunk)
+    except OSError:
+        pass
+    finally:
+        try:
+            r.close()
+        except Exception:
+            pass
 
 
 def handle(client, ssl_ctx=None):
@@ -1118,6 +1281,9 @@ def handle(client, ssl_ctx=None):
         elif method == "GET" and path == "/panel/prompt-preview" and not is_ws:
             serve_prompt_preview(client, raw_path)
             client.close()
+        elif path.startswith("/panel/groq") and not is_ws:
+            serve_groq(client, initial, raw_path, method)
+            client.close()
         elif is_ws and path.startswith("/assistant"):
             # 助理語音 WS：同源代理到本機語音服務，路徑改寫成它期望的 /v1/realtime。
             # 手機走 HTTPS 面板時，這條走同源 wss，本代理做 TLS 終止再轉明文到 8765。
@@ -1162,17 +1328,18 @@ def main():
         else:
             print("[HTTPS] 憑證未就緒，退回 HTTP。")
     scheme = "https" if ssl_ctx else "http"
-    ip = lan_ip()
+    ts = tailscale_ip()
     print("=" * 60)
     print("  Flux2 Klein ComfyUI 面板已啟動")
     print(f"  ▶ 本機： {scheme}://127.0.0.1:{LISTEN_PORT}/klein")
-    print(f"  ▶ 區網（手機/其他電腦）： {scheme}://{ip}:{LISTEN_PORT}/klein")
+    if ts:
+        print(f"  ▶ Tailscale： {scheme}://{ts}:{LISTEN_PORT}/klein")
     print(f"  ▶ 代理到 ComfyUI： {COMFY_HOST}:{COMFY_PORT}")
     if ssl_ctx:
         print("  （HTTPS 自簽憑證：手機第一次會跳「不安全」警告，選「繼續前往」即可；")
         print("    語音輸入等需要麥克風的功能只有 HTTPS 或 localhost 才可用；按 Ctrl+C 停止）")
-    print("  （綁 0.0.0.0，但只放行本機與 Tailscale（100.64.0.0/10）來源；")
-    print("    區網／公網其他 IP 連進來會被直接斷線、不回應；按 Ctrl+C 停止）")
+    print("  （綁 0.0.0.0，只放行本機與 Tailscale（100.64.0.0/10）；")
+    print("    區網／公網 IP 連進來會被直接斷線。面板沒有登入，不要對 LAN 開放。）")
     print("=" * 60)
     # 開機就先在背景把所有 LoRA 預覽圖縮圖跑過一輪暖快取，見 _warm_lora_thumbs() 說明。
     threading.Thread(target=_warm_lora_thumbs, daemon=True).start()
@@ -1189,6 +1356,12 @@ def main():
             except OSError:
                 pass
             if not _client_allowed(addr[0]):
+                now = time.time()
+                with _blocked_log_lock:
+                    last = _blocked_log.get(addr[0], 0)
+                    if now - last > 30:
+                        _blocked_log[addr[0]] = now
+                        print(f"[拒絕] {addr[0]}（只放行本機與 Tailscale）", flush=True)
                 try:
                     client.close()
                 except OSError:
