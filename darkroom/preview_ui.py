@@ -61,7 +61,6 @@ from generate_special_previews import (
     build_prompt,
     download_image,
     http_json,
-    load_lib,
     load_workflow,
     parse_lib_ast,
     prepare_workflow,
@@ -193,6 +192,14 @@ def _save_flags_locked():
     _atomic_write_json(_meta_path("flags"), {"flagged": _flags})
 
 
+_LIBS_STATE_GEN = 0
+
+def bump_libs():
+    """收藏／旗標／稀有度／job／有圖狀態變了：讓 /api/libs 的快取失效。"""
+    global _LIBS_STATE_GEN
+    _LIBS_STATE_GEN += 1
+
+
 def set_flag(rel: str, flagged: bool) -> bool:
     with _flags_lock:
         if flagged:
@@ -200,6 +207,7 @@ def set_flag(rel: str, flagged: bool) -> bool:
         else:
             _flags.pop(rel, None)
         _save_flags_locked()
+        bump_libs()
         return rel in _flags
 
 
@@ -248,6 +256,7 @@ def set_fav(rel: str, favorited: bool) -> bool:
         else:
             _favs.pop(rel, None)
         _save_favs_locked()
+        bump_libs()
         return rel in _favs
 
 
@@ -298,6 +307,7 @@ def set_rarity(rel: str, key: str, name_has_prefix: bool = False) -> str:
         else:
             _rarities.pop(rel, None)
         _save_rarities_locked()
+        bump_libs()
         return _rarities.get(rel, "")
 
 
@@ -341,6 +351,7 @@ def set_score(rel: str, data: dict) -> None:
     with _scores_lock:
         _scores[rel] = data
         _save_scores_locked()
+        bump_libs()
 
 
 def clear_score(rel: str) -> None:
@@ -1275,13 +1286,27 @@ def py_of(rel: str) -> Path:
     return p
 
 
+_JOBS_KEEP_S = 1800.0
+_jobs_prune_at = 0.0
+
+
 def set_job(rel: str, status: str, message: str = ""):
+    global _jobs_prune_at
     with STATE["jobs_lock"]:
         STATE["jobs"][rel] = {
             "status": status,
             "message": message,
             "updated": time.time(),
         }
+        now = time.time()
+        if now - _jobs_prune_at > 60:
+            _jobs_prune_at = now
+            cutoff = now - _JOBS_KEEP_S
+            dead = [k for k, v in STATE["jobs"].items()
+                    if v.get("status") in ("done", "error", "") and (v.get("updated") or 0) < cutoff]
+            for k in dead:
+                del STATE["jobs"][k]
+    bump_libs()
 
 
 def get_job(rel: str) -> dict:
@@ -1299,8 +1324,16 @@ def get_job(rel: str) -> dict:
 #   * 「重掃」鈕帶 force=1 同步重掃，使用者要的就是即時反映外部改動。
 # job 狀態不進快取——它會變，每次回應時才疊上去（純記憶體查表，成本可忽略）。
 SCAN_TTL = 60.0
-_scan = {"items": None, "at": 0.0, "refreshing": False}
+_scan = {"items": None, "by_rel": None, "at": 0.0, "refreshing": False}
 _scan_lock = threading.Lock()
+_libs_wire = {"key": None, "etag": None, "out": None, "enc": None}
+_libs_wire_lock = threading.Lock()
+
+
+def _set_scan_items(items):
+    _scan["items"] = items
+    _scan["by_rel"] = {it["rel"]: it for it in items}
+    _scan["at"] = time.time()
 
 
 def _scan_fs() -> list[dict]:
@@ -1329,8 +1362,8 @@ def _scan_refresh_bg():
         try:
             items = _scan_fs()
             with _scan_lock:
-                _scan["items"] = items
-                _scan["at"] = time.time()
+                _set_scan_items(items)
+            bump_libs()
         finally:
             with _scan_lock:
                 _scan["refreshing"] = False
@@ -1356,8 +1389,8 @@ def scan_libraries(force: bool = False) -> list[dict]:
     else:
         cached = _scan_fs()
         with _scan_lock:
-            _scan["items"] = cached
-            _scan["at"] = time.time()
+            _set_scan_items(cached)
+        bump_libs()
     # 疊上會變、不進快取的部分：job 狀態、品質旗標、收藏、稀有度。稀有度以側檔為準，
     # 側檔沒有該筆才用 _scan_fs 由檔名衍生的值（舊前綴檔自動沿用）；側檔存 "" 代表
     # 明確清除，會蓋掉檔名衍生值。
@@ -1395,8 +1428,8 @@ def intro_payload() -> dict:
     if cached is None:
         cached = _scan_fs()
         with _scan_lock:
-            _scan["items"] = cached
-            _scan["at"] = time.time()
+            _set_scan_items(cached)
+        bump_libs()
     have = [it for it in cached if it.get("has_image")]
     folders = {it.get("folder") or "" for it in cached}
     n = min(INTRO_SAMPLE, len(have))
@@ -1563,16 +1596,15 @@ def run_tag_backfill(progress_cb=None):
 def _scan_note_image(rel: str, img: Path):
     """生成成功後就地更新快取裡那一筆，免得為了一張圖重掃整棵樹。"""
     with _scan_lock:
-        if _scan["items"] is None:
+        it = (_scan.get("by_rel") or {}).get(rel)
+        if it is None:
             return
-        for it in _scan["items"]:
-            if it["rel"] == rel:
-                it["has_image"] = True
-                try:
-                    it["image_mtime"] = int(img.stat().st_mtime)
-                except OSError:
-                    pass
-                return
+        it["has_image"] = True
+        try:
+            it["image_mtime"] = int(img.stat().st_mtime)
+        except OSError:
+            pass
+    bump_libs()
 
 
 # --- 標籤搜尋索引 ----------------------------------------------------------
@@ -1583,31 +1615,40 @@ def _scan_note_image(rel: str, img: Path):
 # 標籤來源有兩份，合併進同一個 frozenset：詞庫 .py 的 REQUIRED_POSITIVE/POSITIVE/
 # NEGATIVE（prompt 內容）+ 同檔名 .json 的 wd-tagger 視覺標籤（_read_visual_tags，
 # 見打標提案）——使用者不用分開想「查 prompt 還是查圖片內容」，搜尋框一律都找得到。
-_tag_index = {"items": None, "at": 0.0, "refreshing": False}
+_tag_index = {"by_rel": None, "by_tag": None, "at": 0.0, "refreshing": False}
 _tag_index_lock = threading.Lock()
 
 
-def _build_tag_index() -> dict[str, frozenset[str]]:
+def _build_tag_index() -> tuple[dict[str, frozenset[str]], dict[str, set[str]]]:
     t0 = time.time()
-    idx: dict[str, frozenset[str]] = {}
+    by_rel: dict[str, frozenset[str]] = {}
+    by_tag: dict[str, set[str]] = {}
     for py in gsp.iter_libraries(None):
         try:
             req, pos, neg = parse_lib_ast(py)
         except Exception:
             req, pos, neg = [], [], []
-        tags = split_tags(req) + split_tags(pos) + split_tags(neg) + _read_visual_tags(py)
-        idx[rel_of(py)] = frozenset(t.lower() for t in tags)
-    plog(f"[tagidx] 建立標籤索引 {len(idx)} 筆 · {time.time() - t0:.2f}s")
-    return idx
+        tags = frozenset(t.lower() for t in split_tags(req) + split_tags(pos) + split_tags(neg) + _read_visual_tags(py))
+        rel = rel_of(py)
+        by_rel[rel] = tags
+        for t in tags:
+            s = by_tag.get(t)
+            if s is None:
+                s = set()
+                by_tag[t] = s
+            s.add(rel)
+    plog(f"[tagidx] 建立標籤索引 {len(by_rel)} 筆 · {time.time() - t0:.2f}s")
+    return by_rel, by_tag
 
 
 def _tag_index_note(rel: str, visual_tags: list[str]):
     """單筆即時更新——打標完成後不用整棵樹重建索引才搜得到，見 _tag_and_persist()／
-    run_tag_backfill() 的呼叫點。索引還沒建過（items is None）就跳過，等第一次
+    run_tag_backfill() 的呼叫點。索引還沒建過（by_rel is None）就跳過，等第一次
     /api/tag-search 觸發完整建置時自然吃到最新的 json。"""
     with _tag_index_lock:
-        items = _tag_index["items"]
-        if items is None:
+        by_rel = _tag_index["by_rel"]
+        by_tag = _tag_index["by_tag"]
+        if by_rel is None or by_tag is None:
             return
         try:
             py = py_of(rel)
@@ -1615,15 +1656,26 @@ def _tag_index_note(rel: str, visual_tags: list[str]):
         except Exception:
             req, pos, neg = [], [], []
         prompt_tags = split_tags(req) + split_tags(pos) + split_tags(neg)
-        items[rel] = frozenset(t.lower() for t in prompt_tags + visual_tags)
+        new_tags = frozenset(t.lower() for t in prompt_tags + visual_tags)
+        old = by_rel.get(rel)
+        if old:
+            for t in old:
+                if t not in new_tags:
+                    bucket = by_tag.get(t)
+                    if bucket is not None:
+                        bucket.discard(rel)
+        for t in new_tags:
+            by_tag.setdefault(t, set()).add(rel)
+        by_rel[rel] = new_tags
 
 
 def _tag_index_refresh_bg():
     def work():
         try:
-            items = _build_tag_index()
+            by_rel, by_tag = _build_tag_index()
             with _tag_index_lock:
-                _tag_index["items"] = items
+                _tag_index["by_rel"] = by_rel
+                _tag_index["by_tag"] = by_tag
                 _tag_index["at"] = time.time()
         finally:
             with _tag_index_lock:
@@ -1634,9 +1686,10 @@ def _tag_index_refresh_bg():
 _tag_index_build_lock = threading.Lock()
 
 
-def get_tag_index(force: bool = False) -> dict[str, frozenset[str]]:
+def get_tag_index(force: bool = False) -> tuple[dict[str, frozenset[str]], dict[str, set[str]]]:
     with _tag_index_lock:
-        cached = _tag_index["items"]
+        cached = _tag_index["by_rel"]
+        cached_tag = _tag_index["by_tag"]
         stale = (time.time() - _tag_index["at"]) > SCAN_TTL
         if cached is not None and not force:
             if stale and not _tag_index["refreshing"]:
@@ -1646,24 +1699,26 @@ def get_tag_index(force: bool = False) -> dict[str, frozenset[str]]:
                 need_bg = False
         else:
             need_bg = False
-    if cached is not None and not force:
+    if cached is not None and cached_tag is not None and not force:
         if need_bg:
             _tag_index_refresh_bg()
-        return cached
+        return cached, cached_tag
     # 還沒建過索引（或要求強制重建）：用一把鎖序列化「真的動手建」這一步。開機暖快取
     # 的背景執行緒跟使用者第一次搜尋標籤幾乎同時抵達時，兩邊都會走到這裡；沒有這把鎖
     # 兩邊會各自掃一次全部詞庫（實測真的重現過：同時建了兩次索引，各花 5~8s）。鎖住後
     # 第二個呼叫等第一個建完，重新讀一次快取直接吃現成的，不用再掃一次。
     with _tag_index_build_lock:
         with _tag_index_lock:
-            cached = _tag_index["items"]
-        if cached is not None and not force:
-            return cached
-        cached = _build_tag_index()
+            cached = _tag_index["by_rel"]
+            cached_tag = _tag_index["by_tag"]
+        if cached is not None and cached_tag is not None and not force:
+            return cached, cached_tag
+        by_rel, by_tag = _build_tag_index()
         with _tag_index_lock:
-            _tag_index["items"] = cached
+            _tag_index["by_rel"] = by_rel
+            _tag_index["by_tag"] = by_tag
             _tag_index["at"] = time.time()
-        return cached
+        return by_rel, by_tag
 
 
 def get_batch() -> dict:
@@ -1777,7 +1832,7 @@ def do_generate(rel: str, seed: int | None = None, in_batch: bool = False):
             plog(f"[gen] ▶ 生成中 {rel}")   # 即時顯示現在在處理哪個詞庫
             set_job(rel, "running", "載入詞庫...")
             py = py_of(rel)
-            req, pos, neg = load_lib(py)
+            req, pos, neg = parse_lib_ast(py)
             positive = build_prompt(req, pos)
             negative = build_negative(neg)
             if seed is None or seed < 0:
@@ -2110,7 +2165,7 @@ def _gen_one_worker(gid, rel, loras, trigger, wait_for=None, mark_started=None):
             # negative 只有 DEFAULT_NEG（build_negative([]) 的行為）。
             if rel:
                 py = py_of(rel)
-                req, pos, neg = load_lib(py)
+                req, pos, neg = parse_lib_ast(py)
                 positive = build_prompt(req, pos)
                 negative = build_negative(neg)
                 prefix = f"genmode/{py.stem}"[:180]
@@ -2626,6 +2681,76 @@ class Handler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(body)
 
+    def _send_libs(self, force: bool):
+        """ /api/libs：指紋命中就 304／重送 gzip，不再 clone + dumps 2.8 萬筆。"""
+        key = None if force else (
+            _scan["at"], _LIBS_STATE_GEN, STATE.get("steps"),
+            str(STATE.get("workflow_path")), str(SPECIAL_DIR),
+        )
+        with _libs_wire_lock:
+            hit = (not force and _libs_wire["key"] == key and _libs_wire["etag"])
+            etag = _libs_wire["etag"] if hit else None
+            cached_body = _libs_wire["out"] if hit else None
+            enc = _libs_wire["enc"] if hit else None
+        if hit:
+            if self.headers.get("If-None-Match") == etag:
+                self.send_response(304)
+                self.send_header("ETag", etag)
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(cached_body)))
+            if enc:
+                self.send_header("Content-Encoding", enc)
+            self.send_header("Vary", "Accept-Encoding")
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(cached_body)
+            return
+        obj = {
+            "items": scan_libraries(force=force),
+            "workflow": str(STATE["workflow_path"]),
+            "comfy": ensure_comfy_base(),
+            "steps": STATE["steps"],
+            "special_dir": str(SPECIAL_DIR),
+            "concurrency": STATE.get("concurrency", 2),
+        }
+        raw = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        etag = '"%s"' % hashlib.sha1(raw).hexdigest()[:20]
+        out, enc = raw, None
+        if self._gzip_ok(raw, "application/json; charset=utf-8"):
+            out = gzip.compress(raw, 5)
+            enc = "gzip"
+        with _libs_wire_lock:
+            _libs_wire["key"] = (
+                _scan["at"], _LIBS_STATE_GEN, STATE.get("steps"),
+                str(STATE.get("workflow_path")), str(SPECIAL_DIR),
+            )
+            _libs_wire["etag"] = etag
+            _libs_wire["out"] = out
+            _libs_wire["enc"] = enc
+        if self.headers.get("If-None-Match") == etag:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(out)))
+        if enc:
+            self.send_header("Content-Encoding", enc)
+        self.send_header("Vary", "Accept-Encoding")
+        self.send_header("ETag", etag)
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(out)
+
     def do_GET(self):
         if self._blocked():
             return
@@ -2637,13 +2762,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_static(fname, ctype)
                 return
             if u.path == "/api/libs":
-                self._send_json_etag({
-                    "items": scan_libraries(force=qs.get("force", [""])[0] == "1"),
-                    "workflow": str(STATE["workflow_path"]),
-                    "comfy": ensure_comfy_base(),
-                    "steps": STATE["steps"],
-                    "special_dir": str(SPECIAL_DIR),
-                }, "libs")
+                self._send_libs(force=qs.get("force", [""])[0] == "1")
                 return
             if u.path == "/api/intro":
                 self._send_json(intro_payload())
@@ -2654,8 +2773,14 @@ class Handler(BaseHTTPRequestHandler):
                 if not query_tags:
                     self._send_json({"rels": []})
                     return
-                idx = get_tag_index(force=qs.get("force", [""])[0] == "1")
-                rels = [rel for rel, tags in idx.items() if all(t in tags for t in query_tags)]
+                _by_rel, by_tag = get_tag_index(force=qs.get("force", [""])[0] == "1")
+                sets = [by_tag.get(t) for t in query_tags]
+                if any(s is None for s in sets):
+                    rels = []
+                elif len(sets) == 1:
+                    rels = list(sets[0])
+                else:
+                    rels = list(set.intersection(*sets))
                 self._send_json({"rels": rels, "tags": query_tags})
                 return
             if u.path == "/api/thumb":
@@ -2685,7 +2810,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/prompt":
                 rel = qs.get("rel", [""])[0]
                 py = py_of(rel)
-                req, pos, neg = load_lib(py)
+                req, pos, neg = parse_lib_ast(py)
                 self._send_json({
                     "positive": build_prompt(req, pos),
                     "negative": build_negative(neg),
@@ -2727,7 +2852,7 @@ class Handler(BaseHTTPRequestHandler):
                 rel = qs.get("rel", [""])[0]
                 if rel:
                     img_py = py_of(rel)
-                    req, pos, neg = load_lib(img_py)
+                    req, pos, neg = parse_lib_ast(img_py)
                     positive = build_prompt(req, pos)
                 else:
                     positive = build_prompt([], [])

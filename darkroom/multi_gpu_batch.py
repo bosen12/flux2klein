@@ -52,7 +52,7 @@ from generate_special_previews import (
     download_image,
     http_json,
     iter_libraries,
-    load_lib,
+    parse_lib_ast,
     load_workflow,
     prepare_workflow,
     queue_and_wait,
@@ -121,7 +121,7 @@ def worker(name: str, base: str, task_q: "queue.Queue[tuple[Path, int]]", templa
             # main() 的 task_q.join()。
             continue
         try:
-            req, pos, neg = load_lib(py)
+            req, pos, neg = parse_lib_ast(py)
             positive = build_prompt(req, pos)
             negative = build_negative(neg)
             seed = random.randint(0, 2**63 - 1)

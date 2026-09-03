@@ -50,7 +50,21 @@ function fadeCloseOverlay(el, _inner, onDone) {
 // 最痛的是 restoreCard()——超大範圍（「全部」/跨資料夾搜尋）啟用卡片修剪後，每張卡片
 // 捲回視野都要查一次，等於在捲動的每一幀裡做 28000 次字串比較。改用 Map 查表。
 let BY_REL = new Map();
+let BY_FOLDER = new Map();
+let HAVE_IMAGE = [];
+let haveCount = 0;
+let flaggedCount = 0;
 const itemOf = rel => BY_REL.get(rel);
+function noteHasImage(it) {
+  if (!it || it.has_image) {
+    if (it) it.has_image = true;
+    return;
+  }
+  it.has_image = true;
+  HAVE_IMAGE.push(it);
+  haveCount++;
+  invalidateFolderStats();
+}
 // 資料夾統計（folderStats）快取：那是一次 28000 筆的分組 + 排序，而 buildRail() 在
 // 左欄搜尋的每一次按鍵都會呼叫。只有「ALL 換一份」或「有圖狀態改變」會讓它失真。
 let _folderStatsCache = null;
@@ -64,12 +78,22 @@ function invalidateBaseList() { _baseCache = null; }
 
 function indexAll() {
   BY_REL = new Map();
+  BY_FOLDER = new Map();
+  HAVE_IMAGE = [];
+  haveCount = 0;
+  flaggedCount = 0;
   for (const x of ALL) {
     BY_REL.set(x.rel, x);
     // 搜尋用的小寫鍵先算好存著：baseList() 與跳轉搜尋都是每按一鍵掃全庫，現算
     // toLowerCase() 等於每一鍵配置五萬多個暫時字串，光 GC 就足以讓輸入卡頓。
     x._lname = x.name.toLowerCase();
     x._lfolder = (x.folder || '').toLowerCase();
+    const f = x.folder || '(根目錄)';
+    let arr = BY_FOLDER.get(f);
+    if (!arr) { arr = []; BY_FOLDER.set(f, arr); }
+    arr.push(x);
+    if (x.has_image) { HAVE_IMAGE.push(x); haveCount++; }
+    if (x.flagged) flaggedCount++;
   }
   invalidateFolderStats();
   invalidateBaseList();
@@ -105,7 +129,7 @@ async function loadAll(force = false) {
   const conn = $('conn');
   conn.classList.toggle('on', !!j.comfy);
   $('conn-text').textContent = j.comfy ? `ComfyUI 就緒 · steps ${j.steps}` : 'ComfyUI 未連線';
-  const total = ALL.length, have = ALL.filter(x => x.has_image).length;
+  const total = ALL.length, have = haveCount;
   setCount($('total-have'), have);
   setCount($('total-all'), total);
   setDataset(j.special_dir);
@@ -174,7 +198,7 @@ function buildRail() {
   // 「全部」固定釘在最上面，不受 RAIL_SEARCH（資料夾名稱篩選）影響——資料夾清單
   // 本身沒有代表「不篩資料夾」的項目，點了某個資料夾之後除了重打一次搜尋字串
   // 沒有別的路能回到跨資料夾的全部範圍，加這顆給明確、常駐的入口。
-  const totalAll = ALL.length, haveAll = ALL.filter(x => x.has_image).length;
+  const totalAll = ALL.length, haveAll = haveCount;
   const pctAll = totalAll ? Math.round(haveAll / totalAll * 100) : 0;
   const allBtn = document.createElement('button');
   allBtn.className = 'folder folder-all' + (ALL_FOLDERS && !SEARCH && !TAG_MATCH_SET ? ' active' : '');
@@ -242,7 +266,7 @@ function baseList() {
   const key = SEARCH + '\u0000' + CUR_FOLDER + '\u0000' + (ALL_FOLDERS ? '1' : '0');
   if (_baseCache && _baseKey === key && _baseTagSet === TAG_MATCH_SET) return _baseCache;
   let list = (!ALL_FOLDERS && CUR_FOLDER !== null)
-    ? ALL.filter(x => (x.folder || '(根目錄)') === CUR_FOLDER)
+    ? (BY_FOLDER.get(CUR_FOLDER) || [])
     : ALL;
   if (SEARCH) {
     const q = SEARCH.toLowerCase();
@@ -770,10 +794,16 @@ function cardOf(it) {
 
 // 標記/取消「不優質」：樂觀更新（先變色再送），失敗回退。狀態同步到 ALL、
 // 兩種介面（格線卡片、審核網格）與計數。
+function setItemFlagged(it, next) {
+  if (!it) return;
+  const was = !!it.flagged;
+  it.flagged = !!next;
+  if (was !== it.flagged) flaggedCount += it.flagged ? 1 : -1;
+}
 async function toggleFlag(rel, force) {
   const it = itemOf(rel);
   const next = (typeof force === 'boolean') ? force : !(it && it.flagged);
-  if (it) it.flagged = next;
+  setItemFlagged(it, next);
   applyFlagVisual(rel, next);
   try {
     const r = await fetch('/api/flag', {
@@ -782,10 +812,10 @@ async function toggleFlag(rel, force) {
     });
     const j = await r.json();
     if (j.error) throw new Error(j.error);
-    if (it) it.flagged = j.flagged;
+    setItemFlagged(it, j.flagged);
     applyFlagVisual(rel, j.flagged);
   } catch (e) {
-    if (it) it.flagged = !next;               // 回退
+    setItemFlagged(it, !next);               // 回退
     applyFlagVisual(rel, !next);
     toast('標記失敗：' + e.message, true);
   }
@@ -875,7 +905,7 @@ async function pollStatus(rel) {
       if (mstat && mstat.dataset.rel === rel) updateStatusEl(mstat, job);
       if (job.status === 'done' || job.status === 'error') {
         if (job.status === 'done') {
-          if (it) { it.has_image = true; it.image_mtime = Math.floor(Date.now() / 1000); }
+          if (it) { noteHasImage(it); it.image_mtime = Math.floor(Date.now() / 1000); }
           invalidateFolderStats();   // 「有圖」數變了，左欄的 have/total 與覆蓋率條要重算
           reloadThumb(rel); reloadModalImage(rel); buildRail();
           pollScoreAfterGenerate(rel);   // 評分是背景另起的 thread，圖片完成當下分數通常還沒算完
@@ -1526,7 +1556,7 @@ async function launchBatch(scope, regenerate) {
   }
   const scopeTxt = scope === 'all' ? '全部詞庫' : (SEARCH ? '搜尋結果' : '此資料夾');
   const modeTxt = regenerate ? '重新生成(會覆蓋既有圖)' : '補齊缺少的';
-  if (!(await confirmDialog(`${scopeTxt} · ${modeTxt}\n共 ${rels.length} 張,將以每次 2 張並行處理,可能耗時很久。確定?`))) return;
+  if (!(await confirmDialog(`${scopeTxt} · ${modeTxt}\n共 ${rels.length} 張，依目前併發設定處理，可能耗時很久。確定?`))) return;
   const r = await fetch('/api/batch_generate', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ rels, regenerate })
@@ -1698,12 +1728,17 @@ const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // 洗牌取樣 n 張（不重複）。ALL 上萬筆，複製一次成本可接受（只在抽卡時）。
 function sampleN(arr, n) {
-  const a = arr.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
+  const len = arr.length;
+  if (n >= len) return arr.slice();
+  const picked = [];
+  const used = new Set();
+  while (picked.length < n) {
+    const i = Math.floor(Math.random() * len);
+    if (used.has(i)) continue;
+    used.add(i);
+    picked.push(arr[i]);
   }
-  return a.slice(0, n);
+  return picked;
 }
 
 const CN_NUM = ['零', '一', '二', '三', '四', '五', '六', '七', '八'];
@@ -1712,7 +1747,7 @@ const isMobile = () => matchMedia('(max-width: 640px)').matches || matchMedia('(
 // pool/label 未傳＝原本行為（全庫抽卡，R 鍵）；傳了就是分類抽卡（E 鍵／標題旁按鈕），
 // label 會併進塔羅標題與空池提示，讓使用者看得出這批是從哪裡抽的。
 function drawTarot(pool, label) {
-  pool = pool || ALL.filter(x => x.has_image);            // 只抽有 webp（旁邊有圖）的詞庫
+  pool = pool || HAVE_IMAGE;            // 只抽有 webp（旁邊有圖）的詞庫
   if (!pool.length) { toast(label ? `「${label}」沒有已生成預覽圖的詞庫可抽` : '目前沒有任何已生成預覽圖的詞庫可抽', true); return; }
   const want = isMobile() ? 1 : 8;                        // 手機一次一張，桌面 8 張（4+4）
   const picks = sampleN(pool, Math.min(want, pool.length));
@@ -2177,7 +2212,7 @@ const RARITY_KEYS = ['common', 'rare', 'special', 'legendary'];
 const DRAW_N = 10;   // 打標抽卡一次 10 張（5 欄 × 2 列）
 let TAROT_FOCUS = -1;
 const TAROT_HISTORY = [];
-const tarotPool = () => ALL.filter(x => x.has_image && !x.rarity);   // 有圖、尚未打標
+const tarotPool = () => HAVE_IMAGE.filter(x => !x.rarity);   // 有圖、尚未打標
 const tarotCards = () => [...$('tarot-cards').children];
 const isAssigned = c => RARITY_KEYS.some(k => c.classList.contains('assigned-' + k));
 
@@ -2362,7 +2397,7 @@ let SELECTING = false;
 
 function updateReviewCount() {
   const el = $('flag-count'); if (!el) return;
-  const n = ALL.filter(x => x.flagged).length;
+  const n = flaggedCount;
   el.textContent = n ? ` ${n}` : '';
 }
 
@@ -3374,7 +3409,7 @@ async function pollLoraPush() {
       if (st.data) await applyLoraPush(st.data);
     }
   } catch (e) { /* 靜默；下一輪再試，不用整個工具連得上才能用 */ }
-  setTimeout(pollLoraPush, 1000);
+  setTimeout(pollLoraPush, document.hidden ? 4000 : 2500);
 }
 async function applyLoraPush(d) {
   if (GALLERY_OPEN) { GALLERY_OPEN = false; document.body.classList.remove('gallery-open'); $('gallery-btn').classList.remove('on'); }
@@ -3763,7 +3798,7 @@ function _runConceptsDraw(pickers, tplMode) {
   const lockedTpl = CONCEPTS_LOCKED_TEMPLATE;
   const useTemplate = tplMode.useTemplate || !!lockedTpl;
   const tplPool = lockedTpl ? null : (tplMode.folderOnly
-    ? ALL.filter(x => (x.folder || '(根目錄)') === CUR_FOLDER)
+    ? (BY_FOLDER.get(CUR_FOLDER) || [])
     : ALL);
   if (useTemplate && !lockedTpl && !tplPool.length) {
     toast(tplMode.folderOnly ? `「${CUR_FOLDER || '(根目錄)'}」底下沒有詞庫可抽模板` : '要同時抽詞庫模板，但目前沒有任何詞庫');
@@ -4427,7 +4462,7 @@ function introFallback() {
 
 function maybeStartIntro() {
   if (!ALL.length) return;
-  introPool = ALL.filter(x => x.has_image);
+  introPool = HAVE_IMAGE;
   if (introPool.length > 400) {   // 只抽樣就夠，不必為了隨機掃全庫
     const s = [];
     for (let i = 0; i < 160; i++) s.push(introPool[Math.floor(Math.random() * introPool.length)]);
@@ -4435,8 +4470,8 @@ function maybeStartIntro() {
   }
   // 卡片上的數字全部是真的，不是裝飾性編號——這個工具本來就在追蹤這三個。
   const total = ALL.length;
-  const have = ALL.filter(x => x.has_image).length;
-  const folders = new Set(ALL.map(x => x.folder)).size;
+  const have = haveCount;
+  const folders = BY_FOLDER.size;
   const stats = $('intro-stats');
   if (stats) {
     const n = (v) => v.toLocaleString('en-US');
