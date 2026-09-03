@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import time
 from pathlib import Path
 
 import aiohttp
@@ -34,6 +35,7 @@ LORA_STRENGTH = 0.8   # 比照暗房 AGENT_DRAW_DEFAULT_LORAS 的既有慣例，
 LORA_PAGE_SIZE = 25   # Discord select 單一元件最多 25 個選項
 GACHA_MAX_N = 100
 POLL_INTERVAL_S = 1.0
+GACHA_POLL_DEADLINE_S = 30 * 60   # 暗房 job 卡住就不再無限輪詢；30 分鐘夠 100 張慢生成
 EMBED_COLOR = 0xEAAD57   # 跟 agent_draw.py 的 DISCORD_EMBED_COLOR 一致
 ERROR_COLOR = 0xE74C3C   # 錯誤訊息用紅色，跟正常訊息的琥珀色一眼分得出來
 LORA_VIDEO_EXTS = (".mp4", ".webm")   # 這幾種預覽是短片，Discord embed 縮圖放不了影片，跳過
@@ -91,9 +93,15 @@ async def _fetch_lora_preview(item: dict) -> tuple[bytes, str] | None:
 
 
 @bot.event
-async def on_ready() -> None:
+async def setup_hook() -> None:
+    """discord.py 在連線前只呼叫一次。session 放這裡，不要放 on_ready——
+    重連會再觸發 on_ready，舊 ClientSession 不關就漏 fd。"""
     global http_session
     http_session = aiohttp.ClientSession()
+
+
+@bot.event
+async def on_ready() -> None:
     guild_id = CONFIG.get("guild_id")
     if guild_id:
         guild = discord.Object(id=int(guild_id))
@@ -102,6 +110,24 @@ async def on_ready() -> None:
     else:
         await bot.tree.sync()
     print(f"[bot] 已登入 {bot.user}，暗房 API：{BASE_URL}")
+
+
+async def _close_http_session() -> None:
+    global http_session
+    if http_session is not None and not http_session.closed:
+        await http_session.close()
+    http_session = None
+
+
+_bot_close = bot.close
+
+
+async def _close() -> None:
+    await _close_http_session()
+    await _bot_close()
+
+
+bot.close = _close
 
 
 @bot.tree.command(name="intro", description="這個機器人能做什麼")
@@ -425,18 +451,58 @@ class ChkpConfirmView(discord.ui.View):
 
 
 class ChkpView(discord.ui.View):
-    def __init__(self, items: list[str], current: str | None) -> None:
+    """≤25 顆用按鈕（現況 7 顆）；超過 Discord View 上限就改成分頁下拉，跟 LoRA 同一套。"""
+
+    def __init__(self, items: list[str], current: str | None, page: int = 0) -> None:
         super().__init__(timeout=180)
-        for name in items:
-            style = discord.ButtonStyle.success if name == current else discord.ButtonStyle.secondary
-            btn = discord.ui.Button(label=name[:80], style=style)
-            btn.callback = self._make_callback(name)
-            self.add_item(btn)
+        self.items = items
+        self.current = current
+        self.page = page
+        if len(items) <= 25:
+            for name in items:
+                style = discord.ButtonStyle.success if name == current else discord.ButtonStyle.secondary
+                btn = discord.ui.Button(label=name[:80], style=style)
+                btn.callback = self._make_callback(name)
+                self.add_item(btn)
+            return
+        start = page * LORA_PAGE_SIZE
+        page_items = items[start:start + LORA_PAGE_SIZE]
+        total_pages = max(1, (len(items) + LORA_PAGE_SIZE - 1) // LORA_PAGE_SIZE)
+        select = discord.ui.Select(
+            placeholder=f"選擇 checkpoint（第 {page + 1}/{total_pages} 頁）",
+            options=[discord.SelectOption(
+                label=n[:100], value=str(start + i),
+                default=(n == current),
+            ) for i, n in enumerate(page_items)],
+        )
+        select.callback = self._on_select
+        self.add_item(select)
+        prev_btn = discord.ui.Button(label="◀ 上一頁", style=discord.ButtonStyle.secondary,
+                                      disabled=page <= 0, row=1)
+        prev_btn.callback = self._make_page_callback(page - 1)
+        self.add_item(prev_btn)
+        next_btn = discord.ui.Button(label="下一頁 ▶", style=discord.ButtonStyle.secondary,
+                                      disabled=page >= total_pages - 1, row=1)
+        self.add_item(next_btn)
+        next_btn.callback = self._make_page_callback(page + 1)
 
     def _make_callback(self, name: str):
         async def callback(interaction: discord.Interaction) -> None:
             embed = discord.Embed(title="確認切換 checkpoint", description=f"`{name}`", color=EMBED_COLOR)
             await interaction.response.edit_message(embed=embed, view=ChkpConfirmView(name))
+        return callback
+
+    async def _on_select(self, interaction: discord.Interaction) -> None:
+        idx = int(interaction.data["values"][0])
+        name = self.items[idx]
+        embed = discord.Embed(title="確認切換 checkpoint", description=f"`{name}`", color=EMBED_COLOR)
+        await interaction.response.edit_message(embed=embed, view=ChkpConfirmView(name))
+
+    def _make_page_callback(self, page: int):
+        async def callback(interaction: discord.Interaction) -> None:
+            view = ChkpView(self.items, self.current, page)
+            embed = discord.Embed(title="選擇 checkpoint", color=EMBED_COLOR)
+            await interaction.response.edit_message(embed=embed, view=view)
         return callback
 
 
@@ -543,7 +609,17 @@ async def _run_gacha(interaction: discord.Interaction, n: int) -> None:
     progress_msg = await reply_channel.send(embed=_gacha_status_embed(n, 0, 0, "running"), view=cancel_view)
 
     cancelled = False
+    deadline = time.monotonic() + GACHA_POLL_DEADLINE_S
     while pending:
+        if time.monotonic() > deadline:
+            cancelled = True
+            try:
+                await dc.gen_cancel(http_session, BASE_URL, list(pending))
+            except dc.DarkroomError:
+                pass
+            await reply_channel.send(embed=_error_embed(
+                f"抽卡輪詢超過 {GACHA_POLL_DEADLINE_S // 60} 分鐘，已停止等待剩餘張數"))
+            break
         if cancel_event.is_set():
             cancelled = True
             try:
