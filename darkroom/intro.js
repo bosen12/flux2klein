@@ -373,7 +373,7 @@ void main() {
     stage._genTick = 0;
   }
 
-  const SPARKLE = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><path d="M12 2c.6 3.6 2.2 6 6 6.6-3.8.6-5.4 3-6 6.6-.6-3.6-2.2-6-6-6.6 3.8-.6 5.4-3 6-6.6z"/></svg>';
+  const DRAW_DROP_MS = 240, DRAW_DELAY_MS = 80, DRAW_HOLD_MS = 220, DRAW_DEVELOP_MS = 640, DRAW_STAG = 28;
   const DRAW_N = 8;
 
   function clearDrawTimers(stage) {
@@ -398,12 +398,14 @@ void main() {
       const it = sample[(start + i) % sample.length];
       const card = document.createElement('div');
       card.className = 'tcard';
-      card.innerHTML =
-        '<div class="tinner">' +
-          '<div class="tback"><span class="temblem">' + SPARKLE + '</span></div>' +
-          '<div class="tfront"></div>' +
-        '</div>';
-      card.querySelector('.tfront').append(thumb(it, 128));
+      card.style.setProperty('--i', i);
+      const front = document.createElement('div');
+      front.className = 'tfront';
+      const img = thumb(it, 128);
+      img.onload = () => img.classList.add('ld');
+      if (img.complete && img.naturalWidth) img.classList.add('ld');
+      front.append(img);
+      card.appendChild(front);
       wrap.appendChild(card);
     }
     stage._drawCursor = start + DRAW_N;
@@ -417,41 +419,33 @@ void main() {
     const n = cards.length;
     if (!n) return;
     if (REDUCE_MOTION) {
-      cards.forEach((c) => c.classList.add('revealed'));
+      cards.forEach((c) => c.classList.add('revealed', 'settled'));
       return;
     }
     cards.forEach((c, i) => {
-      c.classList.remove('revealed');
-      const inner = c.querySelector('.tinner');
-      inner.style.transition = 'none';
-      void inner.offsetWidth;
-      inner.style.transition = '';
-      const anim = c.animate(
-        [
-          { opacity: 0, transform: 'translateY(18px) scale(0.86)' },
-          { opacity: 1, transform: 'none' }
-        ],
-        { duration: 340, delay: i * 48, easing: 'cubic-bezier(0.16, 1, 0.3, 1)', fill: 'both' }
-      );
-      stage._drawAnims.push(anim);
+      c.classList.remove('revealed', 'settled');
+      c.style.setProperty('--i', i);
     });
-    const dealDone = n * 48 + 220;
     cards.forEach((c, i) => {
-      stage._drawTimers.push(setTimeout(() => c.classList.add('revealed'), dealDone + i * 80));
+      const developAt = DRAW_DELAY_MS + i * DRAW_STAG + DRAW_DROP_MS + DRAW_HOLD_MS;
+      stage._drawTimers.push(setTimeout(() => c.classList.add('revealed'), developAt));
+      stage._drawTimers.push(setTimeout(() => c.classList.add('settled'), developAt + Math.round(DRAW_DEVELOP_MS * 0.8)));
     });
-    const hold = dealDone + n * 80 + 1800;
+    const lastDone = DRAW_DELAY_MS + (n - 1) * DRAW_STAG + DRAW_DROP_MS + DRAW_HOLD_MS + DRAW_DEVELOP_MS;
+    const show = lastDone + 1400;
     stage._drawTimers.push(setTimeout(() => {
       if (!stage.classList.contains('is-in')) return;
-      cards.forEach((c) => c.classList.remove('revealed'));
+      wrap.classList.add('leaving');
       stage._drawTimers.push(setTimeout(() => {
         if (!stage.classList.contains('is-in')) return;
         buildDrawHand(stage);
+        wrap.classList.remove('leaving');
         playDraw(stage);
-      }, 420));
-    }, hold));
+      }, 120));
+    }, show));
     stage._drawTimers.push(setTimeout(() => {
       if (stage.classList.contains('is-in') && !wrap.querySelector('.tcard.revealed')) playDraw(stage);
-    }, hold + 900));
+    }, show + 900));
   }
 
   function freezeDemos(stages) {

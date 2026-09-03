@@ -26,13 +26,13 @@ function overlayOpen(el) {
   el.inert = false;
   el.classList.add('open');
 }
-function fadeCloseOverlay(el, _inner, onDone) {
+function fadeCloseOverlay(el, _inner, onDone, msOverride) {
   if (!el || !el.classList.contains('open') || el.dataset.closing === '1') return;
   const gen = (el._closeGen = (el._closeGen || 0) + 1);
   el.dataset.closing = '1';
   el.classList.add('is-closing');
   el.inert = true;
-  const ms = REDUCE_MOTION ? 0 : 180;
+  const ms = REDUCE_MOTION ? 0 : (msOverride != null ? msOverride : 180);
   let done = false;
   const finish = () => {
     if (done) return;
@@ -738,8 +738,7 @@ function sparklesHTML(n = 7) {
 // thumb.innerHTML，所以這些覆蓋層要有單一來源，避免生成後星號/生成鈕被清掉）。
 function thumbInnerHTML(it) {
   const relEnc = encodeURIComponent(it.rel);
-  // 圖還沒載入時 .thumb 跑跟塔羅牌面（.tarot-front.loading）同一套微光——共用
-  // tarotShimmer 這個 keyframe，不重新定義一份。onload/onerror 都要收掉 loading
+  // 圖還沒載入時 .thumb 跑一道琥珀微光（keyframes tarotShimmer）。onload/onerror 都要收掉 loading
   // （失敗也不能讓微光一直轉，見 CLAUDE.md「hover 泡泡」那條同類型的教訓：載入
   // 狀態一定要有明確的收尾，不能只處理成功路徑）。
   // src 故意不直接填（存 data-src），交給 wireThumb() 掛上跟 LoRA 預覽同一套併發
@@ -1732,8 +1731,118 @@ function isTyping() {
   return !!el && (/^(input|textarea|select)$/i.test(el.tagName) || el.isContentEditable);
 }
 
-/* ---------------- 抽卡（塔羅式發牌 + 翻牌） ---------------- */
-const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
+/* ---------------- 抽卡（暗房顯影：落紙 → 等藥 → 密度長出來） ---------------- */
+const TAROT_DROP_MS = 240;
+const TAROT_DROP_DELAY = 80;     // 等覆蓋層先暗下來再落第一張
+const TAROT_HOLD_MS = 220;
+const TAROT_DEVELOP_MS = 640;
+const TAROT_STAGGER_MS = 28;
+const TAROT_LEAVE_MS = 120;
+const TAROT_NAME_AT = 0.8;       // 名稱在顯影約 80% 時浮現
+let _tarotDrawGen = 0;
+
+function tarotStaggerMs() {
+  if (REDUCE_MOTION) return 0;
+  if (matchMedia('(max-width: 640px)').matches) return 0;
+  return TAROT_STAGGER_MS;
+}
+
+// 重抽時舊相紙先收 120ms，再開新的一批。第一次打開則直接 build。
+function beginTarotDraw(build) {
+  const overlay = $('tarot');
+  const wrap = $('tarot-cards');
+  const gen = ++_tarotDrawGen;
+  const leaving = overlay.classList.contains('open') && overlay.dataset.closing !== '1'
+    && wrap.children.length && !REDUCE_MOTION;
+  const go = () => {
+    if (gen !== _tarotDrawGen) return;
+    build();
+    wrap.classList.remove('leaving');
+  };
+  if (leaving) {
+    wrap.classList.add('leaving');
+    setTimeout(go, TAROT_LEAVE_MS);
+  } else {
+    go();
+  }
+}
+
+function bindTarotTilt(card) {
+  if (REDUCE_MOTION) return;
+  card.addEventListener('mousemove', e => tiltCard(card, e));
+  card.addEventListener('mouseleave', () => tiltReset(card));
+}
+
+function playPrintSheen(card) {
+  if (REDUCE_MOTION) return;
+  const front = card.querySelector('.tarot-front'); if (!front) return;
+  const old = front.querySelector('.print-sheen');
+  if (old) old.remove();
+  const b = document.createElement('span'); b.className = 'print-sheen'; front.appendChild(b);
+  const done = () => { if (b.parentNode) b.remove(); };
+  if (b.animate) {
+    b.animate(
+      [{ transform: 'translateX(-130%) skewX(-16deg)' }, { transform: 'translateX(170%) skewX(-16deg)' }],
+      { duration: 720, easing: 'cubic-bezier(.22,.61,.36,1)' }
+    ).finished.then(done).catch(done);
+  }
+  setTimeout(done, 800);   // 分頁在背景時 finished 不結算
+}
+
+function armTarotDevelop(cards, { onReveal } = {}) {
+  const gen = _tarotDrawGen;
+  const stag = tarotStaggerMs();
+  const markReady = (c) => {
+    const img = c.querySelector('.tarot-front img');
+    if (img && img.complete && img.naturalWidth) {
+      img.classList.add('ld');
+      const front = c.querySelector('.tarot-front');
+      if (front) front.classList.remove('loading');
+    }
+    const vid = c.querySelector('.tarot-front video');
+    if (vid && vid.readyState >= 2) {
+      vid.classList.add('ld');
+      const front = c.querySelector('.tarot-front');
+      if (front) front.classList.remove('loading');
+    }
+  };
+  const revealOne = (c, i) => {
+    if (gen !== _tarotDrawGen) return;
+    c.classList.add('revealed');
+    markReady(c);
+    if (onReveal) onReveal(c, i);
+  };
+  if (REDUCE_MOTION) {
+    cards.forEach((c, i) => {
+      c.style.animation = 'none';
+      c.classList.add('dropped', 'revealed', 'settled');
+      markReady(c);
+      if (onReveal) onReveal(c, i);
+    });
+    return;
+  }
+  const lastDropEnd = TAROT_DROP_DELAY + Math.max(0, cards.length - 1) * stag + TAROT_DROP_MS;
+  setTimeout(() => {
+    if (gen !== _tarotDrawGen) return;
+    cards.forEach(c => {
+      c.style.animation = 'none';
+      c.classList.add('dropped');
+    });
+  }, lastDropEnd + 20);
+  cards.forEach((c, i) => {
+    c.style.setProperty('--i', i);
+    const land = TAROT_DROP_DELAY + i * stag + TAROT_DROP_MS;
+    const developAt = land + TAROT_HOLD_MS;
+    const namesAt = developAt + Math.round(TAROT_DEVELOP_MS * TAROT_NAME_AT);
+    const sheenAt = developAt + Math.round(TAROT_DEVELOP_MS * 0.75);
+    setTimeout(() => revealOne(c, i), developAt);
+    setTimeout(() => { if (gen === _tarotDrawGen) c.classList.add('settled'); }, namesAt);
+    setTimeout(() => {
+      if (gen !== _tarotDrawGen) return;
+      if (c.classList.contains('rar-legendary')) playPrintSheen(c);
+    }, sheenAt);
+  });
+}
 
 // 洗牌取樣 n 張（不重複）。ALL 上萬筆，複製一次成本可接受（只在抽卡時）。
 function sampleN(arr, n) {
@@ -1761,62 +1870,47 @@ function drawTarot(pool, label) {
   const want = isMobile() ? 1 : 8;                        // 手機一次一張，桌面 8 張（4+4）
   const picks = sampleN(pool, Math.min(want, pool.length));
   const n = picks.length;
-  const title = document.querySelector('.tarot-title');
-  if (title) title.innerHTML = label ? `${ICON_SPARKLE}${label}　抽選${CN_NUM[n] || n}張${ICON_SPARKLE}` : `${ICON_SPARKLE}抽選${CN_NUM[n] || n}張${ICON_SPARKLE}`;
-  const wrap = $('tarot-cards');
-  wrap.classList.remove('ttag');                          // 瀏覽抽卡：清掉打標抽卡的 5×3 排版
-  $('tarot-stage').classList.remove('ttag-stage');
-  $('tarot-cancel-gen').hidden = true;   // 瀏覽抽卡不是生圖，沒有「取消生圖」這回事
-  $('tarot-hint').textContent = label
-    ? '點任一張看大圖與提示詞；E 重抽本分類、R 改抽全庫、Esc 關閉'
-    : '點任一張看大圖與提示詞；R 重抽一批、Esc 關閉';
-  wrap.innerHTML = '';
-  picks.forEach((it, i) => {
-    const card = document.createElement('div');
-    card.className = 'tarot-card' + (it.rarity ? ' rar-' + it.rarity : '');
-    card.style.animationDelay = REDUCE ? '0ms' : (i * 48) + 'ms';                 // 發牌 stagger（平行排列，無弧度）
-    const relEnc = encodeURIComponent(it.rel);
-    // 抽卡的牌面圖是「上方可見」的少數幾張 → 直接載入（不 lazy）。翻牌不再乾等它載入，
-    // 圖較慢時牌面先顯示載入微光（.tarot-front.loading），圖到了 onload 淡入並收掉微光。
-    const face = it.has_image
-      ? `<img decoding="async" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="" onload="this.classList.add('ld');this.closest('.tarot-front').classList.remove('loading')" onerror="this.closest('.tarot-front').classList.remove('loading')">`
-      : `<div class="tarot-noimg">${ICON_EMPTY}<span>尚無圖</span></div>`;
-    card.innerHTML =
-      `<div class="tarot-inner">
-         <div class="tarot-back"><span class="tarot-emblem">${ICON_SPARKLE}</span></div>
-         <div class="tarot-front${it.has_image ? ' loading' : ''}">${face}${it.rarity === 'legendary' ? sparklesHTML(9) : ''}${rarTag(it.rarity)}<div class="tarot-badges">${scoreBadgeHTML(it.score)}</div><div class="tarot-name"></div><div class="tarot-folder"></div><div class="tarot-glare"></div></div>
-       </div>`;
-    card.querySelector('.tarot-name').textContent = it.display_name || it.name;
-    card.querySelector('.tarot-folder').textContent = it.folder || '(根目錄)';
-    // 大圖疊上層，關掉回到這批牌；左右切走的就是**這批牌**（picks），不是格線的 VISIBLE
-    card.addEventListener('click', () => {
-      MODAL_FROM_TAROT = true;
-      MODAL_LIST = { kind: 'lib', items: picks };
-      openModal(it.rel);
+  beginTarotDraw(() => {
+    const title = document.querySelector('.tarot-title');
+    if (title) title.textContent = label ? `${label}　抽選${CN_NUM[n] || n}張` : `抽選${CN_NUM[n] || n}張`;
+    const wrap = $('tarot-cards');
+    wrap.classList.remove('ttag');                          // 瀏覽抽卡：清掉打標抽卡的 5×2 排版
+    $('tarot-stage').classList.remove('ttag-stage');
+    $('tarot-cancel-gen').hidden = true;   // 瀏覽抽卡不是生圖，沒有「取消生圖」這回事
+    $('tarot-hint').textContent = label
+      ? '點任一張看大圖與提示詞；E 重抽本分類、R 改抽全庫、Esc 關閉'
+      : '點任一張看大圖與提示詞；R 重抽一批、Esc 關閉';
+    wrap.innerHTML = '';
+    picks.forEach((it, i) => {
+      const card = document.createElement('div');
+      card.className = 'tarot-card' + (it.rarity ? ' rar-' + it.rarity : '');
+      card.style.setProperty('--i', i);
+      const relEnc = encodeURIComponent(it.rel);
+      // 抽卡的牌面圖是「上方可見」的少數幾張 → 直接載入（不 lazy）。顯影不乾等它載入，
+      // 圖還沒到時露出相紙；onload 加 .ld 才把像素送進 contrast/brightness 過渡。
+      const face = it.has_image
+        ? `<img decoding="async" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="" onload="this.classList.add('ld');this.closest('.tarot-front').classList.remove('loading')" onerror="this.closest('.tarot-front').classList.remove('loading')">`
+        : `<div class="tarot-noimg">${ICON_EMPTY}<span>尚無圖</span></div>`;
+      card.innerHTML =
+        `<div class="tarot-front${it.has_image ? ' loading' : ''}">${face}${rarTag(it.rarity)}<div class="tarot-badges">${scoreBadgeHTML(it.score)}</div><div class="tarot-name"></div><div class="tarot-folder"></div><div class="tarot-glare"></div></div>`;
+      card.querySelector('.tarot-name').textContent = it.display_name || it.name;
+      card.querySelector('.tarot-folder').textContent = it.folder || '(根目錄)';
+      card.addEventListener('click', () => {
+        MODAL_FROM_TAROT = true;
+        MODAL_LIST = { kind: 'lib', items: picks };
+        openModal(it.rel);
+      });
+      bindTarotTilt(card);
+      wrap.appendChild(card);
     });
-    if (!REDUCE) {                                        // 3D 傾斜（參考 Aceternity 3D card）
-      card.addEventListener('mousemove', e => tiltCard(card, e));
-      card.addEventListener('mouseleave', () => tiltReset(card));
-    }
-    wrap.appendChild(card);
-  });
-  overlayOpen($('tarot'));
-  // 發牌完成後依序翻牌；reduced-motion 直接全開
-  const cards = [...wrap.children];
-  if (REDUCE) { cards.forEach(c => c.classList.add('revealed')); return; }
-  const dealDone = n * 48 + 220;
-  cards.forEach((c, i) => {
-    // 照固定節奏翻牌，不再等圖片載入（否則慢圖會把整段動畫拖到數秒）。已快取的圖
-    // 立刻收掉載入微光；未快取的翻開先顯示微光，onload 再淡入。
-    const img = c.querySelector('.tarot-front img');
-    if (img && img.complete && img.naturalWidth) c.querySelector('.tarot-front').classList.remove('loading');
-    setTimeout(() => c.classList.add('revealed'), dealDone + i * 80);
+    overlayOpen($('tarot'));
+    armTarotDevelop([...wrap.children]);
   });
 }
 
-// 卡片隨滑鼠 3D 傾斜（參考 Aceternity 3D card）：依游標相對卡片中心算 rotateX/Y，
-// 並讓光澤跟著游標。翻牌後牌面已非鏡像，傾斜方向自然。
+// 卡片隨滑鼠 3D 傾斜：依游標相對卡片中心算 rotateX/Y，並讓光澤跟著游標。
 // 不加 scale——縮放會把整張(含文字/圖)當點陣圖放大而糊掉；只留傾斜，內容較清晰。
+// 落紙動畫還沒拆掉前不寫 transform，否則會把 drop keyframe 蓋掉。
 // 跟聚光（spotlight）同一個理由做 rAF 節流＋矩形快取：mousemove 一秒上百次，每次都
 // 「寫 transform 再讀 getBoundingClientRect()」會逼瀏覽器在事件迴圈裡同步重算版面，
 // 而這裡量的還是一張正在跑 3D transform 的牌。矩形只在換牌時重量——牌是浮層置中的，
@@ -1837,6 +1931,7 @@ function tiltFlush() {
   }
 }
 function tiltCard(card, e) {
+  if (!card.classList.contains('dropped')) return;
   if (card !== _tiltCard) {
     _tiltCard = card;
     _tiltRect = card.getBoundingClientRect();
@@ -1845,7 +1940,7 @@ function tiltCard(card, e) {
   _tiltX = e.clientX; _tiltY = e.clientY;
   if (!_tiltRAF) _tiltRAF = requestAnimationFrame(tiltFlush);
 }
-// 離開牌面時把快取清掉，不然下次滑回同一張牌會沿用可能已經過期的矩形（牌會重新發牌、
+// 離開牌面時把快取清掉，不然下次滑回同一張牌會沿用可能已經過期的矩形（牌會重新落紙、
 // 位置可能不同），而且 tiltFlush 若在 transform 被清空之後才跑會把傾斜又寫回去。
 function tiltReset(card) {
   if (_tiltCard === card) { _tiltCard = null; _tiltRect = null; _tiltGlare = null; }
@@ -1859,10 +1954,10 @@ function closeTarot() {
     if (MODE === 'tag') { render(); updateTagbar(); }   // 反映剛標的
     if (LORA_TAROT) { LORA_TAROT = false; document.body.classList.remove('lora-tarot-open'); }
     if (CONCEPTS_TAROT) { CONCEPTS_TAROT = false; document.body.classList.remove('concepts-tarot-open'); }
-  });
+  }, TAROT_LEAVE_MS);
 }
 
-// ── LoRA 大面板「隨機瀏覽」：沿用詞庫抽卡同一套塔羅發牌/翻牌，改抽 LoRA。跟瀏覽
+// ── LoRA 大面板「隨機瀏覽」：沿用詞庫抽卡同一套顯影節奏，改抽 LoRA。跟瀏覽
 // 抽卡共用同一個 #tarot 覆蓋層與卡片動畫邏輯，只是牌面內容、點擊行為（選中而非
 // 開大圖）不同。LORA_TAROT 旗標讓 R/Esc 鍵盤處理與 closeTarot() 知道現在是這個
 // 情境（大面板本身保持開著、疊在它上面，見 body.lora-tarot-open 的 z-index 覆寫）。
@@ -1881,69 +1976,43 @@ function drawLoraTarot(pool, label) {
   const want = isMobile() ? 1 : 8;
   const picks = sampleN(pool, Math.min(want, pool.length));
   const n = picks.length;
-  const title = document.querySelector('.tarot-title');
-  if (title) title.innerHTML = label ? `${ICON_SPARKLE}${label} 隨機 ${CN_NUM[n] || n} 個 LoRA${ICON_SPARKLE}` : `${ICON_SPARKLE}隨機瀏覽 ${CN_NUM[n] || n} 個 LoRA${ICON_SPARKLE}`;
-  const wrap = $('tarot-cards');
-  wrap.classList.remove('ttag');
-  $('tarot-stage').classList.remove('ttag-stage');
-  $('tarot-cancel-gen').hidden = true;   // 隨機瀏覽 LoRA 不是生圖
-  $('tarot-hint').textContent = '點任一張直接選中並返回；R 重抽全庫、E 重抽本分類、Esc 關閉';
-  wrap.innerHTML = '';
-  picks.forEach((l, i) => {
-    const card = document.createElement('div');
-    card.className = 'tarot-card';
-    card.style.animationDelay = REDUCE ? '0ms' : (i * 48) + 'ms';
-    // src 故意先不填（存 data-src），等下面依發牌順序透過 _previewEnqueue 排隊才真的
-    // 開始下載——一次翻 8 張，若同時把 8 個 src 都設好，瀏覽器會同時開 8 條下載，實測
-    // 抓到過遠端連線同時擠很多個下載時，個別檔案伺服器端只要 1~2ms 卻要等好幾秒才傳完
-    // （頻寬被擠爆，見 makeLoraPreviewEl 上面那則長註解），這裡跟 LoRA 清單共用同一套
-    // 節流機制，不會因為「只有 8 張」就假設沒事。
-    const face = l.preview
-      ? (isLoraPreviewVideo(l)
-          ? `<video muted loop playsinline preload="none" data-src="${loraPreviewUrl(l)}"></video>`
-          : `<img decoding="async" data-src="${loraPreviewUrl(l)}" alt="" onload="this.classList.add('ld');this.closest('.tarot-front').classList.remove('loading')" onerror="this.closest('.tarot-front').classList.remove('loading')">`)
-      : `<div class="tarot-noimg">${ICON_EMPTY}<span>尚無預覽</span></div>`;
-    card.innerHTML =
-      `<div class="tarot-inner">
-         <div class="tarot-back"><span class="tarot-emblem">${ICON_SPARKLE}</span></div>
-         <div class="tarot-front${l.preview ? ' loading' : ''}">${face}<div class="tarot-name"></div><div class="tarot-folder"></div><div class="tarot-glare"></div></div>
-       </div>`;
-    card.querySelector('.tarot-name').textContent = l.title || l.name;
-    card.querySelector('.tarot-folder').textContent = l.folder || '(根目錄)';
-    card.addEventListener('click', () => { selectGenLora(l); closeTarot(); });
-    if (!REDUCE) {
-      card.addEventListener('mousemove', e => tiltCard(card, e));
-      card.addEventListener('mouseleave', () => tiltReset(card));
-    }
-    wrap.appendChild(card);
-  });
-  overlayOpen($('tarot'));
-  const cards = [...wrap.children];
-  if (REDUCE) {
-    // 沒有發牌動畫可以掛，直接把每張的 data-src 排進下載佇列，不然永遠不會開始
-    // 下載（reduced-motion 使用者會看到一片空白）。還是走佇列限流，不是直接賦值。
-    cards.forEach(c => {
-      const media = c.querySelector('.tarot-front img, .tarot-front video');
-      if (media && media.dataset.src) _previewEnqueue((done) => _previewStart(media, done));
-      c.classList.add('revealed');
+  beginTarotDraw(() => {
+    const title = document.querySelector('.tarot-title');
+    if (title) title.textContent = label ? `${label} 隨機 ${CN_NUM[n] || n} 個 LoRA` : `隨機瀏覽 ${CN_NUM[n] || n} 個 LoRA`;
+    const wrap = $('tarot-cards');
+    wrap.classList.remove('ttag');
+    $('tarot-stage').classList.remove('ttag-stage');
+    $('tarot-cancel-gen').hidden = true;   // 隨機瀏覽 LoRA 不是生圖
+    $('tarot-hint').textContent = '點任一張直接選中並返回；R 重抽全庫、E 重抽本分類、Esc 關閉';
+    wrap.innerHTML = '';
+    picks.forEach((l, i) => {
+      const card = document.createElement('div');
+      card.className = 'tarot-card';
+      card.style.setProperty('--i', i);
+      // src 故意先不填（存 data-src），等顯影開始才透過 _previewEnqueue 排隊下載——
+      // 一次 8 張若同時把 src 都設好，瀏覽器會同時開 8 條下載，實測遠端連線被擠爆
+      // 時個別檔案伺服器端只要 1~2ms 卻要等好幾秒才傳完（見 makeLoraPreviewEl 那則
+      // 長註解）。跟 LoRA 清單共用同一套節流，不會因為「只有 8 張」就假設沒事。
+      const face = l.preview
+        ? (isLoraPreviewVideo(l)
+            ? `<video muted loop playsinline preload="none" data-src="${loraPreviewUrl(l)}" onloadeddata="this.classList.add('ld');this.closest('.tarot-front').classList.remove('loading')"></video>`
+            : `<img decoding="async" data-src="${loraPreviewUrl(l)}" alt="" onload="this.classList.add('ld');this.closest('.tarot-front').classList.remove('loading')" onerror="this.closest('.tarot-front').classList.remove('loading')">`)
+        : `<div class="tarot-noimg">${ICON_EMPTY}<span>尚無預覽</span></div>`;
+      card.innerHTML =
+        `<div class="tarot-front${l.preview ? ' loading' : ''}">${face}<div class="tarot-name"></div><div class="tarot-folder"></div><div class="tarot-glare"></div></div>`;
+      card.querySelector('.tarot-name').textContent = l.title || l.name;
+      card.querySelector('.tarot-folder').textContent = l.folder || '(根目錄)';
+      card.addEventListener('click', () => { selectGenLora(l); closeTarot(); });
+      bindTarotTilt(card);
+      wrap.appendChild(card);
     });
-    return;
-  }
-  const dealDone = n * 48 + 220;
-  cards.forEach((c, i) => {
-    const media = c.querySelector('.tarot-front img, .tarot-front video');
-    setTimeout(() => {
-      if (media && media.dataset.src) {
-        // 這張輪到揭示了才排進下載佇列（跟 LoRA 清單共用同一套併發上限，見
-        // makeLoraPreviewEl 那則長註解），不是「揭示＝立刻下載」，佇列滿的話
-        // 要等前面的騰出名額。
-        _previewEnqueue((done) => _previewStart(media, done));
+    overlayOpen($('tarot'));
+    armTarotDevelop([...wrap.children], {
+      onReveal(c) {
+        const media = c.querySelector('.tarot-front img, .tarot-front video');
+        if (media && media.dataset.src) _previewEnqueue((done) => _previewStart(media, done));
       }
-      if (media && (media.tagName === 'VIDEO' || (media.complete && media.naturalWidth))) {
-        c.querySelector('.tarot-front').classList.remove('loading');
-      }
-      c.classList.add('revealed');
-    }, dealDone + i * 80);
+    });
   });
 }
 
@@ -2251,48 +2320,45 @@ function drawTagTarot() {
   const pool = tarotPool();
   if (!pool.length) { toast('沒有「有圖且尚未打標」的詞庫可抽了'); return; }
   const picks = sampleN(pool, Math.min(DRAW_N, pool.length));
-  const wrap = $('tarot-cards');
-  wrap.classList.add('ttag');
-  $('tarot-stage').classList.add('ttag-stage');
-  $('tarot-cancel-gen').hidden = true;   // 抽卡打標不是生圖
-  const title = document.querySelector('.tarot-title');
-  if (title) title.innerHTML = `${ICON_SPARKLE}抽卡打標${ICON_SPARKLE}`;
-  $('tarot-hint').textContent = '方向鍵移動焦點，1 普通・2 稀有・3 特別・4 傳奇打標（自動跳下一張），S 跳過・Z 復原・R 重抽；也可直接點卡片按鈕。隨標即時生效。';
-  wrap.innerHTML = '';
-  TAROT_HISTORY.length = 0;
-  picks.forEach((it, i) => {
-    const card = document.createElement('div');
-    card.className = 'tarot-card ttag-card' + (it.rarity ? ' rar-' + it.rarity : '');
-    card.dataset.rel = it.rel;
-    card.style.animationDelay = REDUCE_MOTION ? '0ms' : (i * 24) + 'ms';
-    const relEnc = encodeURIComponent(it.rel);
-    card.innerHTML =
-      `<div class="tarot-inner">
-         <div class="tarot-back"><span class="tarot-emblem">${ICON_SPARKLE}</span></div>
-         <div class="tarot-front">
-           <img decoding="async" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="">
+  beginTarotDraw(() => {
+    const wrap = $('tarot-cards');
+    wrap.classList.add('ttag');
+    $('tarot-stage').classList.add('ttag-stage');
+    $('tarot-cancel-gen').hidden = true;   // 抽卡打標不是生圖
+    const title = document.querySelector('.tarot-title');
+    if (title) title.textContent = '抽卡打標';
+    $('tarot-hint').textContent = '方向鍵移動焦點，1 普通・2 稀有・3 特別・4 傳奇打標（自動跳下一張），S 跳過・Z 復原・R 重抽；也可直接點卡片按鈕。隨標即時生效。';
+    wrap.innerHTML = '';
+    TAROT_HISTORY.length = 0;
+    picks.forEach((it, i) => {
+      const card = document.createElement('div');
+      card.className = 'tarot-card ttag-card' + (it.rarity ? ' rar-' + it.rarity : '');
+      card.dataset.rel = it.rel;
+      card.style.setProperty('--i', i);
+      const relEnc = encodeURIComponent(it.rel);
+      card.innerHTML =
+        `<div class="tarot-front">
+           <img decoding="async" src="/api/thumb?rel=${relEnc}&v=${it.image_mtime}" alt="" onload="this.classList.add('ld')">
            <div class="tarot-name"></div>
            <div class="tarot-folder"></div>
            <div class="ttag-rar">
              <button data-r="common">普通</button><button data-r="rare">稀有</button>
              <button data-r="special">特別</button><button data-r="legendary">傳奇</button>
            </div>
-         </div>
-       </div>`;
-    card.querySelector('.tarot-name').textContent = it.display_name || it.name;
-    card.querySelector('.tarot-folder').textContent = it.folder || '(根目錄)';
-    card.querySelectorAll('.ttag-rar button').forEach(b =>
-      b.onclick = () => { setTarotFocus(i); assignTarot(it.rel, card, b.dataset.r); });
-    card.addEventListener('mouseenter', () => setTarotFocus(i));
-    wrap.appendChild(card);
+           <div class="tarot-glare"></div>
+         </div>`;
+      card.querySelector('.tarot-name').textContent = it.display_name || it.name;
+      card.querySelector('.tarot-folder').textContent = it.folder || '(根目錄)';
+      card.querySelectorAll('.ttag-rar button').forEach(b =>
+        b.onclick = () => { setTarotFocus(i); assignTarot(it.rel, card, b.dataset.r); });
+      card.addEventListener('mouseenter', () => setTarotFocus(i));
+      wrap.appendChild(card);
+    });
+    overlayOpen($('tarot'));
+    setTarotFocus(0);
+    updateTarotProgress();
+    armTarotDevelop([...wrap.children]);
   });
-  overlayOpen($('tarot'));
-  setTarotFocus(0);
-  updateTarotProgress();
-  const cards = [...wrap.children];
-  if (REDUCE_MOTION) { cards.forEach(c => c.classList.add('revealed')); return; }
-  const dealDone = picks.length * 24 + 170;
-  cards.forEach((c, i) => setTimeout(() => c.classList.add('revealed'), dealDone + i * 32));
 }
 function assignTarot(rel, card, key) {
   const it = itemOf(rel);
@@ -2301,19 +2367,9 @@ function assignTarot(rel, card, key) {
   RARITY_KEYS.forEach(k => card.classList.remove('assigned-' + k, 'rar-' + k));
   card.classList.add('assigned-' + key);
   if (key !== 'common') card.classList.add('rar-' + key);
-  const front = card.querySelector('.tarot-front');
-  const oldSpark = front && front.querySelector('.sparkles');
-  if (oldSpark) oldSpark.remove();
-  if (key === 'legendary') { legendaryBurst(card); if (front) front.insertAdjacentHTML('beforeend', sparklesHTML(9)); }
+  if (key === 'legendary') playPrintSheen(card);
   updateTarotProgress();
   updateTagbar();
-}
-function legendaryBurst(card) {
-  if (REDUCE_MOTION) return;
-  const front = card.querySelector('.tarot-front'); if (!front) return;
-  const b = document.createElement('span'); b.className = 'ttag-burst'; front.appendChild(b);
-  b.animate([{ opacity: .95, transform: 'scale(.35)' }, { opacity: 0, transform: 'scale(1.15)' }],
-    { duration: 560, easing: 'cubic-bezier(.22,.61,.36,1)' }).onfinish = () => b.remove();
 }
 function undoTarot() {
   const last = TAROT_HISTORY.pop();
@@ -3230,7 +3286,7 @@ const FEATURE_GROUPS = [
   ]},
   { title: '生圖', rows: [
     { desc: '<b>多選詞庫＋選 LoRA 生圖</b>——瀏覽格線點縮圖多選，右上「選 LoRA」開大面板挑 LoRA，genbar 按「生圖」送出' },
-    { desc: '<b>LoRA 大面板</b>——左欄分類/子資料夾篩選＋搜尋＋翻頁，右欄每段觸發詞各自一張完整文字卡（勾選要用哪幾段）＋強度滑桿＋參考圖；左欄下方「隨機瀏覽」疊一批塔羅卡讓你點選' },
+    { desc: '<b>LoRA 大面板</b>——左欄分類/子資料夾篩選＋搜尋＋翻頁，右欄每段觸發詞各自一張完整文字卡（勾選要用哪幾段）＋強度滑桿＋參考圖；左欄下方「隨機瀏覽」疊一批相紙讓你點選' },
     { desc: '<b>雙 LoRA 疊加</b>——右欄「LoRA 1／LoRA 2」兩張分頁卡各自獨立選擇與強度，可疊加使用' },
     { desc: '<b>各格獨立抽取範圍</b>——LoRA1/LoRA2 各自獨立記住自己的分類/子資料夾抽取範圍，設定彈窗「一般」分頁跟大面板左欄晶片雙向同步；哪格已經放了固定 LoRA，範圍晶片會自動換成顯示那顆 LoRA（含縮圖，滑鼠移上去有預覽）' },
     { desc: '<b>Concepts 參與判斷</b>——設定彈窗「一般」分頁 LoRA1/LoRA2 各有一顆「參與判斷／已跳過」切換（預設跳過），只有切成參與的格子才會影響 <b>Concepts</b> 抽卡的角色/情境判斷，點旁邊「？ 詳細教學」看完整說明' },
@@ -3936,7 +3992,8 @@ async function runGenJobs(jobs, picks, label) {
   startGenPoll(items.map(x => x.id));
 }
 
-// 生圖抽卡的塔羅呈現：沿用瀏覽抽卡的發牌／翻牌動畫，牌面是生成中的即時預覽而非既有圖。
+// 生圖抽卡的塔羅呈現：沿用瀏覽抽卡的落紙／顯影，牌面是生成中的即時預覽而非既有圖。
+// pending 期間密度停在「還在沖」；完成後才走到全密度。
 // 目前塔羅疊層顯示的這一批生圖 gid——「取消生圖」只停這批，不影響使用者更早抽的其他
 // 批次（那些已經看不到牌面了，但還在圖庫背景繼續跑，見 runGen/startGenPoll）。每次
 // openGenTarot 呼叫都整批換掉，不是累加。
@@ -3944,58 +4001,48 @@ let CUR_GEN_TAROT_IDS = [];
 function openGenTarot(items, picks, label) {
   const n = items.length;
   CUR_GEN_TAROT_IDS = items.map(it => it.id);
-  const title = document.querySelector('.tarot-title');
-  if (title) title.innerHTML = label ? `${ICON_SPARKLE}${label}　抽選${CN_NUM[n] || n}張生圖${ICON_SPARKLE}` : `${ICON_SPARKLE}抽選${CN_NUM[n] || n}張生圖${ICON_SPARKLE}`;
-  const wrap = $('tarot-cards');
-  wrap.classList.remove('ttag');
-  $('tarot-stage').classList.remove('ttag-stage');
-  $('tarot-cancel-gen').hidden = false;
-  $('tarot-hint').textContent = CONCEPTS_TAROT
-    ? '牌面即時顯示生成中的採樣畫面；完成後點卡片看大圖，C 照「一般」分頁判斷重抽、R 模板改全庫、E 模板限目前資料夾、Esc 關閉'
-    : label
-    ? '牌面即時顯示生成中的採樣畫面；完成後點卡片看大圖，E 重抽本分類、R 改抽全庫、Esc 關閉'
-    : '牌面即時顯示生成中的採樣畫面；完成後點卡片看大圖，R 重抽、Esc 關閉';
-  wrap.innerHTML = '';
-  items.forEach((it, i) => {
-    const item = picks[i] || {};
-    const card = document.createElement('div');
-    card.className = 'tarot-card gen-card pending';
-    card.dataset.gid = it.id;
-    card.style.animationDelay = REDUCE ? '0ms' : (i * 48) + 'ms';
-    card.innerHTML =
-      `<div class="tarot-inner">
-         <div class="tarot-back"><span class="tarot-emblem">${ICON_SPARKLE}</span></div>
-         <div class="tarot-front gen-front">
+  beginTarotDraw(() => {
+    const title = document.querySelector('.tarot-title');
+    if (title) title.textContent = label ? `${label}　抽選${CN_NUM[n] || n}張生圖` : `抽選${CN_NUM[n] || n}張生圖`;
+    const wrap = $('tarot-cards');
+    wrap.classList.remove('ttag');
+    $('tarot-stage').classList.remove('ttag-stage');
+    $('tarot-cancel-gen').hidden = false;
+    $('tarot-hint').textContent = CONCEPTS_TAROT
+      ? '牌面即時顯示生成中的採樣畫面；完成後點卡片看大圖，C 照「一般」分頁判斷重抽、R 模板改全庫、E 模板限目前資料夾、Esc 關閉'
+      : label
+      ? '牌面即時顯示生成中的採樣畫面；完成後點卡片看大圖，E 重抽本分類、R 改抽全庫、Esc 關閉'
+      : '牌面即時顯示生成中的採樣畫面；完成後點卡片看大圖，R 重抽、Esc 關閉';
+    wrap.innerHTML = '';
+    items.forEach((it, i) => {
+      const item = picks[i] || {};
+      const card = document.createElement('div');
+      card.className = 'tarot-card gen-card pending';
+      card.dataset.gid = it.id;
+      card.style.setProperty('--i', i);
+      card.innerHTML =
+        `<div class="tarot-front gen-front">
            <img class="gen-live" decoding="async" alt="" onload="this.classList.add('ld')">
-           <div class="gen-spin"><i class="gen-loader"></i></div>
            <div class="tarot-badges"></div>
            <div class="tarot-name"></div>
            <div class="tarot-folder"></div>
            <div class="tarot-glare"></div>
-         </div>
-       </div>`;
-    card.querySelector('.tarot-name').textContent = item.display_name || item.name || it.name;
-    card.querySelector('.tarot-folder').textContent = item.folder || '(根目錄)';
-    // 疊上層，關掉回到這批牌；左右切走的是**這批生圖裡已經完成的那些**（還在生的
-    // 沒有圖可看，切過去只會是空的）
-    card.addEventListener('click', () => {
-      if (card.classList.contains('pending')) return;
-      MODAL_FROM_TAROT = true;
-      MODAL_LIST = { kind: 'gallery',
-        items: CUR_GEN_TAROT_IDS.map(id => GALLERY.find(g => g.id === id)).filter(g => g && g.done) };
-      openGalleryItem(it.id);
+         </div>`;
+      card.querySelector('.tarot-name').textContent = item.display_name || item.name || it.name;
+      card.querySelector('.tarot-folder').textContent = item.folder || '(根目錄)';
+      card.addEventListener('click', () => {
+        if (card.classList.contains('pending')) return;
+        MODAL_FROM_TAROT = true;
+        MODAL_LIST = { kind: 'gallery',
+          items: CUR_GEN_TAROT_IDS.map(id => GALLERY.find(g => g.id === id)).filter(g => g && g.done) };
+        openGalleryItem(it.id);
+      });
+      bindTarotTilt(card);
+      wrap.appendChild(card);
     });
-    if (!REDUCE) {
-      card.addEventListener('mousemove', e => tiltCard(card, e));
-      card.addEventListener('mouseleave', () => tiltReset(card));
-    }
-    wrap.appendChild(card);
+    overlayOpen($('tarot'));
+    armTarotDevelop([...wrap.children]);
   });
-  overlayOpen($('tarot'));
-  const cards = [...wrap.children];
-  if (REDUCE) { cards.forEach(c => c.classList.add('revealed')); return; }
-  const dealDone = n * 48 + 220;
-  cards.forEach((c, i) => setTimeout(() => c.classList.add('revealed'), dealDone + i * 80));
 }
 
 // 更新某 gid 的所有卡片（圖庫＋塔羅），pending 顯示即時預覽、done 換成品、error 標記；

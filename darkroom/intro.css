@@ -74,7 +74,7 @@
   --z-modal: 400;
 
   --nav-clear: 5.5rem;
-  --dur-deal: 340ms;
+  --dur-drop: 240ms;
 }
 
 @font-face {
@@ -296,35 +296,35 @@ section[id], header[id] { scroll-margin-top: var(--nav-clear); }
 .mini-tarot {
   display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-2xs); height: 100%; padding: var(--space-xs);
-  align-content: center; perspective: 640px;
+  align-content: center;
 }
-.tcard { min-width: 0; transform-style: preserve-3d; }
-.tinner {
-  position: relative; aspect-ratio: 1; transform-style: preserve-3d;
-  transform: rotateY(180deg);
-  transition: transform var(--dur-long) var(--ease-out);
+.mini-tarot.leaving .tcard {
+  animation: none;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 120ms var(--ease-in), transform 120ms var(--ease-in);
 }
-.tcard.revealed .tinner { transform: rotateY(0deg); }
-.tfront, .tback {
-  backface-visibility: hidden; -webkit-backface-visibility: hidden;
-  border-radius: 6px; overflow: hidden;
+.tcard {
+  min-width: 0;
+  animation: tarotDrop var(--dur-drop) var(--ease-out) backwards;
+  animation-delay: calc(80ms + var(--i, 0) * 28ms);
 }
-.tfront { position: relative; background: var(--color-paper-3); }
-.tfront img { width: 100%; height: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
-.tback {
-  position: absolute; inset: 0; transform: rotateY(180deg);
-  display: grid; place-items: center;
-  background:
-    radial-gradient(circle at 50% 34%, var(--color-bloom), transparent 56%),
-    repeating-linear-gradient(135deg, color-mix(in oklch, var(--color-accent) 8%, transparent) 0 6px, transparent 6px 12px),
-    var(--color-paper-3);
-  border: var(--rule-hair) solid color-mix(in oklch, var(--color-accent) 34%, var(--color-rule));
+@keyframes tarotDrop {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
 }
-.temblem {
-  width: 34%; aspect-ratio: 1; color: var(--color-accent);
-  filter: drop-shadow(0 0 6px var(--color-bloom));
+.tfront {
+  position: relative; aspect-ratio: 1; overflow: hidden; border-radius: 6px;
+  background: oklch(88% 0.03 80);
+  border: var(--rule-hair) solid oklch(72% 0.04 75);
 }
-.temblem svg { width: 100%; height: 100%; display: block; }
+.tfront img {
+  width: 100%; height: 100%; aspect-ratio: 1; object-fit: cover; display: block;
+  filter: contrast(0.08) brightness(2.35);
+  transition: filter 640ms var(--ease-out);
+}
+.tfront img:not(.ld) { opacity: 0; }
+.tcard.revealed .tfront img { filter: none; }
 
 /* ── 本機：藥液流程單 ── */
 .slip { padding: var(--space-3xl) var(--page-gutter) var(--space-2xl); }
@@ -383,7 +383,8 @@ section[id], header[id] { scroll-margin-top: var(--nav-clear); }
   html { scroll-behavior: auto; }
   .intro-fb-run, .mini-wall, .hero-pin h1 em::after { animation: none; }
   .hero-pin h1 em::after { transform: none; }
-  .cta-fill, .tag-dot, .mini-wall--row .cell, .mini-wall--row .cell::after, .tinner,
+  .cta-fill, .tag-dot, .mini-wall--row .cell, .mini-wall--row .cell::after, .tfront img,
   .age-gate-actions button { transition: none; }
-  .tcard.revealed .tinner, .tinner { transform: none; }
+  .tcard { animation: none; }
+  .tcard.revealed .tfront img { filter: none; }
 }

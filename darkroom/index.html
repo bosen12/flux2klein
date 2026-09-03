@@ -375,9 +375,9 @@
       <!-- 子資料夾晶片：只在選了非「全部」分類、且該分類底下真的有子資料夾（如
            Character/other、Character/manhwa）時才出現。獨立容器，跟 #lm-cats 分開重建。 -->
       <div id="lm-subcats" class="lm-subcats"></div>
-      <!-- 隨機瀏覽：沿用詞庫抽卡同一套塔羅發牌/翻牌，改抽 LoRA。獨立一列（不塞進
+      <!-- 隨機瀏覽：沿用詞庫抽卡同一套顯影節奏，改抽 LoRA。獨立一列（不塞進
            #lm-cats，那個 div 每次 renderLmCats() 都會整個重建，塞進去會被清掉）。 -->
-      <button class="ghost lm-random-btn" id="lm-random-btn" title="隨機瀏覽 LoRA（塔羅式呈現，點一張直接選中）"><svg class="btn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.3" cy="8.3" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.7" cy="8.3" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="8.3" cy="15.7" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.7" cy="15.7" r="1.2" fill="currentColor" stroke="none"/></svg>隨機瀏覽</button>
+      <button class="ghost lm-random-btn" id="lm-random-btn" title="隨機瀏覽 LoRA（顯影呈現，點一張直接選中）"><svg class="btn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.3" cy="8.3" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.7" cy="8.3" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="8.3" cy="15.7" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.7" cy="15.7" r="1.2" fill="currentColor" stroke="none"/></svg>隨機瀏覽</button>
       <div class="lm-search-wrap">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input type="text" id="lm-search" placeholder="搜尋 LoRA…" autocomplete="off">
@@ -423,7 +423,7 @@
   </div>
 </div>
 
-<!-- 抽卡：從全部隨機抽 5 張，塔羅式發牌 + 翻牌呈現 -->
+<!-- 抽卡：從全部隨機抽，暗房顯影（落紙 → 等藥 → 密度長出來） -->
 <div id="tarot" class="tarot-overlay" inert>
   <div class="tarot-stage" id="tarot-stage">
     <div class="tarot-head">
