@@ -20,7 +20,9 @@ python serve.py --https              # HTTPS 模式（手機才能用麥克風/�
 
 Windows 上有 `start.bat` / `stop_panel.bat` 可用。
 
-`--https` 會用 `openssl` 自動產生自簽憑證（`cert.pem` / `key.pem` / `cert.pem.san`，皆 gitignore）。憑證 SAN 自動含 `localhost`、`127.0.0.1`、本機**區網 IP** 與 **Tailscale IP**（100.64.0.0/10，先問 `tailscale ip -4`，失敗再掃介面），所以手機不論走區網或 Tailscale IP 連都不會憑證主機不符。**SAN 變了會自動重產**（換網路、Tailscale 上線都不用手動刪 `cert.pem`）——靠 `cert.pem.san` marker 比對目前 SAN 決定要不要重簽。**為什麼需要 HTTPS**：`getUserMedia`／Web Speech API 這類要麥克風的功能只在「安全來源」可用——桌面 `localhost` 算安全、但手機透過 `http://192.168.x.x` 或 `http://100.x.x.x` 連都不算，只有 HTTPS 能解。前端已 HTTPS-ready（WS 用 `location.protocol` 選 `wss`、API 用 `location.origin`），不用改。
+`--https` 會用 `openssl` 自動產生自簽憑證（`cert.pem` / `key.pem` / `cert.pem.san`，皆 gitignore）。憑證 SAN 自動含 `localhost`、`127.0.0.1`、本機**區網 IP** 與 **Tailscale IP**（100.64.0.0/10，先問 `tailscale ip -4`，失敗再掃介面）。**連線白名單只放行本機與 Tailscale**——面板沒有登入，綁 `0.0.0.0` 是為了讓 Tailscale 虛擬網卡收得到，區網／公網 IP 會被直接斷線並印 `[拒絕]`。手機請走 `https://<Tailscale IP>:7801/klein`。**SAN 變了會自動重產**（換網路、Tailscale 上線都不用手動刪 `cert.pem`）——靠 `cert.pem.san` marker 比對目前 SAN 決定要不要重簽。**為什麼需要 HTTPS**：`getUserMedia`／Web Speech API 這類要麥克風的功能只在「安全來源」可用——桌面 `localhost` 算安全、但手機透過 `http://100.x.x.x` 連都不算，只有 HTTPS 能解。前端已 HTTPS-ready（WS 用 `location.protocol` 選 `wss`、API 用 `location.origin`），不用改。
+
+AI 提示詞優化走同源 `/panel/groq`（`groq_proxy.py`），`config.js` 送給瀏覽器前會剝掉 `GROQ_API_KEY(S)`。不要再讓前端直打 `api.groq.com`。
 
 沒有測試框架。可用的驗證手段只有兩個：
 

@@ -27,12 +27,16 @@
 **Illustrious**（Danbooru tag 系）
 - 使用逗號分隔 tag，不是自然語言
 - 順序：品質詞 → 人數 → 角色/系列 → 外觀/服裝 → 姿勢/背景
-- 77 token 上限，重要特徵放前面
-- 支援 Negative prompt
+- 重要特徵放前面（CLIP 會分塊編碼，靠前的 tag 權重較高；77 不是截斷點）
+- 支援 Negative prompt（面板有輸入框；選詞庫負向時會覆蓋）
 
 ---
 
 ## 功能特色
+
+### 狀態持久化
+- 引擎、模式、提示詞、尺寸、步數、種子、增強開關、偏好（音效／通知／預覽）記在 `localStorage`，重整後還原
+- 切模式時若提示詞已被改過，不會用該模式的預設稿蓋掉
 
 ### 即時進度
 - WebSocket 連線取得每步進度，顯示 it/s（或 s/it）與 ETA
@@ -45,15 +49,16 @@
 
 ### AI 提示詞優化
 - 提示詞框右下角 hover 顯示 ✦ 按鈕
-- 點擊後透過 Groq API（Llama 3.3 70B）串流優化提示詞
+- 點擊後透過同源 `/panel/groq`（Groq Llama 3.3 70B）串流優化提示詞；key 不進瀏覽器
 - 根據當前引擎自動切換 system prompt（自然語言 vs Danbooru tag）
-- 需要設定 API Key（見下方）
+- 優化後可用「還原優化前」救回原文
+- 需要在本機 `config.js` 設定 API Key（見下方）
 
 ### 語音輸入
 - 提示詞框右下角 🎤 按鈕，點一下開始講、再點一下停止，辨識結果即時接在現有文字後面
 - 使用瀏覽器內建的 Web Speech API（預設 zh-TW 中文），只在 **Chrome / Edge** 且**安全來源**（`localhost` 或 HTTPS）可用
 - ⚠️ Chrome 的實作會把**語音音訊送到 Google 伺服器**辨識（見下方隱私說明）；不支援的瀏覽器會自動隱藏此按鈕
-- 手機透過區網 IP（`http://192.168.x.x`）連線時，瀏覽器不會授予麥克風權限
+- 手機請走 HTTPS + Tailscale；區網 IP 會被面板拒絕（沒有登入）
 
 ### 增強分支
 - Illustrious：Hires 二次採樣 / ControlNet / SeedVR2 放大 / SD 放大（可獨立開關）
@@ -95,10 +100,13 @@
 ```javascript
 window.YZ_CONFIG = {
   GROQ_API_KEY: '你的 Groq API Key',
+  // 多把輪替：GROQ_API_KEYS: ['key1', 'key2'],
 };
 ```
 
 到 [console.groq.com](https://console.groq.com) 免費申請 API Key。
+
+金鑰只留在伺服器：面板送出 `config.js` 時會剝掉 key，優化請求走同源 `/panel/groq`（與語音助理共用 `groq_proxy.py` 輪替）。不要把 key 寫進會進 git 的檔案。
 
 ### 3. 啟動面板
 ```bash
@@ -131,7 +139,7 @@ python serve.py 127.0.0.1:8188 8190     # 面板改用 8190
 右上角的膠囊會開啟助理抽屜。它不是第五個引擎——它**操作**那四個引擎：切換引擎、寫提示詞、設尺寸步數、開關增強分支、送出生成。
 
 **兩種輸入方式**
-- **打字**：抽屜底部輸入框，Enter 送出。不需要麥克風、不需要 HTTPS，手機用區網 http 連也能用
+- **打字**：抽屜底部輸入框，Enter 送出。不需要麥克風、不需要 HTTPS；遠端請走 Tailscale（面板不放行區網 IP，見下方 HTTPS 一節）
 - **語音**：按「開始聆聽」直接說話，可隨時插話打斷回覆
 
 **手機使用**：助理的 WebSocket 走 `serve.py` 同源代理（`/assistant` → 本機語音服務 8765），所以手機連面板就連得到語音服務、打字直接可用。**語音**還需要麥克風權限，而麥克風只在安全來源給——手機得用 HTTPS 啟動面板（`python serve.py --https`，見下方「手機語音輸入」），這樣助理走同源 `wss` 且麥克風可用。
@@ -273,7 +281,9 @@ Windows 雙擊即可（會自動啟動 Groq 多 key 代理）：
 
 ## 手機語音輸入（HTTPS）
 
-語音輸入需要麥克風權限，而瀏覽器只在「安全來源」給麥克風——桌面用 `localhost` 沒問題，但**手機透過 `http://192.168.x.x` 或 `http://100.x.x.x`（Tailscale）連都不算安全來源**，語音按鈕不會出現。要讓手機能用語音，改用 HTTPS 啟動：
+語音輸入需要麥克風權限，而瀏覽器只在「安全來源」給麥克風——桌面用 `localhost` 沒問題，但**手機透過 `http://100.x.x.x`（Tailscale）連都不算安全來源**，語音按鈕不會出現。要讓手機能用語音，改用 HTTPS 啟動：
+
+面板**不放行區網 IP**（`192.168.x.x` / `10.x`）：沒有登入驗證，綁 `0.0.0.0` 只是為了讓 Tailscale 虛擬網卡收得到封包。手機請走 Tailscale IP 或本機。連線被拒時伺服器會印 `[拒絕] <ip>`。
 
 ```bash
 python serve.py --https
@@ -282,7 +292,7 @@ python serve.py --https
 Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188 7801 https`）。
 
 - 第一次會用 `openssl` 自動產生自簽憑證（`cert.pem` / `key.pem`，不進版控）
-- 憑證 SAN 自動含**區網 IP 與 Tailscale IP**，所以手機開 `https://<區網IP>:7801/klein` **或** `https://<Tailscale IP>:7801/klein` 都可以，不會憑證主機不符
+- 憑證 SAN 自動含本機區網 IP 與 Tailscale IP（換網路會重簽），但**連線白名單只放行本機與 Tailscale**；手機請開 `https://<Tailscale IP>:7801/klein`
 - 第一次會跳「不安全」警告（自簽憑證正常現象），選「繼續前往」即可
 - 換網路或 Tailscale 上線導致 IP 變動時，**憑證會自動重新產生**，不用手動刪
 - Android Chrome 可用；**iOS Safari 對語音辨識支援不穩**，可能仍無法使用
