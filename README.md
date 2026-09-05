@@ -86,10 +86,28 @@
 - 選到帶有 `NEGATIVE` 的詞庫時，會出現「負向來源」二選一：**詞庫負向**（送出時整段覆蓋掉負向節點，預設選項）或**預設負向**（不覆蓋，保留 workflow 內建的負向）
 - 後端用 `ast` **安全解析** `.py`（只取那三個 list，不 import、不執行）
 
+### 引擎主題色
+每個引擎錨在一個真實顏料上，切引擎時整個介面跟著換色：
+
+| 引擎 | 顏料 | 色值 |
+|------|------|------|
+| Flux2 Klein | 國際克萊因藍 IKB | `#002fa7` |
+| Z-Image Turbo | 鎘橙 Cadmium Orange | `#c2461a` |
+| Krea2 | 帝王紫 Tyrian Purple | `#6e2350` |
+| Illustrious | 茜紅 Rose Madder | `#b93659` |
+
+新增引擎只要在 `styles.css` 的 `:root[data-engine="..."]` 給四個變數：`--accent`（主色，
+白字按鈕底，要 ≥4.5:1）、`--accent-3`（同色淺階，只當漸層第二站，必須是主色的鄰居）、
+`--accent-2`（對比火花，只用在光束與 loader 描邊）、`--accent-soft`（淺色底）。
+
 ### 動態背景
-- 整頁 WebGL 流動彩霧背景（Vanta.js FOG），配色自動跟隨當前引擎主題色
-- 函式庫（`three.min.js` + `vanta.fog.min.js`）**已 vendored 在專案內、離線可用**，不需另外安裝
-- 尊重系統「減少動態」設定：開啟時自動退回靜態柔光背景；WebGL 不可用時也會 fallback，不會空白
+- 淡淡的柔光色團，跟著引擎主題色走。強度刻意很低（opacity .14 / blur 100px）——
+  它是背景，不該比內容還醒目
+- 尊重系統「減少動態」設定：開啟時停止漂移，保留靜態柔光
+- 原本這裡是 Vanta.js FOG 的 WebGL 流動彩霧，2026-09 停用：它是畫面上最強的視覺
+  元素，而 `three.min.js` 傳輸 154KB 全花在一個不能互動的背景上（佔首次載入 26%）。
+  `three.min.js` / `vanta.fog.min.js` 與 `serve.py` 的白名單條目都留著，把 `app.js`
+  的 `startBgFx()` 換回原本的 `loadScript` 流程就會復原
 
 ---
 
@@ -359,8 +377,9 @@ Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188
 | `krea2.json` | Krea2 workflow（API 格式） |
 | `illustrious.js` | Illustrious SDXL 引擎設定 |
 | `illustrious.json` | Illustrious workflow（API 格式） |
-| `three.min.js` | Three.js r134（Vanta 依賴，vendored） |
-| `vanta.fog.min.js` | Vanta.js FOG WebGL 背景（vendored） |
+| `three.min.js` | Three.js r134（Vanta 依賴，vendored）。目前沒有被載入，見「動態背景」 |
+| `vanta.fog.min.js` | Vanta.js FOG WebGL 背景（vendored）。同上 |
+| `assets/avatar.webp` | AI 助理頭像（已 gitignore）。換圖用 `ffmpeg -i 新圖.png -c:v libwebp -quality 92 assets/avatar.webp`，PNG 直上會大十倍 |
 | `config.js` | 本地設定（Groq API Key，不進版控）。**面板 AI 優化、`groq_proxy.py`、語音助理都讀這份**，所以留根目錄，沒有跟著語音助理搬進 `voice-assistant/` |
 | `groq_proxy.py` | Groq 多 key 輪替代理（429 打到上限自動換下一把）。同時被面板 AI 優化與 `voice-assistant/` 的語音助理／LiveTalking 用，是三邊共用的檔案，所以留根目錄 |
 | `lora_scan.py` | LoRA 清單掃描（副檔名、觸發詞剝標、SWR）。面板 `serve.py` 與暗房 `preview_ui.py` 共用，留根目錄 |
@@ -378,7 +397,7 @@ Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188
 | `generate_special_previews.py` | 暗房的 ComfyUI 生成邏輯（`preview_ui.py` 依賴，同目錄 sibling import） |
 | `index.html` / `darkroom.css` / `darkroom.js` | 暗房前端（瀏覽/生成 ＋ 打標**合併成一頁**）。舊網址 `/tag` 保留，回同一頁並自動進打標模式 |
 | `intro.html` / `intro.css` / `intro.js` | 產品門面（`/intro`）。年齡確認 + 印樣瀑布 + 四個動態小框（瀏覽／打標／生圖／抽卡）+ 藥液流程單，不載入整份詞庫 |
-| `tokens.css` / `fonts/` | 介紹頁設計 token 與本機字型（Instrument Serif、Geist、IBM Plex Mono） |
+| `tokens.css` / `fonts/` | 介紹頁設計 token 與本機字型（Instrument Serif、Geist、IBM Plex Mono）。字型是 Latin-only 子集，中文走系統字；主應用 `darkroom.css` 也接了 Geist（介面）與 IBM Plex Mono（數字／標籤） |
 | `preview_ui.bat` | 啟動詞庫暗房（`special_prompts`） |
 | `preview_ui_animebot.bat` | 啟動詞庫暗房（改讀 `animebot\special_prompts`，同 port 一次只能開一個） |
 | `multi_gpu_batch.py` / `multi_gpu_batch.bat` | **一次性**多 GPU 補缺圖工具，跟 `preview_ui.py` 分開、不是常駐服務。讀 `preview_config.json` 的 `comfy_endpoints` 清單（本機＋租的 GPU，例如 RunPod／vast.ai 的代理網址），每台開 `concurrency` 條 worker thread 搶同一份缺圖佇列，誰先做完誰先領下一張，天生照各自速度分配。`comfy_endpoints` 可以用 `https://帳號:密碼@主機` 這種帶認證的網址（vast.ai 對外 port 一律要 Basic Auth）。某台跑到一半斷線會自動把失敗的項目放回佇列給還活著的接手（最多重試 20 次），連續失敗 3 次就讓那台冷卻 90 秒（不是永久放棄——Cloudflare quick tunnel 這類偶爾自己斷線又自動重連的情況，冷卻時間到會自動恢復），不會卡住或錯殺項目。平常瀏覽/單張生成還是用 `preview_ui.bat`，這支只在需要一次補完一大批缺圖時跑 |
