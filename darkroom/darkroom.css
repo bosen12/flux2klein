@@ -130,9 +130,13 @@ button.primary:hover:not(:disabled) { filter: brightness(1.06); }
 button.ghost { background: transparent; border-color: var(--line); color: var(--dim); }
 button.danger { color: #ffd9d3; border-color: #5a2e2a; background: #2a1a18; }
 /* 目前操作的詞庫資料夾標籤：兩個 bat（不同 special_dir）都開在 7860、頁面長一樣，
-   顯示路徑尾兩段避免搞混改到別份資料。 */
+   顯示路徑尾兩段避免搞混改到別份資料。
+   max-width + ellipsis 是必要的：這個膠囊有 white-space: nowrap，而 .brand 裡的
+   h1／.sub 沒有，flex 收縮時它整條不讓、把 194px 全吃走，逼得「詞庫暗房」被壓成
+   15px 寬（四個字各一行的直排）、計數也塌成一條。最不重要的元素不該贏走空間。 */
 .dataset { font-family: var(--mono); font-size: 11px; color: var(--amber); white-space: nowrap;
-  border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--line)); border-radius: 6px; padding: 2px 8px; }
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--line)); border-radius: 6px; padding: 2px 8px;
+  min-width: 0; max-width: 168px; overflow: hidden; text-overflow: ellipsis; }
 .dataset::before { content: "📁 "; }
 .dataset:empty { display: none; }
 /* ── 模式（瀏覽 / 打標 / 生圖）：合併成一頁，用 body[data-mode] 顯隱各自的控制項，
@@ -198,11 +202,16 @@ input[type=text]:focus { outline: none; border-color: rgba(234,173,87,.55);
 @keyframes apSpin  { to { transform: rotate(360deg); } }
 @keyframes bootScan { 0% { transform: translateX(-120%); } 100% { transform: translateX(360%); } }
 
-.topbar { flex: none; display: flex; align-items: center; gap: 14px; padding: 11px 18px;
+/* flex-wrap: wrap 不是為了手機（860px 以下另有一套），是因為桌面本身就放不下：
+   15 個可見子元素合計 1370px + gap + padding = 需要 1602px 才排得下一列。1440／1280
+   這種常見筆電寬度都不夠，而 body 是 overflow-x: hidden，nowrap 的後果不是「捲得到」
+   而是最右邊的 #conn（連線狀態）被直接裁掉、完全看不見。改成允許換行後最壞情況是
+   兩列，反而比原本被壓出來的 103px 還矮。 */
+.topbar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 11px 18px;
           background: linear-gradient(180deg, var(--panel), color-mix(in srgb, var(--panel) 92%, #000));
           border-bottom: 1px solid var(--line);
           box-shadow: 0 1px 0 rgba(255,255,255,.02) inset, 0 6px 20px -12px rgba(0,0,0,.6); }
-.brand { display: flex; align-items: center; gap: 9px; }
+.brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
 /* 品牌 logo：相機光圈（aperture）。琥珀色＋柔光呼吸，hover 轉一格光圈葉片 */
 .brand-logo { width: 22px; height: 22px; color: var(--amber); flex: none;
   transition: transform .6s var(--ease-out); animation: safelight 3.4s ease-in-out infinite; }
@@ -211,8 +220,9 @@ input[type=text]:focus { outline: none; border-color: rgba(234,173,87,.55);
   0%, 100% { filter: drop-shadow(0 0 5px rgba(234,173,87,.45)); }
   50%      { filter: drop-shadow(0 0 9px rgba(234,173,87,.8)); }
 }
-.brand h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: .3px; }
-.brand .sub { font-family: var(--mono); font-size: 11px; color: var(--faint); letter-spacing: .5px; }
+.brand h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: .3px; white-space: nowrap; }
+.brand .sub { font-family: var(--mono); font-size: 11px; color: var(--faint); letter-spacing: .5px;
+              white-space: nowrap; }
 /* 頂列「X/Y 已生成」滾動數字：用 CSS counter 補間（跟 @property --beam 同一招，不用
    JS rAF 迴圈）。span 本身沒有文字節點，數字全部由 ::after 的 counter() 產生，
    JS 只要 setProperty('--n', 值) 就會平滑補間；reduced-motion 關掉 transition 直接
@@ -236,7 +246,7 @@ input[type=text]:focus { outline: none; border-color: rgba(234,173,87,.55);
 /* 頂列連線指示器固定寬度、靠右對齊：文字從「…」變「ComfyUI 就緒 · steps 25」時
    寬度不變，右側按鈕群才不會因為 spacer 重排而瞬移（換頁時尤其明顯）。170 = 最長
    字串「…steps 250」151px + led/gap/餘裕。只作用在頂列 #conn，不動 batch-progress。 */
-#conn { min-width: 170px; justify-content: flex-end; }
+#conn { min-width: 170px; justify-content: flex-end; margin-left: auto; }
 .conn .led { width: 7px; height: 7px; border-radius: 50%; corner-shape: round; background: var(--faint); }
 .conn.on .led { background: var(--ok); box-shadow: 0 0 7px var(--ok); }
 
