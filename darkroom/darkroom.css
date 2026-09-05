@@ -1,3 +1,25 @@
+/* ── 字體 ──────────────────────────────────────────────────────
+   Geist（介面）與 IBM Plex Mono（數字／標籤）都是 Latin-only 子集，字檔早就躺在
+   darkroom/fonts/ 並由 preview_ui.py 的 STATIC 表送出——/intro 從 2026-08 就在用，
+   主應用一直沒接上，等於宣傳頁有排版身份、每天在用的介面沒有（Windows 上就是 Segoe UI）。
+   unicode-range 限定 Latin 是刻意的：中文照樣走系統字（微軟正黑／蘋方），不扛 CJK 字檔
+   的體積，只把「拉丁字母與數字」這一層換掉。暗房到處是計數、分數、路徑與 mono 標籤，
+   換掉的正是看得最多的那些字。
+   Instrument Serif 沒有引進：它也是 Latin-only，而主應用的標題（詞庫暗房、資料夾名）
+   全是中文，載進來沒有任何字會用到它。 */
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/geist-400.woff2") format("woff2");
+  font-weight: 400 600; font-style: normal; font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/fonts/ibmplexmono-500.woff2") format("woff2");
+  font-weight: 500; font-style: normal; font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 /* ── 暗房安全燈 palette ───────────────────────────────────────── */
 :root {
   color-scheme: dark;
@@ -24,8 +46,8 @@
   --run:     #eaad57;
   --err:     #f0796d;
   --focus:   #eaad57;
-  --mono: ui-monospace, "Cascadia Code", "Cascadia Mono", Consolas, "Roboto Mono", monospace;
-  --sans: -apple-system, "Segoe UI", "Microsoft JhengHei", "PingFang TC", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", "Cascadia Mono", Consolas, "Roboto Mono", monospace;
+  --sans: "Geist", -apple-system, "Segoe UI", "Microsoft JhengHei", "PingFang TC", sans-serif;
   /* 圓角半徑。squircle 在相同半徑下「切掉」的角比正圓少（見下方 corner-shape 一節），
      所以換成連續曲率之後，面級元素的半徑一併放大約 1.25 倍才維持原本的柔軟度
      ——這個比例來自 Apple 自己的做法（iOS app icon 從舊版的正圓角 ~17.5% 換成連續
