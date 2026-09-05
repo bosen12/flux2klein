@@ -1,17 +1,39 @@
 :root {
   color-scheme: light;   /* 淺色主題：原生控制項、捲軸、表單元件都用淺色渲染 */
   --bg: #eceef5;
-  --panel: #ffffff;
+  --panel: #fbfcff;   /* 不是純白：#ffffff 在螢幕上讀起來是平的，往底色的冷調偏 1.5% 就有「紙」感 */
   --panel-2: #f6f7fc;
   --border: #e3e6f0;
   --border-strong: #d4d8e6;
   --text: #161824;
   --text-dim: #5f6779;
-  --text-faint: #969db0;
-  --accent: #5b52f0;
-  --accent-2: #10b3ab;
-  --accent-3: #8b7bff;
-  --accent-soft: #edecff;
+  /* #969db0 對面板只有 2.64:1，AA 要 4.5。而它是 .hint / .mode-desc / .idle-hint /
+     #brand-sub / 日誌時間 / .asst-empty 共 8 個角色在用——正好是「告訴你這個欄位在幹嘛」
+     的那一層字，最不該省對比。#6b7285 對面板 4.68:1，仍明顯淡於 --text-dim 的 5.53。 */
+  --text-faint: #6b7285;
+  /* ---- 引擎主色：每個引擎錨在一個真實顏料上 ----
+     原本四組全是框架預設值直接搬過來：krea2 的 #7c3aed/#a855f7/#9333ea 是 Tailwind
+     violet-600/purple-500/purple-600，illustrious 的 #ec4899/#fb7185/#db2777 是
+     pink-500/rose-400/pink-600，--switch-off 是 slate-300、--warn 是 amber-600。
+     「AI 感」的來源不是某個顏色難看，是每個顏色都是別人挑好的預設；而且四組裡有兩組
+     落在紫與粉——生成式介面最好認的兩個色相。
+
+     改成顏料命名，跟暗房那邊 baryta（相紙）／safelight（安全燈）同一個思路：
+       Flux2 Klein  → 國際克萊因藍 IKB #002FA7（面板就叫 Klein，錨色本來就在名字裡）
+                      對比火花用克萊因單金，那是他自己的三色之一
+       Z-Image Turbo→ 鎘橙 Cadmium Orange
+       Krea2        → 帝王紫 Tyrian Purple（維持「krea = 紫」的肌肉記憶，但換成有出處的紫）
+       Illustrious  → 茜紅 Rose Madder
+
+     三個變數的角色不同，換色時要維持：
+       --accent    主色，白字按鈕底，必須 ≥4.5:1
+       --accent-3  同色淺階，只當 linear-gradient(135deg, accent, accent-3) 的第二站，
+                   所以必須是 accent 的鄰居，不能是對比色，否則每顆按鈕都變雙色漸層
+       --accent-2  對比火花，只用在光束掃過與 loader 描邊，不承載文字 */
+  --accent: #002fa7;        /* 國際克萊因藍 IKB */
+  --accent-2: #a8821b;      /* 克萊因單金 */
+  --accent-3: #1b44c4;
+  --accent-soft: #e6eaf9;
   /* 頂部開關：關=中性灰（一眼看出是關的），開=引擎主色。
      原本關閉態是飽和的蘭紫、開啟態是淺藍，兩個都是有彩度的顏色，看不出誰是開誰是關。*/
   /* 焦點環：--accent-soft 太淡（#edecff 之類），在白底上幾乎看不見。
@@ -425,17 +447,20 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 #progress-card:not(.idle) .metrics      { animation: soft-in var(--dur-4) var(--ease-out) .1s both; }
 
 .progress-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+/* 實心主色，不是漸層文字。background-clip:text 加紫→青漸層是最好認的生成式標題長相，
+   而且這裡是「讀數」——數字要一眼判讀，不需要在字身上做色彩過渡。 */
 .progress-pct {
   font-size: var(--fs-display); font-weight: 800; line-height: 1;
   font-variant-numeric: tabular-nums; letter-spacing: -.03em;
-  background: linear-gradient(120deg, var(--accent), var(--accent-3) 55%, var(--accent-2));
-  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  color: var(--accent);
 }
 .progress-stage { font-size: var(--fs-sm); color: var(--text-dim); font-variant-numeric: tabular-nums; text-align: right; }
 .bar { height: 10px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
 .bar > i {
   display: block; height: 100%; width: 0; border-radius: 999px;
-  background: linear-gradient(90deg, var(--accent), var(--accent-3) 55%, var(--accent-2));
+  /* 單一色相（主色→同色淺階），不再摻第三個對比色：進度條摻三個色相會變成裝飾，
+     而它要傳達的只有「到哪了」一件事。 */
+  background: linear-gradient(90deg, var(--accent), var(--accent-3));
   box-shadow: 0 0 12px -1px color-mix(in srgb, var(--accent) 52%, transparent);
   transition: width var(--dur-2) var(--ease-out);
 }
@@ -761,10 +786,10 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 
 /* ==================== Z-Image Turbo 主題（橘紅）==================== */
 :root[data-engine="zimage"] {
-  --accent: #f4511e;
-  --accent-2: #ff9f1c;
-  --accent-3: #ff7043;
-  --accent-soft: #fff0e8;
+  --accent: #c2461a;        /* 鎘橙 Cadmium Orange */
+  --accent-2: #1f7a6b;      /* 韋瑞地安綠，橙的對比火花 */
+  --accent-3: #d25a1e;
+  --accent-soft: #fbebe3;
 }
 
 /* 引擎切換器在手機自成一列。
@@ -780,10 +805,10 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 
 /* ==================== Krea2 主題（紫色）==================== */
 :root[data-engine="krea2"] {
-  --accent: #7c3aed;
-  --accent-2: #a855f7;
-  --accent-3: #9333ea;
-  --accent-soft: #f3ecff;
+  --accent: #6e2350;        /* 帝王紫 Tyrian Purple */
+  --accent-2: #a8821b;      /* 舊金，紫金是這個顏料歷史上的搭配 */
+  --accent-3: #8a3466;
+  --accent-soft: #f3e8ef;
 }
 
 /* ==================== 前後對照拉桿 ==================== */
@@ -898,10 +923,10 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 
 /* ==================== Illustrious 主題（粉紅）==================== */
 :root[data-engine="illustrious"] {
-  --accent: #ec4899;
-  --accent-2: #fb7185;
-  --accent-3: #db2777;
-  --accent-soft: #fce7f3;
+  --accent: #b93659;        /* 茜紅 Rose Madder */
+  --accent-2: #3e7fa6;      /* 群青階的藍，紅的對比火花 */
+  --accent-3: #cb4a6c;
+  --accent-soft: #fbe9ee;
 }
 
 /* ==================== 流動漸層背景特效 ==================== */
@@ -947,7 +972,10 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 /* 切換引擎時：標題以主題漸層掃過（reveal 過渡）。平常是墨黑，
    墨色用 -webkit-text-fill-color 過渡 → 慢慢染回黑、也慢慢淡出成漸層 */
 #brand-title {
-  background: linear-gradient(100deg, var(--accent), var(--accent-2) 35%, var(--accent-3) 70%, var(--accent));
+  /* 掃過的是「一道主色的光」穿過墨字，不是四段彩虹。原本 accent→accent-2→accent-3→accent
+     四站跨三個色相，正是 gradient headline 那個長相；改成 墨→主色→墨 之後編排照舊
+     （app.js 的 BEAT 不用動），但平常與掃過中都只有一個色相在動。 */
+  background: linear-gradient(100deg, var(--text), var(--accent) 45%, var(--text));
   background-size: 250% 100%;
   -webkit-background-clip: text; background-clip: text;
   -webkit-text-fill-color: var(--text);
