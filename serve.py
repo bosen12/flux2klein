@@ -1024,6 +1024,23 @@ def serve_object_info(client, initial):
     只要一個 304。不用 max-age 是因為「ComfyUI 換了模型/節點」要能立刻反映。"""
     try:
         raw, gz = get_object_info()
+    except urllib.error.HTTPError:
+        return False        # ComfyUI 有回應但回錯誤碼——代理過去或許還能拿到東西
+    except (urllib.error.URLError, OSError) as e:
+        # 連不到 ComfyUI 就直接回 502，不要再落去一般代理。代理只會用同一組 host:port
+        # 再連一次、再被拒一次，而 Windows 的 loopback「連線被拒」實測要 2.05 秒才回，
+        # 走兩次就是 4.1 秒（實測 /object_info 4116ms、/prompt 2070ms，剛好兩倍關係）。
+        # 使用者的感受是「開面板卡住好幾秒才說連不上」。其他例外仍回 False 走代理。
+        reason = getattr(e, "reason", e)
+        msg = (f"無法連線到 ComfyUI ({COMFY_HOST}:{COMFY_PORT})：{reason}\n"
+               "請先啟動 ComfyUI，或用 python serve.py <host:port> 指定正確位址。").encode("utf-8")
+        client.sendall(
+            b"HTTP/1.1 502 Bad Gateway\r\n"
+            b"Content-Type: text/plain; charset=utf-8\r\n"
+            b"Connection: close\r\n"
+            b"Content-Length: " + str(len(msg)).encode() + b"\r\n\r\n" + msg
+        )
+        return True
     except Exception:
         return False
     etag = _oi_cache["etag"]
