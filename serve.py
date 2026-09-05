@@ -73,7 +73,8 @@ STATIC_FILES = {
     "/favicon.svg": "favicon.svg",
     "/favicon.ico": "favicon.ico",
     "/favicon.png": "favicon.png",
-    "/assets/avatar.png": "assets/avatar.png",   # 助理頭像
+    "/assets/avatar.webp": "assets/avatar.webp",  # 助理頭像（512²，30KB）
+    "/assets/avatar.png": "assets/avatar.png",   # 舊的 310KB PNG，留著讓已快取的頁面不會 404
 }
 
 
@@ -274,7 +275,7 @@ def recv_headers(sock):
 # 網址就不同，瀏覽器一定重抓，不會再發生「改了 JS 但頁面跑舊版」。
 VERSIONED_ASSETS = ("app.js", "config.js", "converter.js", "zimage.js",
                     "krea2.js", "illustrious.js", "styles.css", "favicon.svg",
-                    "three.min.js", "vanta.fog.min.js")
+                    "three.min.js", "vanta.fog.min.js", "assets/avatar.webp")
 
 
 def asset_version():

@@ -377,7 +377,10 @@
   <div class="asst-avatar" id="asst-avatar" aria-hidden="true">
     <div class="asst-avatar-inner">
       <span class="asst-avatar-ring" id="asst-avatar-ring"></span>
-      <img id="asst-avatar-img" src="/assets/avatar.png?v=1" alt="">
+      <!-- WebP 而不是 PNG：原本那張 512² 的 avatar.png 是 310KB，佔首次載入 603KB 的
+           53%，是全站最大的單一資源，而助理面板預設是收起來的。同一張圖 q92 的 WebP
+           只有 30KB（-90%）。loading=lazy／decoding=async 再讓它排在關鍵資源後面。 -->
+      <img id="asst-avatar-img" src="/assets/avatar.webp?v=1" alt="" loading="lazy" decoding="async">
       <!-- 對嘴影像：LiveTalking 有跑時才會連上並蓋掉靜態頭像（見 app.js 的 ltConnect）-->
       <video id="asst-avatar-video" autoplay playsinline></video>
       <span class="asst-avatar-glow" id="asst-avatar-glow"></span>
