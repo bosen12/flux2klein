@@ -945,10 +945,13 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
 }
+/* 從 opacity .42 / blur 60px 降到 .14 / 100px：原本三顆色團（外加已停用的 WebGL 彩霧）
+   是整個面板最強的視覺元素，而右半邊在生成前是空的——最醒目的東西跟工作無關。現在的
+   強度目標是「紙上有光」而不是極光，內容一出現就完全退到後面去。 */
 .bg-fx .blob {
   position: absolute; top: 0; left: 0;
   width: 55vmax; height: 55vmax; border-radius: 50%;
-  filter: blur(60px); opacity: .42; will-change: transform;
+  filter: blur(100px); opacity: .14; will-change: transform;
 }
 .bg-fx .b1 { background: radial-gradient(circle, color-mix(in srgb, var(--accent)   72%, transparent), transparent 60%); }
 .bg-fx .b2 { background: radial-gradient(circle, color-mix(in srgb, var(--accent-2) 66%, transparent), transparent 60%); }

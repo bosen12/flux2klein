@@ -77,26 +77,15 @@
     if (!pillReady) { void pill.offsetWidth; pill.style.transition = ''; pillReady = true; }
   }
 
-  // 背景：優先用 Vanta.js FOG（WebGL 流動彩霧）；reduced-motion 或 WebGL 失敗時
-  // 退回原本的 CSS 色團漂移。兩者都在 .bg-fx 裡，Vanta 成功就把色團淡出。
-  function loadScript(src) {
-    return new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = src;
-      s.onload = () => resolve();
-      s.onerror = () => reject(new Error('載入失敗 ' + src));
-      document.head.appendChild(s);
-    });
-  }
-  async function startBgFx() {
-    if (prefersReduced) { startBlobDrift(); return; }
-    try {
-      if (!window.THREE) await loadScript('/three.min.js');
-      if (!window.VANTA) await loadScript('/vanta.fog.min.js');
-      if (initVanta()) return;
-    } catch (e) { log('WebGL 背景初始化失敗，改用 CSS 光暈：' + e.message, 'warn'); }
-    startBlobDrift();
-  }
+  // 背景：只用 CSS 色團漂移。
+  //
+  // 這裡原本會動態載入 three.min.js + vanta.fog.min.js 跑 WebGL 流動彩霧。停掉的原因
+  // 有兩個：① 它是畫面上最強的視覺元素，而右半邊在還沒生成前是空的，等於整個面板最
+  // 醒目的東西是一片跟工作無關的彩霧；② three.min.js 傳輸 154KB（解碼 615KB），佔首次
+  // 載入 603KB 的 26%，全部花在一個不能互動的背景上。
+  // 檔案與 serve.py 的 STATIC_FILES 都留著，initVanta()/vantaColors() 也留著——要復原
+  // 只要把下面這行換回原本的 loadScript + initVanta 流程。
+  function startBgFx() { startBlobDrift(); }
 
   // 讀引擎主題色（CSS 變數是 #rrggbb 字面值）轉成 Vanta 要的 0xRRGGBB 整數
   function cssHex(name) {
