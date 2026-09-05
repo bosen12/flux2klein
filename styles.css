@@ -237,47 +237,39 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   textarea, input[type=text], input[type=number], select { font-size: 16px; }
 }
 
-/* AI 優化按鈕 */
+/* 提示詞工具列。
+   這三顆鈕原本是 position:absolute 疊在 textarea 右下角，靠 padding-bottom:56px 讓開
+   最後一行。問題是那個內距只保護「內容的結尾」——提示詞一長、textarea 一捲動，中段的
+   文字就直接跑到按鈕底下（390px 實測與按鈕垂直重疊 40px，字被蓋住）。而且 28px（手機
+   40px）都低於專案自己訂的 44px 觸控下限，還得靠 .prompt-wrap:hover 才轉深，觸控裝置
+   沒有 hover。搬到框外一列之後這三件事一起沒了：不會蓋字、常駐全不透明、尺寸放得下。 */
 .prompt-wrap { position: relative; }
-.ai-btn {
-  position: absolute; right: 8px; bottom: 8px;
-  width: 28px; height: 28px; border-radius: 50%; border: none;
+.prompt-tools { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.ai-btn, .mic-btn {
+  flex: none; width: 34px; height: 34px; border-radius: 50%; border: none;
   background: var(--accent); color: #fff;
-  font-size: var(--fs-base); line-height: 28px; text-align: center;
-  cursor: pointer; opacity: .45; transform: scale(1);
-  transition: opacity var(--dur-2), transform var(--dur-2);
-  z-index: 2; box-shadow: 0 2px 8px rgba(0,0,0,.2);
+  display: grid; place-items: center;
+  cursor: pointer; transform: scale(1);
+  transition: transform var(--dur-2), background var(--dur-2);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 30%, transparent);
 }
-/* 常駐可見（觸控裝置沒有 hover），滑鼠移入區域轉深、直接指到再加深放大 */
-.prompt-wrap:hover .ai-btn { opacity: .8; }
-.ai-btn:hover, .ai-btn:focus-visible { opacity: 1; transform: scale(1.1); }
+.ai-btn svg, .mic-btn svg { width: 16px; height: 16px; }
+.ai-btn:hover, .ai-btn:focus-visible,
+.mic-btn:hover, .mic-btn:focus-visible { transform: scale(1.08); }
 /* 載入中：animation 優先權高於 hover 的 transform，旋轉不會被打斷 */
 .ai-btn.loading { opacity: 1; animation: ai-spin 1s linear infinite; }
 @keyframes ai-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
 
-/* 語音輸入鈕：放在 AI 鈕左邊，樣式一致（不支援語音的瀏覽器由 JS 隱藏） */
-.mic-btn {
-  position: absolute; right: 42px; bottom: 8px;
-  width: 28px; height: 28px; border-radius: 50%; border: none;
-  background: var(--accent); color: #fff;
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer; opacity: .45; transform: scale(1);
-  transition: opacity var(--dur-2), transform var(--dur-2), background var(--dur-2);
-  z-index: 2; box-shadow: 0 2px 8px rgba(0,0,0,.2);
-}
-.mic-btn svg { width: 15px; height: 15px; }
-.prompt-wrap:hover .mic-btn { opacity: .8; }
-.mic-btn:hover, .mic-btn:focus-visible { opacity: 1; transform: scale(1.1); }
-/* 錄音中：紅底 + 脈動光環 */
+/* 「還原優化前」只在 AI 改寫過之後出現，靠右站，不跟兩顆圓鈕搶左邊的位置 */
 .prompt-undo {
-  position: absolute; right: 76px; bottom: 8px;
-  height: 28px; padding: 0 8px; border-radius: 999px; border: none;
-  background: var(--surface, #fff); color: var(--text-dim);
-  font-size: var(--fs-sm); cursor: pointer; z-index: 2;
-  box-shadow: 0 2px 8px rgba(0,0,0,.12);
+  margin-left: auto; height: 30px; padding: 0 12px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--panel-2); color: var(--text-dim);
+  font-size: var(--fs-sm); font-family: inherit; cursor: pointer;
+  transition: color var(--dur-1), border-color var(--dur-1);
 }
-.prompt-undo:hover, .prompt-undo:focus-visible { color: var(--text); }
-.mic-btn.on { opacity: 1; background: #e5484d; animation: mic-pulse 1.2s var(--ease-out) infinite; }
+.prompt-undo:hover, .prompt-undo:focus-visible { color: var(--text); border-color: var(--border-strong); }
+/* 錄音中：紅底 + 脈動光環 */
+.mic-btn.on { background: var(--err); animation: mic-pulse 1.2s var(--ease-out) infinite; }
 @keyframes mic-pulse {
   0%, 100% { box-shadow: 0 2px 8px rgba(0,0,0,.2), 0 0 0 0 rgba(229,72,77,.5); }
   50%      { box-shadow: 0 2px 8px rgba(0,0,0,.2), 0 0 0 6px rgba(229,72,77,0); }
@@ -426,6 +418,11 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   font-weight: 650; font-size: var(--fs-xs); letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim);
   display: flex; align-items: center; gap: 8px;
 }
+/* 卡頭圖示。原本這四個位置是 ⚡🔍🖼️📜 四顆 OS emoji，跟同一個介面裡的手繪 stroke
+   圖示不同筆畫、不同渲染來源（Windows 上是 Segoe UI Emoji 的彩色圖塊），而且每台
+   機器長得不一樣。改成同一套 24×24 / stroke-width 2 的線條圖示。 */
+.card-head .head-ic { flex: none; width: 15px; height: 15px; opacity: .85; }
+.btn-mini .head-ic { width: 13px; height: 13px; margin-right: 5px; vertical-align: -2px; }
 .card .card-body { padding: 18px; }
 
 /* 招牌：即時進度卡 —— 儀表讀數風格 */
@@ -1226,6 +1223,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 }
 .lora-head input { position: absolute; opacity: 0; width: 0; height: 0; }
 .lora-head:hover { border-color: var(--border-strong); }
+.lora-head-ic svg { width: 16px; height: 16px; }
 .lora-head-ic {
   flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
   background: linear-gradient(140deg, var(--accent), var(--accent-3)); color: #fff; font-size: 15px;
@@ -1496,15 +1494,10 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   .lora-cats, .cat-chips { gap: 8px; }
   .cat-summary { min-height: 44px; }
 
-  /* 提示詞框右下的麥克風／AI 鈕：28px 太小，而且蓋在文字上。
-     放大到 40px，同時把 textarea 的下內距讓開，文字不會鑽到按鈕底下。 */
-  .mic-btn, .ai-btn { width: 40px; height: 40px; }
-  .ai-btn { right: 10px; bottom: 10px; font-size: var(--fs-lg); line-height: 40px; }
-  .mic-btn { right: 56px; bottom: 10px; }
-  .mic-btn svg { width: 18px; height: 18px; }
-  .prompt-wrap textarea { padding-bottom: 56px; }
-  /* 觸控沒有 hover，兩顆鈕要一直看得清楚（原本靠 .prompt-wrap:hover 才轉深） */
-  .mic-btn, .ai-btn { opacity: .82; }
+  /* 觸控：兩顆圓鈕補到 44px 觸控下限（桌面 34px 已足夠，游標精度不同） */
+  .mic-btn, .ai-btn { width: 44px; height: 44px; }
+  .mic-btn svg, .ai-btn svg { width: 19px; height: 19px; }
+  .prompt-undo { min-height: 44px; }
 
   /* 疊層捲動不要帶動背後的頁面 */
   .lightbox, .assistant, .log, .cmp-overlay { overscroll-behavior: contain; }

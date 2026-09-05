@@ -1635,7 +1635,7 @@
       $('pct').textContent = '100%'; $('bar-fill').style.width = '100%';
       paintStages(state.run.stages.map(() => true), -1);
       setStage(`完成 · 耗時 ${fmtTime(total)}`);
-      log(`✅ 完成，耗時 ${fmtTime(total)}`, 'ok');
+      log(`完成，耗時 ${fmtTime(total)}`, 'ok');
       if (r.compare) buildCompare(r.compare);
       if ($('opt-sound').checked) beep();
       if ($('opt-notify').checked) { const mm = currentModes()[state.mode]; notify('生成完成', `${(mm && mm.label) || ''} · ${fmtTime(total)}`); }
@@ -1897,7 +1897,7 @@
         break;
       case 'execution_error':
         if (!isOurPrompt(d)) break;
-        log('❌ 執行錯誤：' + (d.exception_message || JSON.stringify(d)), 'err');
+        log('執行錯誤：' + (d.exception_message || JSON.stringify(d)), 'err');
         if (d.node_type) log(`  在節點：${d.node_type} (${d.node_id})`, 'err');
         finishRun(false);
         setStage('發生錯誤');
@@ -2180,11 +2180,11 @@ illustrious 用逗號分隔的英文 tag，其餘三個用自然語言英文描�
   function asstToolLabel(name, a) {
     a = a || {};
     switch (name) {
-      case 'switch_engine': return '🔀 切換引擎 → ' + (ENGINES[a.engine] ? ENGINES[a.engine].title : a.engine);
-      case 'set_prompt':    return '📝 填入提示詞';
-      case 'set_aspect':    return '📐 比例 ' + a.aspect;
-      case 'generate':      return '▶️ 送出生成';
-      default:              return '⚙️ ' + name;
+      case 'switch_engine': return '切換引擎 → ' + (ENGINES[a.engine] ? ENGINES[a.engine].title : a.engine);
+      case 'set_prompt':    return '填入提示詞';
+      case 'set_aspect':    return '比例 ' + a.aspect;
+      case 'generate':      return '送出生成';
+      default:              return name;
     }
   }
   // 一次回應常夾帶多個 function call。若對每個都送 response.create，第二個會撞上
