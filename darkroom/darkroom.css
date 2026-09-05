@@ -32,7 +32,11 @@
   --line-2:  #3a3e50;   /* 強調分隔 */
   --ink:     #eeece4;   /* 暖白文字 */
   --dim:     #a2a8b8;   /* 次要文字 */
-  --faint:   #676c7e;   /* 更淡 */
+  /* 更淡。#676c7e 對最暗的 --rail 只有 3.22:1，而它專門用在 10px 的 mono 小標
+     （資料夾 · CHAPTERS、每個資料夾的 30785/30785 計數），字最小卻最看不清。
+     #838897 在四種底色上都是 4.5:1 以上（rail 4.75 / panel 4.53 / bg 4.95 / sunk 5.12），
+     同時仍明顯低於 --dim 的 6.7~7.6，三階（ink / dim / faint）的層次沒有被拉平。 */
+  --faint:   #838897;
   --amber:   #eaad57;   /* 安全燈琥珀 = 品牌/已曝光 */
   --amber-d: #c08a35;
   --amber-soft: rgba(234,173,87,.14);
@@ -159,7 +163,9 @@ button.danger { color: #ffd9d3; border-color: #5a2e2a; background: #2a1a18; }
 .dataset { font-family: var(--mono); font-size: 11px; color: var(--amber); white-space: nowrap;
   border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--line)); border-radius: 6px; padding: 2px 8px;
   min-width: 0; max-width: 168px; overflow: hidden; text-overflow: ellipsis; }
-.dataset::before { content: "📁 "; }
+/* 這裡原本是 "📁 "。介面其餘 37 個圖示全是同一套 stroke SVG，只有這一顆是 OS emoji，
+   跟旁邊的 mono 路徑文字不同筆畫、不同渲染來源。膠囊本身已經有琥珀邊框＋琥珀 mono
+   文字，辨識度夠，直接拿掉比換一顆圖示乾淨。 */
 .dataset:empty { display: none; }
 /* ── 模式（瀏覽 / 打標 / 生圖）：合併成一頁，用 body[data-mode] 顯隱各自的控制項，
    切模式瞬間生效、不換頁。.browse-only/.tag-only 只在對應模式顯示——作法是
