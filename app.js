@@ -1182,7 +1182,11 @@
     fd.append('image', blob, filename);
     fd.append('overwrite', 'true');
     const r = await fetch(API + '/upload/image', { method: 'POST', body: fd });
-    return await comfyJson(r, '上傳圖片'); // { name, subfolder, type }
+    const j = await comfyJson(r, '上傳圖片');   // 非 JSON（例如 serve.py 的 502）會直接拋出後端原文
+    // comfyJson 只負責「這是不是 JSON」，狀態碼還是要自己看：ComfyUI 用 JSON body 回
+    // 非 2xx 時，少了這行會被當成上傳成功，後面拿著不存在的檔名去生成才炸。
+    if (!r.ok) throw new Error(`上傳圖片失敗 ${r.status}：${JSON.stringify(j)}`);
+    return j; // { name, subfolder, type }
   }
 
   /* ---------------- 送出生成 ---------------- */
@@ -1196,6 +1200,11 @@
     $('run').dataset.state = 'loading';    // 按鈕本體：spinner 滑入
     show('compare-card', false); $('compare').innerHTML = '';   // 清掉上次對照
     const m = currentModes()[state.mode];
+    // WS 沒連上時照樣送得出去（fetch 不受影響），但就收不到即時進度——先說一聲，
+    // 免得使用者看著不動的進度條以為當掉。完成偵測有 /history 保險，不會卡住。
+    if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
+      log('WebSocket 未連線：這次沒有即時進度，完成時會由 /history 補上。', 'warn');
+    }
     try {
       if (state.engine === 'zimage') await runZImage(m);
       else if (state.engine === 'krea2') await runEnhanceEngine(m, K);
@@ -1569,12 +1578,76 @@
       stages: planStages(promptObj || {}, stageEngine, stageOn),
       firstT: 0, firstV: 0, lastValue: 0, rate: 0, t0: performance.now(),
       results: [],
+      emitted: new Set(),              // 已經渲染過輸出的節點：WS 與 /history 保險共用，避免重複加圖
     };
     renderStages(state.run.stages);
     $('progress-card').classList.remove('idle');   // 首次生成後就不再回到閒置外觀
     $('pct').textContent = '0%'; $('bar-fill').style.width = '0%';
     setRunning(true);                        // 進行中：後半段流動條紋
     setStage('已排入佇列，等待開始…');
+    startHistoryWatch(promptId);
+  }
+
+  /* ---------------- 完成偵測的保險：輪詢 /history ----------------
+     送出成功之後，面板原本 100% 依賴 WebSocket 回報進度與完成。WS 沒連上、或送出後
+     才斷掉時，沒有逾時、沒有後備、也沒有任何錯誤訊息——圖其實在 ComfyUI 那邊生完了，
+     面板卻永遠停在「送出中…」轉圈。手機最容易踩到：iOS/Android 會把背景分頁的
+     WebSocket 收掉，Wi-Fi 換行動網路、鎖屏再回來也一樣，而 fetch 這種一次性請求不受
+     影響，所以「送得出去、但永遠收不到完成」。
+
+     這跟 CLAUDE.md 那條「靠 finished / animationend 收尾一定要加 setTimeout 保險」
+     是同一個毛病：把收尾押在一個不保證會來的事件上。ComfyUI 的 /history/<prompt_id>
+     是純 HTTP，拿得到同一份 outputs，用它兜底。
+
+     WS 正常時這支幾乎不會做事——它每 2.5 秒問一次，WS 通常早就先把 executed 送到了，
+     emitted 會擋掉重複渲染。 */
+  const HISTORY_POLL_MS = 2500;
+  function stopHistoryWatch() {
+    if (state._histT) { clearInterval(state._histT); state._histT = null; }
+  }
+  function startHistoryWatch(promptId) {
+    stopHistoryWatch();
+    let misses = 0;
+    state._histT = setInterval(async () => {
+      const r = state.run;
+      if (!r || r.promptId !== promptId) { stopHistoryWatch(); return; }
+      let entry;
+      try {
+        const res = await fetch(API + '/history/' + encodeURIComponent(promptId));
+        if (!res.ok) { misses++; return; }
+        entry = (await res.json())[promptId];
+      } catch (e) { misses++; return; }
+      if (!entry) return;                     // 還在佇列或還在跑，history 尚未成形
+      const st = entry.status || {};
+      const outputs = entry.outputs || {};
+      const nodes = Object.keys(outputs);
+      if (!nodes.length && !st.completed) return;
+
+      let added = 0;
+      for (const nodeId of nodes) {
+        if (r.emitted.has(String(nodeId))) continue;
+        const images = outputs[nodeId] && outputs[nodeId].images;
+        if (!images || !images.length) continue;
+        r.emitted.add(String(nodeId));
+        addResults(images, nodeId);
+        if (r.compare) r.compare.images[String(nodeId)] = viewUrl(images[0]);
+        added++;
+      }
+      if (st.completed || nodes.length) {
+        stopHistoryWatch();
+        if (String(st.status_str).toLowerCase() === 'error') {
+          log('ComfyUI 回報這次執行失敗（從 /history 讀到）。', 'err');
+          finishRun(false); setStage('發生錯誤');
+          return;
+        }
+        // 只有在 WS 沒把完成送到（所以還在 running）時才由這裡收尾
+        if (state.running) {
+          if (added) log(`WebSocket 沒收到完成事件，改用 /history 收尾（補上 ${added} 組輸出）。`, 'warn');
+          else log('WebSocket 沒收到完成事件，改用 /history 確認已完成。', 'warn');
+          finishRun(true);
+        }
+      }
+    }, HISTORY_POLL_MS);
   }
 
   // 進行中：在未填滿的後半段顯示流動條紋（真實進度照常顯示，不重置）
@@ -1634,6 +1707,7 @@
   function finishRun(ok = true) {
     const r = state.run;
     clearTimeout(state._interruptT);
+    stopHistoryWatch();
     state.running = false;
     resetRunBtn();
     setRunning(false);                       // 結束：停掉流動條紋
@@ -1843,8 +1917,16 @@
     const ws = new WebSocket(`${proto}://${location.host}/ws?clientId=${clientId}`);
     state.ws = ws;
     ws.binaryType = 'arraybuffer';
-    ws.onopen = () => { setConn(true); wsBackoff = 2000; };
+    // 卡在 CONNECTING 的硬性期限。手機切換 Wi-Fi/行動網路、或連線半開時，onopen 與
+    // onclose 都可能永遠不來，而 connectWS() 開頭那個「已經在 CONNECTING 就提早 return」
+    // 的檢查會因此再也不重連——狀態列停在「連線中…」，而且是永久的。
+    // 逾時就主動 close()，close 會觸發 onclose，走既有的指數退避重連。
+    const openT = setTimeout(() => {
+      if (ws.readyState === WebSocket.CONNECTING) { try { ws.close(); } catch (e) {} }
+    }, 8000);
+    ws.onopen = () => { clearTimeout(openT); setConn(true); wsBackoff = 2000; };
     ws.onclose = () => {
+      clearTimeout(openT);
       if (state.ws === ws) state.ws = null;
       setConn(false);
       wsTimer = setTimeout(connectWS, wsBackoff);
@@ -1905,6 +1987,7 @@
         break;
       case 'executed':
         if (isOurPrompt(d) && d.output && d.output.images) {
+          if (state.run) state.run.emitted.add(String(d.node));   // 讓 /history 保險別再加一次
           addResults(d.output.images, d.node);
           if (state.run && state.run.compare) state.run.compare.images[String(d.node)] = viewUrl(d.output.images[0]);
         }
