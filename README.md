@@ -478,17 +478,18 @@ Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188
 
 | 問題 | 解法 |
 |------|------|
-| 右上角一直「未連線」 | 確認 ComfyUI 已啟動、位址正確 |
+| 右上角一直「ComfyUI 未連線」 | 確認 ComfyUI 已啟動、位址正確。按「生成」會直接把原因寫進日誌卡（會自動展開），照著那句話做即可 |
+| 按「生成」等兩秒才報錯 | 正常。Windows 的 loopback「連線被拒」本身就要約 2 秒才回報，那是作業系統的行為不是面板在重試 |
 | 提交被拒 / node_errors | 模型檔名不符，確認已安裝對應模型與自訂節點 |
 | 局部重繪沒效果 | 紅色塗抹區 = 重繪區域，先上傳圖片再塗抹 |
 | 面板埠被占用 | `python serve.py 127.0.0.1:8188 8190` |
 | AI 優化按鈕無反應 | 建立 `config.js` 並填入 Groq API Key |
 | Illustrious 生成後沒成品 | 確認使用最新版 `illustrious.json`（輸出節點需為 SaveImage） |
-| 手機看不到 🎤 語音鈕 | 手機需要 HTTPS：改用 `python serve.py --https`（見「手機語音輸入」） |
+| 手機看不到語音鈕 | 手機需要 HTTPS：改用 `python serve.py --https`（見「手機語音輸入」） |
 
 ---
 
 ## 隱私
 - 面板在本機與 ComfyUI 之間溝通，圖片和提示詞不會送到外部服務
 - 例外一：AI 提示詞優化會將提示詞文字送到 Groq API（可選功能，不開就不送）
-- 例外二：語音輸入使用 Chrome 內建 Web Speech API，語音音訊會送到 Google 伺服器辨識（不點 🎤 就不送）
+- 例外二：語音輸入使用 Chrome 內建 Web Speech API，語音音訊會送到 Google 伺服器辨識（不點語音鈕就不送）
