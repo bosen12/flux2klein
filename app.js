@@ -1161,14 +1161,28 @@
     }
   }
 
+  /* ---------------- ComfyUI 回應的解讀 ---------------- */
+  // serve.py 連不到 ComfyUI 時回的是 502 + text/plain 的中文說明（「無法連線到 ComfyUI
+  // (127.0.0.1:8188)：… 請先啟動 ComfyUI，或用 python serve.py <host:port> 指定正確位址。」），
+  // 不是 JSON。直接 res.json() 會拋 JSON 解析錯，使用者在日誌看到的是
+  //   錯誤：Unexpected token '無', "無法連線到 Comf"... is not valid JSON
+  // ——後端已經寫好、而且真的說得出該怎麼辦的那句話，被前端自己丟掉了。
+  // 先讀 text 再嘗試 parse：是 JSON 就照舊回傳（ComfyUI 的 400 驗證錯誤仍是 JSON，
+  // node_errors 那條路徑不受影響），不是 JSON 就把後端原文當訊息拋出去。
+  async function comfyJson(res, what) {
+    const text = await res.text();
+    try { return JSON.parse(text); } catch (_) {}
+    const msg = text.trim() || `HTTP ${res.status} ${res.statusText || ''}`.trim();
+    throw new Error((what ? what + '：' : '') + msg);
+  }
+
   /* ---------------- 上傳到 ComfyUI ---------------- */
   async function uploadBlob(blob, filename) {
     const fd = new FormData();
     fd.append('image', blob, filename);
     fd.append('overwrite', 'true');
     const r = await fetch(API + '/upload/image', { method: 'POST', body: fd });
-    if (!r.ok) throw new Error('上傳失敗 ' + r.status);
-    return await r.json(); // { name, subfolder, type }
+    return await comfyJson(r, '上傳圖片'); // { name, subfolder, type }
   }
 
   /* ---------------- 送出生成 ---------------- */
@@ -1299,7 +1313,7 @@
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: tpl, client_id: clientId }),
     });
-    const data = await res.json();
+    const data = await comfyJson(res, '送出生成');
     if (!res.ok || data.error) {
       log('提交被拒：' + JSON.stringify(data.error || data, null, 2), 'err');
       if (data.node_errors) log(JSON.stringify(data.node_errors, null, 2), 'err');
@@ -1393,7 +1407,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, client_id: clientId }),
       });
-      const data = await res.json();
+      const data = await comfyJson(res, '送出生成');
       if (!res.ok || data.error) {
         log('提交被拒：' + JSON.stringify(data.error || data, null, 2), 'err');
         if (data.node_errors) log(JSON.stringify(data.node_errors, null, 2), 'err');
@@ -1446,7 +1460,7 @@
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: tpl, client_id: clientId }),
     });
-    const data = await res.json();
+    const data = await comfyJson(res, '送出生成');
     if (!res.ok || data.error) {
       log('提交被拒：' + JSON.stringify(data.error || data, null, 2), 'err');
       if (data.node_errors) log(JSON.stringify(data.node_errors, null, 2), 'err');
@@ -2993,7 +3007,7 @@ EXPLICIT CONTENT:
   function openLightbox(url) { $('lightbox-img').src = url; $('lightbox').classList.add('on'); }
   function setConn(on) {
     $('conn-dot').className = 'dot ' + (on ? 'on' : 'off');
-    if (!on) $('conn-text').textContent = '未連線（重試中…）';
+    if (!on) $('conn-text').textContent = 'ComfyUI 未連線（重試中…）';
     else if ($('conn-text').textContent.startsWith('連線')) $('conn-text').textContent = '已連線';
   }
 
