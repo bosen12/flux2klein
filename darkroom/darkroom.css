@@ -182,21 +182,32 @@ input[type=text]:focus { outline: none; border-color: rgba(234,173,87,.55);
 /* 擋在 #boot 之前的第一個畫面，z-index 比 #boot（300）高，故意跟其他疊層
    的毛玻璃質感區隔開——近黑底＋紅色警示色，不是「一般彈窗」而是「進入前的
    關卡」。拒絕後文字直接原地替換（見 darkroom.js），不用另外做一個畫面。 */
+/* 年齡閘是進站看到的第一個畫面，所以讓它就是暗房的第一格：安全燈已經亮著、門還沒開。
+   原本是一組寫死的紅（#e24b4a / #3a1414 / #0a0a0a），一個 token 都沒用到，語彙是通用
+   「警告 modal」，跟它後面緊接著的 #boot 沖洗畫面（琥珀光圈＋掃描光弧）完全接不上——
+   使用者看到的順序是「通用紅框 → 突然變成暗房」，第一印象拿到的是通用的那個。
+   卡片維持置中（這是擋路的決定，置中是對的），但卡內文字改左靠：置中標題＋置中內文＋
+   兩顆等寬鈕那一套是最好認的樣板長相。
+   兩顆按鈕改成直接掛既有的 .ghost / .primary——不只是少寫 CSS，原本 .age-gate-yes:hover
+   （0,2,0）根本贏不過全域的 button:hover:not(:disabled)（0,2,1），hover 實際是變灰而不是
+   變亮，掛回按鈕系統就一併修掉了。 */
 #age-gate { position: fixed; inset: 0; z-index: 310; display: grid; place-items: center;
-  background: #0a0a0a; }
-.age-gate-card { width: min(380px, 92vw); text-align: center; padding: 28px 24px;
-  border: 1px solid #3a1414; border-radius: 10px;
+  padding: 24px;
+  background: radial-gradient(circle at 50% 42%, #17140e, var(--void) 72%); }
+.age-gate-card { width: min(400px, 92vw); text-align: left; padding: 26px 24px 22px;
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--amber) 20%, var(--line));
+  border-radius: var(--radius);
+  box-shadow: var(--shadow), 0 0 70px -24px rgba(234,173,87,.3);
   animation: modalPop var(--d-pop) var(--ease-out) both; }
-.age-gate-eyebrow { font-size: 11px; letter-spacing: .12em; color: #e24b4a; margin: 0 0 6px; }
-.age-gate-card h1 { font-size: 18px; font-weight: 500; color: #fafafa; margin: 0 0 10px; }
-.age-gate-body { font-size: 13px; line-height: 1.6; color: #a3a3a0; margin: 0 0 22px; }
-.age-gate-actions { display: flex; gap: 10px; }
-.age-gate-actions button { flex: 1; height: 40px; border-radius: 6px; font-size: 13px; cursor: pointer; }
-.age-gate-no { border: .5px solid #4a2a2a; background: transparent; color: #a3a3a0; }
-.age-gate-no:hover { border-color: #6a3a3a; color: #c3c3c0; }
-.age-gate-yes { border: none; background: #e24b4a; color: #4a1010; font-weight: 500; }
-.age-gate-yes:hover { background: #e86867; }
-.age-gate-actions button:active { transform: scale(.97); }
+.age-gate-ap { width: 26px; height: 26px; color: var(--amber); margin-bottom: 14px;
+  filter: drop-shadow(0 0 8px rgba(234,173,87,.5)); }
+.age-gate-eyebrow { font-family: var(--mono); font-size: 10px; letter-spacing: .22em;
+  color: var(--amber); margin: 0 0 8px; }
+.age-gate-card h1 { font-size: 18px; font-weight: 650; letter-spacing: .5px; color: var(--ink); margin: 0 0 10px; }
+.age-gate-body { font-size: 13px; line-height: 1.65; color: var(--dim); margin: 0 0 20px; }
+.age-gate-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.age-gate-actions button { min-height: 40px; padding: 0 18px; font-size: 13px; cursor: pointer; }
 
 /* ── 頂欄 ─────────────────────────────────────────────────────── */
 /* 開場載入（大詞庫要幾秒掃描/渲染）：科技感——光圈 logo 自轉＋外圈掃描光弧（重用

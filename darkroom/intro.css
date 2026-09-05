@@ -141,8 +141,9 @@ section[id], header[id] { scroll-margin-top: var(--nav-clear); }
   background: var(--color-paper); padding: env(safe-area-inset-top) var(--page-gutter) env(safe-area-inset-bottom); }
 .age-gate-card { width: min(24rem, 92vw); text-align: left; padding: var(--space-xl) var(--space-lg);
   background: var(--color-paper-2); border-radius: var(--radius-card); }
+.age-gate-ap { width: 26px; height: 26px; color: var(--color-accent); margin-bottom: var(--space-sm); }
 .age-gate-eyebrow { margin: 0 0 var(--space-xs); font-size: var(--text-xs);
-  letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-danger); }
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-accent); }
 .age-gate-card h1 { margin: 0 0 var(--space-sm); font-size: var(--text-xl); }
 .age-gate-body { margin: 0 0 var(--space-lg); font-size: var(--text-sm); color: var(--color-ink-2); line-height: 1.6; }
 .age-gate-actions { display: flex; gap: var(--space-xs); }
@@ -152,8 +153,10 @@ section[id], header[id] { scroll-margin-top: var(--nav-clear); }
               transform 100ms var(--ease-out); }
 .age-gate-no { background: var(--color-paper-3); color: var(--color-ink-2); }
 .age-gate-no:hover { color: var(--color-ink); }
-.age-gate-yes { background: var(--color-danger); color: var(--color-danger-ink); }
-.age-gate-yes:hover { background: color-mix(in oklch, var(--color-danger) 86%, var(--color-ink)); }
+/* 琥珀而不是 danger 紅：安全燈是這個站的顏色，通用警告紅是任何站都可以是的顏色。
+   跟主應用 darkroom.css 的年齡閘同一套語彙。 */
+.age-gate-yes { background: var(--color-accent); color: var(--color-accent-ink); }
+.age-gate-yes:hover { background: color-mix(in oklch, var(--color-accent) 86%, var(--color-ink)); }
 .age-gate-actions button:active { transform: translateY(1px); }
 
 /* ── N5 浮膠囊 ── */
