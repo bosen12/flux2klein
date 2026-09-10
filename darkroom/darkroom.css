@@ -286,11 +286,16 @@ input[type=text]:focus { outline: none; border-color: rgba(234,173,87,.55);
 .count-num { transition: --n var(--d-ui) var(--ease-out); }
 .count-num::after { counter-reset: num var(--n); content: counter(num); }
 @media (prefers-reduced-motion: reduce) { .count-num { transition: none; } }
-.search-wrap { position: relative; flex: 1; max-width: 420px; }
+/* min-width 是必要的：flex:1 等於 flex-basis:0，加上輸入框自己的 min-content 很小，
+   頂列一擠這兩個搜尋框就被壓扁——實測 1280px 寬時名稱搜尋只剩 60px、900px 時剩 44px，
+   連 placeholder 第一個字都看不到（頂列本來就是 flex-wrap，壓扁換來的也不是「不換列」，
+   只是換列前先把最會縮的那個犧牲掉）。給下限之後改成直接換列，欄位維持可用寬度。
+   手機（≤860px）那段會把 min-width 覆寫回 0，兩個框各佔半列，不受這裡影響。 */
+.search-wrap { position: relative; flex: 1; max-width: 420px; min-width: 200px; }
 .search-wrap svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
                    width: 14px; height: 14px; color: var(--faint); pointer-events: none; }
 .search-wrap input { width: 100%; }
-.tag-search-wrap { max-width: 280px; }
+.tag-search-wrap { max-width: 280px; min-width: 168px; }
 .tag-search-wrap input { padding-right: 26px; }
 .tag-search-wrap button { position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
                           background: transparent; border: none; color: var(--faint);
@@ -1932,4 +1937,56 @@ button svg.btn-svg { width: 15px; height: 15px; vertical-align: -3px; margin-rig
     padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)); }
   .lora-modal-inner { height: auto;
     max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+}
+
+/* ==================== 手機頂列：三段固定 + 44px 觸控目標 ====================
+   放在檔案最後，理由跟上面那個疊層區塊一樣：這一段要蓋掉 .icon-btn（第 ~1720 行）、
+   .lora-panel-btn（第 ~1276 行）這些寫在後段的元件基礎規則。特異性相同時後者贏，
+   寫在 648 行那個 860px 區塊裡只會有一半生效——CLAUDE.md 記過這條坑。
+
+   一、三段固定。.topbar 是 flex-wrap，原本沒有任何強制斷行，於是換列是「有空位就塞」
+   的機會主義結果：實測 768px 下名稱搜尋跟著標題列擠進第一列、標籤搜尋掉到第二列跟
+   工具鈕混在一起，最後把「打標回填」一顆孤零零推到第三列（x=12、y=108）。用一個
+   flex-basis:100% 的零高斷行元件（.topbar::before——flex 容器的 ::before 本身就是
+   flex item，不用改 HTML）把標題列切出來，版面就固定是「標題列／搜尋列／工具列」
+   三段，換列由我們決定，不由剩餘寬度決定。
+
+   二、觸控目標。工具列的圖示鈕實測是 40×40，齒輪與說明鈕只有 34×32、LoRA 面板鈕
+   41×33，都低於 44px。同一條頂列上的 #menu-btn 早就是 44×44，本來就有正確基準，
+   這裡只是讓其餘的跟上。
+
+   三、非生圖模式不再替 LoRA 面板鈕留位。桌面用 visibility 保留版位是為了「切模式時
+   右側那排共用鈕不位移」，但手機版本來就是換列排版、位置早就會跳，留一個 44px 的
+   空洞只是白白少放一顆鈕、多擠出一列。 */
+@media (max-width: 860px) {
+  .topbar { column-gap: 8px; }
+
+  /* 零高斷行：flex-basis 100% 佔滿整列、height 0 不吃高度。order 夾在標題列與搜尋列
+     之間，標題列的東西再多也不會跟搜尋列共用同一列。搜尋列與工具列之間不需要第二個
+     斷行元件——兩個搜尋框各是 flex:1 1 calc(50% - 6px)，加上欄間距後永遠占滿整列，
+     連 44px 的鈕都塞不進去，本來就必定換列。 */
+  .topbar::before { content: ""; order: 5; flex: 0 0 100%; height: 0; }
+
+  /* 使用說明鈕改跟其他工具鈕同一段（原本排在標題列）。它是低頻的說明入口，卻在標題列
+     吃掉 44px——實測 .brand 因此只剩 30px 寬，「詞庫暗房」被截成一個字加刪節號。移下來
+     之後標題列是 menu／標題／模式／連線燈，標題有 80px 以上可用。 */
+  .shortcuts-btn, #shortcuts-btn { order: 20; }
+
+  /* 圖示鈕一律 44×44。用 id 選擇器是為了穩定蓋過 .icon-btn 的 width:34px 與
+     .lora-panel-btn 的 padding，不必依賴檔案順序。 */
+  #draw-cards, #rescan, #score-backfill-btn, #tag-backfill-btn, #concepts-btn,
+  #concepts-settings-btn, #shortcuts-btn, #lora-panel-btn {
+    width: 44px; height: 44px; padding: 0; flex: none;
+    display: inline-flex; align-items: center; justify-content: center; }
+  /* 圖庫鈕帶張數角標，寬度必須跟著內容走，只鎖高度與下限寬度。 */
+  .gallery-btn { width: auto; min-width: 44px; height: 44px; padding: 0 10px; }
+  #review-btn { min-height: 44px; }
+  .steps-field input { min-height: 44px; }
+  /* 分段控制外框有 3px 內距＋1px 框，36 + 8 = 44，整組跟 #menu-btn 齊高。 */
+  .mode-seg button { min-height: 36px; }
+
+  /* 生圖模式以外直接收掉，不留空位（見上方說明三）。選擇器必須帶到 id——上面那條
+     #lora-panel-btn 的 display:inline-flex 是 (1,0,0)，用 class 寫的 (0,2,0) 蓋不過它，
+     實測寫成 .lora-panel-btn 時這顆鈕在打標／瀏覽模式仍然佔著版位。 */
+  body:not([data-mode="gen"]) #lora-panel-btn { display: none; }
 }
