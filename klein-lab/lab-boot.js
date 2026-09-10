@@ -143,6 +143,25 @@
 
   function gcd(a, b) { return b ? gcd(b, a % b) : a; }
 
+  /* 比例晶片只在建立當下比對過一次寬高，之後手打尺寸、或 AI 助理／模式預設改了
+   * 尺寸，晶片都還亮在原地——一個會說謊的控制項。改成每次尺寸變動重新判定。
+   *
+   * 比的是「這個晶片會設出來的實際像素」，不是標籤上的比例：這五組是 SDXL 的
+   * bucket，896×1152 標成 3:4 但其實是 0.778（差 3.7%），只有 1:1 是準的。
+   * 照標籤的比例比，768×1024 會亮起 3:4 ——但點那顆晶片給的是 896×1152，
+   * 亮了等於騙人。表格必須跟 app.js 的 ASPECT_PRESETS 一致（那是 IIFE 裡的
+   * 區域常數，外面讀不到，只能抄一份）；不一致的後果只是某顆晶片不會亮，不會壞。 */
+  const ASPECTS = [[1024, 1024], [896, 1152], [1152, 896], [768, 1344], [1344, 768]];
+
+  function syncAspects(W, H) {
+    const box = document.getElementById('aspect-presets');
+    if (!box) return;
+    box.querySelectorAll('.aspect').forEach((b, i) => {
+      const p = ASPECTS[i];
+      b.classList.toggle('active', !!p && p[0] === W && p[1] === H);
+    });
+  }
+
   function buildCanvasRead() {
     const sec = document.getElementById('canvas-sec');
     const w = document.getElementById('width');
@@ -169,6 +188,7 @@
       dims.textContent = W + ' × ' + H;
       ratio.textContent = (W / g) + ':' + (H / g);
       mp.textContent = (W * H / 1e6).toFixed(2) + ' MP';
+      syncAspects(W, H);
     };
 
     onValue(w, paint);
