@@ -1202,7 +1202,12 @@ def get_job(rel: str) -> dict:
 SCAN_TTL = 60.0
 _scan = {"items": None, "by_rel": None, "at": 0.0, "refreshing": False}
 _scan_lock = threading.Lock()
-_libs_wire = {"key": None, "etag": None, "out": None, "enc": None}
+# 兩種表述都留著（raw 與 gzip），送出時依「這一個請求」的 Accept-Encoding 挑，不是依
+# 「第一個把快取灌熱的那個請求」挑——舊版只存一份 out + enc，於是誰先填快取誰就決定
+# 了之後所有人的編碼。實測後果：只要先來的是不送 Accept-Encoding 的客戶端（Python
+# urllib 預設就不送），之後每個瀏覽器都拿到 13.27MB 的未壓縮 JSON 而不是 1.81MB。
+# gz 是懶算的：第一個要 gzip 的請求才壓一次（13MB 約 45ms），之後同一份 key 直接重用。
+_libs_wire = {"key": None, "etag": None, "raw": None, "gz": None}
 _libs_wire_lock = threading.Lock()
 
 
@@ -2557,8 +2562,44 @@ class Handler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(body)
 
+    def _libs_respond(self, etag: str, raw: bytes, key):
+        """依「這一個請求」的 Accept-Encoding 決定送 raw 還是 gzip。
+
+        gzip 版懶算並記在 _libs_wire["gz"]：13MB 壓一次約 45ms，之後同一份 key 重用。
+        兩種表述共用同一個 ETag（配上 Vary: Accept-Encoding，瀏覽器本來就會依 Vary
+        分開存），客戶端拿到 304 時用的是它自己那份已經解碼好的 body，不會錯配。"""
+        ct = "application/json; charset=utf-8"
+        body, enc = raw, None
+        if self._gzip_ok(raw, ct):
+            with _libs_wire_lock:
+                gz = _libs_wire["gz"] if _libs_wire["key"] == key else None
+            if gz is None:
+                gz = gzip.compress(raw, 5)
+                with _libs_wire_lock:
+                    if _libs_wire["key"] == key:
+                        _libs_wire["gz"] = gz
+            body, enc = gz, "gzip"
+        if self.headers.get("If-None-Match") == etag:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.send_header("Vary", "Accept-Encoding")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", ct)
+        self.send_header("Content-Length", str(len(body)))
+        if enc:
+            self.send_header("Content-Encoding", enc)
+        self.send_header("Vary", "Accept-Encoding")
+        self.send_header("ETag", etag)
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
     def _send_libs(self, force: bool):
-        """ /api/libs：指紋命中就 304／重送 gzip，不再 clone + dumps 2.8 萬筆。"""
+        """ /api/libs：指紋命中就 304／重送，不再 clone + dumps 2.8 萬筆。"""
         key = None if force else (
             _scan["at"], _LIBS_STATE_GEN, STATE.get("steps"),
             str(STATE.get("workflow_path")), str(SPECIAL_DIR),
@@ -2566,26 +2607,9 @@ class Handler(BaseHTTPRequestHandler):
         with _libs_wire_lock:
             hit = (not force and _libs_wire["key"] == key and _libs_wire["etag"])
             etag = _libs_wire["etag"] if hit else None
-            cached_body = _libs_wire["out"] if hit else None
-            enc = _libs_wire["enc"] if hit else None
+            raw = _libs_wire["raw"] if hit else None
         if hit:
-            if self.headers.get("If-None-Match") == etag:
-                self.send_response(304)
-                self.send_header("ETag", etag)
-                self.send_header("Cache-Control", "no-cache")
-                self.end_headers()
-                return
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(cached_body)))
-            if enc:
-                self.send_header("Content-Encoding", enc)
-            self.send_header("Vary", "Accept-Encoding")
-            self.send_header("ETag", etag)
-            self.send_header("Cache-Control", "no-cache")
-            self.end_headers()
-            if self.command != "HEAD":
-                self.wfile.write(cached_body)
+            self._libs_respond(etag, raw, key)
             return
         obj = {
             "items": scan_libraries(force=force),
@@ -2597,35 +2621,16 @@ class Handler(BaseHTTPRequestHandler):
         }
         raw = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         etag = '"%s"' % hashlib.sha1(raw).hexdigest()[:20]
-        out, enc = raw, None
-        if self._gzip_ok(raw, "application/json; charset=utf-8"):
-            out = gzip.compress(raw, 5)
-            enc = "gzip"
+        new_key = (
+            _scan["at"], _LIBS_STATE_GEN, STATE.get("steps"),
+            str(STATE.get("workflow_path")), str(SPECIAL_DIR),
+        )
         with _libs_wire_lock:
-            _libs_wire["key"] = (
-                _scan["at"], _LIBS_STATE_GEN, STATE.get("steps"),
-                str(STATE.get("workflow_path")), str(SPECIAL_DIR),
-            )
+            _libs_wire["key"] = new_key
             _libs_wire["etag"] = etag
-            _libs_wire["out"] = out
-            _libs_wire["enc"] = enc
-        if self.headers.get("If-None-Match") == etag:
-            self.send_response(304)
-            self.send_header("ETag", etag)
-            self.send_header("Cache-Control", "no-cache")
-            self.end_headers()
-            return
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(out)))
-        if enc:
-            self.send_header("Content-Encoding", enc)
-        self.send_header("Vary", "Accept-Encoding")
-        self.send_header("ETag", etag)
-        self.send_header("Cache-Control", "no-cache")
-        self.end_headers()
-        if self.command != "HEAD":
-            self.wfile.write(out)
+            _libs_wire["raw"] = raw
+            _libs_wire["gz"] = None
+        self._libs_respond(etag, raw, new_key)
 
     def do_GET(self):
         if self._blocked():
