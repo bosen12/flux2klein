@@ -146,6 +146,69 @@ python serve.py
 
 ---
 
+## KLEIN LAB（改版介面，跟原本的並存）
+
+同一台伺服器同時提供兩套前端，**原本的 `/klein` 一個位元組都沒有改**：
+
+| 網址 | 是什麼 |
+|------|--------|
+| `/klein` | 原本的面板（淺色卡片版），行為完全沒變 |
+| `/lab` | **KLEIN LAB**：重新設計的版面與動效，深／淺兩套色票可切 |
+
+兩邊共用 `app.js` 與四個引擎設定檔，所以功能一模一樣、修一邊兩邊都會好；
+不同的只有 `klein-lab/index.html` 與 `klein-lab/lab.css`。
+
+```bash
+start_lab.bat          # 開在 7802 埠，瀏覽器直接開 /lab
+```
+
+`start_lab.bat` 開的是**另一個** `serve.py`（預設 7802），所以可以跟
+`start.bat`（7801）同時跑，兩個分頁並排比對。想在同一個伺服器上比也行——
+`http://127.0.0.1:7802/klein` 一樣連得到原版。參數用法跟 `start.bat` 相同：
+
+```bash
+start_lab.bat 127.0.0.1:8188 7899          # 自訂 ComfyUI 位址與埠
+start_lab.bat 127.0.0.1:8188 7899 https    # HTTPS（手機麥克風）
+```
+
+### LAB 跟原版差在哪
+
+**版面**
+- 右半邊從「四張各自有標題列的卡片」改成**一片連續的版面**：頂部一條狀態橫樑
+  （百分比／階段／速度／ETA／步數／執行階段鏈），下面整片放圖，日誌收成底部抽屜。
+  原版閒置時右邊約七成畫面是空的卡片框
+- **左欄加寬**（320–396px），「生成」釘在左欄底部，不用捲到最下面才按得到
+- 閒置時右邊顯示**畫布形狀**：依目前寬高畫出等比例的框，附尺寸／比例／百萬像素。
+  沒有尺寸欄位的模式（圖片編輯類）會自動收起來
+- 成品**不裁成正方形**（原版會 `object-fit: cover` 裁掉構圖）；只有一張時放大到
+  一眼看得完，多張時排成接觸印樣
+- 生成完成後自動收起即時取樣預覽——成品才是要看的東西
+
+**外觀**
+- 深色（暖墨底，看圖時周圍中性偏暗，色彩判斷才準）／淺色（暖紙底）兩套，
+  右上角 ◐ 一鍵切換，記在 `localStorage`（跟原面板的設定互不干擾）
+- 拉丁文字 **Archivo**、數字 **IBM Plex Mono**（等寬對齊，滿面板的數值才比得起來），
+  中文走系統字。字型本機 vendored 在 `klein-lab/fonts/`，共 63KB，不掛 CDN
+- 邊框改成髮絲線、圓角一律 2px；四個引擎的顏料名稱與色碼直接寫在頂樑上
+
+**效能**（實測，同一台機器、同一個 ComfyUI）
+
+| | `/klein` | `/lab` |
+|---|---|---|
+| `/object_info` | 14.16 MB／3198 個節點類別 | **195 KB／51 個**（`/panel/object_info`） |
+| 同上，gzip 傳輸 | 2.44 MB | **41 KB** |
+| 同上，取回＋`JSON.parse` | 約 84 ms | **約 4 ms** |
+| CSS | 87.4 KB（gzip 26.7 KB） | 72.8 KB（gzip 18.2 KB） |
+| 額外字型 | 0 | +63 KB（永久快取） |
+
+面板只認得自己四份 workflow 裡出現過的節點類別，其餘 3147 個下載了永遠不會被查到。
+`serve.py` 的 `/panel/object_info` 先濾過再送，`klein-lab/lab-boot.js` 把前端那一次
+請求改指過去；端點不在（舊版 `serve.py`）就自動退回完整版，不會壞。
+冷啟動因此少傳約 2.3 MB，而且**每次開頁**都少掉那 80ms 的解析與數十 MB 的 heap。
+原版走的仍是原本的 `/object_info`。
+
+---
+
 ## 自訂位址 / 埠
 
 ```bash
@@ -385,9 +448,23 @@ Windows 可直接**雙擊 `start_https.bat`**（等同 `start.bat 127.0.0.1:8188
 | `lora_scan.py` | LoRA 清單掃描（副檔名、觸發詞剝標、SWR）。面板 `serve.py` 與暗房 `preview_ui.py` 共用，留根目錄 |
 | `_test_convert.js` | 離線驗證 `converter.js` 的 UI→API 轉換，`node _test_convert.js` 從根目錄執行 |
 | `start.bat` / `start_https.bat` | 啟動面板（後者走 HTTPS，手機麥克風要用） |
+| `start_lab.bat` | 啟動 **KLEIN LAB**（改版介面，預設 7802 埠、開 `/lab`）。可以跟 `start.bat` 同時跑 |
 | `panel_funnel.bat` / `panel_funnel_off.bat` | Tailscale funnel 開關（讓面板能從外網連） |
 | `stop_panel.bat` | 停掉 `serve.py` |
 | `cert.pem` / `key.pem` / `cert.pem.san` | HTTPS 自簽憑證（已 gitignore，每台機器自己產） |
+
+### `klein-lab/`（改版介面，見上「KLEIN LAB」）
+
+| 檔案 | 用途 |
+|------|------|
+| `index.html` | LAB 的頁面骨架。元素 id 與 `index.html` 完全一致——`app.js` 是靠 id 找元素的，兩套前端才能共用同一份邏輯 |
+| `lab.css` | LAB 的全部樣式：設計 token、深／淺兩套色票、四個引擎的顏料色、動效 |
+| `lab-boot.js` | 開機層。`/object_info` 改走精簡端點、色票切換、顏料牌、提示詞字數、畫布形狀讀數。**必須排在 `app.js` 前面載入** |
+| `fonts/*.woff2` | Archivo（可變）與 IBM Plex Mono 400/500，latin 子集，共 63KB。SIL OFL 1.1，見 `fonts/LICENSE.txt` |
+
+改這裡的檔案要記得同步 `serve.py` 的 `STATIC_FILES`（白名單以外的路徑會被轉發給
+ComfyUI，檔案根本送不出去）與 `LAB_ASSETS`（`?v=` 雜湊的來源；LAB 的雜湊刻意跟
+原面板的 `VERSIONED_ASSETS` 分開，改 `lab.css` 不會作廢原面板的快取）。
 
 ### `darkroom/`（詞庫暗房：獨立工具，自己一整套）
 

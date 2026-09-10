@@ -75,7 +75,24 @@ STATIC_FILES = {
     "/favicon.png": "favicon.png",
     "/assets/avatar.webp": "assets/avatar.webp",  # 助理頭像（512²，30KB）
     "/assets/avatar.png": "assets/avatar.png",   # 舊的 310KB PNG，留著讓已快取的頁面不會 404
+    # ---- klein-lab：平行的第二套前端（見 klein-lab/）。跟 /klein 共用 app.js 與
+    #      四個引擎設定，只換掉 index.html 與 CSS。原面板一個位元組都沒動，
+    #      兩邊可以同時開著比對。
+    "/lab": "klein-lab/index.html",
+    "/lab/": "klein-lab/index.html",
+    "/lab/lab.css": "klein-lab/lab.css",
+    "/lab/lab-boot.js": "klein-lab/lab-boot.js",
+    "/lab/fonts/archivo-latin.woff2": "klein-lab/fonts/archivo-latin.woff2",
+    "/lab/fonts/plexmono-400-latin.woff2": "klein-lab/fonts/plexmono-400-latin.woff2",
+    "/lab/fonts/plexmono-500-latin.woff2": "klein-lab/fonts/plexmono-500-latin.woff2",
 }
+
+# klein-lab 自己的資產雜湊來源。刻意跟 VERSIONED_ASSETS 分開：混在一起的話，
+# 改一次 lab.css 就會讓 /klein 的網址雜湊跟著變，把原面板已經快取好的
+# app.js / styles.css 全部作廢——兩套前端不該互相踩快取。
+LAB_ASSETS = ("app.js", "config.js", "converter.js", "zimage.js", "krea2.js",
+              "illustrious.js", "favicon.svg", "assets/avatar.webp",
+              "klein-lab/lab.css", "klein-lab/lab-boot.js")
 
 
 def parse_args():
@@ -278,11 +295,11 @@ VERSIONED_ASSETS = ("app.js", "config.js", "converter.js", "zimage.js",
                     "three.min.js", "vanta.fog.min.js", "assets/avatar.webp")
 
 
-def asset_version():
+def asset_version(assets=None):
     # cfg-sanitize-1：config.js 改成送出前剝 key。舊版 ?v= 曾以 immutable 快取
     # 含金鑰的檔，雜湊要變一次才會重抓。後續只靠各檔 mtime。
     stamps = ["cfg-sanitize-1"]
-    for name in VERSIONED_ASSETS:
+    for name in (assets or VERSIONED_ASSETS):
         p = os.path.join(BASE, name)
         if os.path.isfile(p):
             stamps.append("%s:%d" % (name, os.path.getmtime(p)))
@@ -419,11 +436,14 @@ def send_file(client, filename, initial=None, raw_path=""):
         )
         return
     ctype = mimetypes.guess_type(path)[0] or "application/octet-stream"
-    if filename == "index.html":
+    if os.path.basename(filename) == "index.html":
         # index.html 不快取：它負責把 ?v=1 換成目前的資產雜湊，永遠要拿最新的。
+        # 比 basename 而不是整串：klein-lab/index.html 也要吃到同一套替換，
+        # 否則改了 lab.css 瀏覽器會一直跑舊版（?v=1 掛的是 immutable）。
+        assets = LAB_ASSETS if filename.startswith("klein-lab") else None
         with open(path, "rb") as f:
             body = f.read()
-        send_body(client, body.replace(b"?v=1", b"?v=" + asset_version().encode("ascii")),
+        send_body(client, body.replace(b"?v=1", b"?v=" + asset_version(assets).encode("ascii")),
                   ctype, initial, NO_STORE)
         return
     st = os.stat(path)
@@ -1072,6 +1092,129 @@ def serve_object_info(client, initial):
     return True
 
 
+# ---- /panel/object_info：只回面板真的用得到的節點定義 ----------------------
+# ComfyUI 的 /object_info 現在是 14.16MB（3198 個節點類別），但這個面板只認得
+# 四份 workflow 裡出現過的那些——實測 50 個類別、130KB，差 109 倍。
+# 前端只拿它做兩件事：converter.js 的 _validInputNames()（濾掉不合法的 widget）
+# 與 fixModelNames()（模型檔名被 ComfyUI 改名時對照修正），兩者都是拿自己
+# workflow 裡的 class_type 去查表，其餘 3148 個類別下載了永遠不會被查到。
+#
+# 桌面上省下的是 21ms 的 JSON.parse 與數十 MB 的 heap；手機走 Tailscale 省下的
+# 是 2.44MB 的實際傳輸。/klein 走的仍是原本的 /object_info，行為完全沒變。
+_OI_SLIM_SOURCES = ("workflow.json", "zimage_t2i.json", "zimage_controlnet.json",
+                    "krea2.json", "illustrious.json")
+# 面板會在送出時「即時插入」的節點：LoRA 分支與 checkpoint 覆寫。
+# 它們不在任何一份 workflow 檔裡，但一樣要查得到定義。
+_OI_SLIM_EXTRA = ("LoraLoader", "LoraLoaderModelOnly", "CheckpointLoaderSimple")
+_oi_slim_lock = threading.Lock()
+_oi_slim_cache = {"etag": None, "body": None, "gz": None, "out_etag": None}
+_oi_slim_classes = {"stamp": None, "set": None}
+
+
+def _panel_node_classes():
+    """掃四份 workflow 取出所有 class_type。檔案 mtime 沒變就直接用快取。"""
+    stamp = []
+    for name in _OI_SLIM_SOURCES:
+        fp = os.path.join(BASE, name)
+        stamp.append("%s:%d" % (name, os.path.getmtime(fp)) if os.path.isfile(fp) else name)
+    stamp = "|".join(stamp)
+    if _oi_slim_classes["stamp"] == stamp:
+        return _oi_slim_classes["set"]
+    names = set(_OI_SLIM_EXTRA)
+    for name in _OI_SLIM_SOURCES:
+        fp = os.path.join(BASE, name)
+        if not os.path.isfile(fp):
+            continue
+        try:
+            with open(fp, "rb") as f:
+                doc = _json.load(f)
+        except Exception as e:
+            print("[object_info] 讀不到 %s：%s" % (name, e), flush=True)
+            continue
+        if not isinstance(doc, dict):
+            continue
+        # UI 格式（workflow.json）：nodes[].type
+        for node in (doc.get("nodes") or []):
+            if isinstance(node, dict) and node.get("type"):
+                names.add(node["type"])
+        # API 格式：{節點ID: {"class_type": ...}}
+        for v in doc.values():
+            if isinstance(v, dict) and v.get("class_type"):
+                names.add(v["class_type"])
+    _oi_slim_classes["stamp"] = stamp
+    _oi_slim_classes["set"] = names
+    return names
+
+
+def _object_info_slim():
+    """回 (body, gz, etag)。以完整版的 etag 當快取鍵——只有 ComfyUI 重啟或裝了
+    新節點才會重算。重算要 json.loads 一份 14MB（約 150ms），一個伺服器生命
+    週期內通常只發生一次。"""
+    raw, _full_gz = get_object_info()
+    full_etag = _oi_cache["etag"]
+    with _oi_slim_lock:
+        if _oi_slim_cache["etag"] == full_etag and _oi_slim_cache["body"] is not None:
+            return _oi_slim_cache["body"], _oi_slim_cache["gz"], _oi_slim_cache["out_etag"]
+    wanted = _panel_node_classes()
+    full = _json.loads(raw.decode("utf-8"))
+    slim = {k: v for k, v in full.items() if k in wanted}
+    body = _json.dumps(slim, ensure_ascii=False).encode("utf-8")
+    out_etag = '"%s"' % hashlib.md5(body).hexdigest()[:16]
+    with _oi_slim_lock:
+        _oi_slim_cache.update({"etag": full_etag, "body": body,
+                               "gz": gzip.compress(body, 5), "out_etag": out_etag})
+    print("[object_info] 精簡版：%d / %d 個節點類別，%.1fKB（完整版 %.2fMB）"
+          % (len(slim), len(full), len(body) / 1024.0, len(raw) / 1048576.0), flush=True)
+    return body, _oi_slim_cache["gz"], out_etag
+
+
+def serve_object_info_slim(client, initial):
+    """成功回 True。連不到 ComfyUI 時比照完整版直接回 502 帶說明，不要落去代理
+    ——那只會用同一組 host:port 再被拒一次，Windows loopback 每次要 2 秒。"""
+    try:
+        body, gz, etag = _object_info_slim()
+    except (urllib.error.URLError, OSError) as e:
+        reason = getattr(e, "reason", e)
+        msg = ("無法連線到 ComfyUI (%s:%s)：%s\n"
+               "請先啟動 ComfyUI，或用 python serve.py <host:port> 指定正確位址。"
+               % (COMFY_HOST, COMFY_PORT, reason)).encode("utf-8")
+        client.sendall(
+            b"HTTP/1.1 502 Bad Gateway\r\n"
+            b"Content-Type: text/plain; charset=utf-8\r\n"
+            b"Connection: close\r\n"
+            b"Content-Length: " + str(len(msg)).encode() + b"\r\n\r\n" + msg
+        )
+        return True
+    except Exception as e:
+        print("[object_info] 精簡版失敗，改回完整版：%s: %s" % (type(e).__name__, e), flush=True)
+        return False
+    keep = _want_keepalive(initial)
+    if header_value(initial, "If-None-Match") == etag:
+        client.sendall((
+            "HTTP/1.1 304 Not Modified\r\n"
+            f"ETag: {etag}\r\n"
+            "Cache-Control: no-cache\r\n"
+            + _conn_hdr(keep) +
+            "\r\n"
+        ).encode("utf-8"))
+        return True
+    accepts_gzip = "gzip" in (header_value(initial, "Accept-Encoding") or "").lower()
+    out = gz if accepts_gzip else body
+    header = (
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: application/json; charset=utf-8\r\n"
+        f"Content-Length: {len(out)}\r\n"
+        + ("Content-Encoding: gzip\r\n" if accepts_gzip else "") +
+        "Vary: Accept-Encoding\r\n"
+        f"ETag: {etag}\r\n"
+        "Cache-Control: no-cache\r\n"
+        + _conn_hdr(keep) +
+        "\r\n"
+    ).encode("utf-8")
+    client.sendall(header + out)
+    return True
+
+
 def _read_http_body(client, initial, max_len=2 * 1024 * 1024):
     """從已讀的標頭位元組接著把 POST body 收完。超過 max_len 回 None。"""
     cl = header_value(initial, "Content-Length")
@@ -1196,6 +1339,10 @@ def _dispatch(client, initial):
     if path in STATIC_FILES and not is_ws:
         send_file(client, STATIC_FILES[path], initial, raw_path)
         return "local"
+    if method == "GET" and path == "/panel/object_info" and not is_ws:
+        if serve_object_info_slim(client, initial):
+            return "local"
+        # 精簡失敗 → 落下去由 proxy_to_comfy 轉發（前端會拿到完整版，仍可運作）
     if method == "GET" and path == "/panel/loras" and not is_ws:
         serve_lora_list(client, initial)
         return "local"

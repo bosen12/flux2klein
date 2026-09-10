@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" data-skin="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1c1a17">
+  <title>KLEIN LAB · ComfyUI 面板</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=1">
+  <!-- 字型自己送（fonts/ 底下的 woff2，總共 64KB），不掛 CDN——面板可能離線跑。
+       preload 只給 Archivo：介面上第一眼看到的拉丁文字都是它，Plex Mono 要等
+       有數字要讀（進度、種子）才用得到，讓它排在後面。
+
+       版本號刻意寫 ?v=2 而不是 ?v=1：serve.py 送 index.html 時會把「?v=1」
+       這串位元組換成目前的資產雜湊，但它不會去改 lab.css 裡的字型網址（那邊
+       是 ?v=2）。兩邊不一致的話就是兩個不同的網址、字型被抓兩次——實測 Archivo
+       真的下載了兩份 34KB。字型檔內容永遠不會變，所以固定版本號是對的。 -->
+  <link rel="preload" href="/lab/fonts/archivo-latin.woff2?v=2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/lab/lab.css?v=1">
+</head>
+<body>
+<!-- app.js 的 initVanta() 會 querySelector('.bg-fx')。這一版沒有漂浮色團
+     （那是名副其實的 AI 味，也是一條永遠在跑的 rAF），留一個空殼當保險。 -->
+<div class="bg-fx" aria-hidden="true"></div>
+
+<div class="app">
+  <!-- ── 頂樑 ───────────────────────────────────────────────────────────
+       class 必須保留 topbar：app.js 的偏好摺疊用 querySelector('header.topbar') -->
+  <header class="topbar rail">
+    <div class="brand">
+      <!-- 顏料井：切引擎時新顏料從底部漲上來（app.js 的 riseLogoWater）。
+           底色會被 app.js 暫時寫成 inline 漸層，所以這裡不要用背景圖。 -->
+      <div class="well" id="brand-logo">
+        <i class="logo-fill" id="logo-fill"></i>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M11 3.2 21 19.4H3.4L11 3.2Z"/>
+          <path d="M2 9.4h6.4" opacity=".85"/>
+          <path d="M14.6 12.6h7.6M14.2 15.4h6.2M13.8 9.8h7" opacity=".55"/>
+        </svg>
+      </div>
+      <div class="brand-txt">
+        <span id="brand-title">Flux2 Klein 面板</span>
+        <small id="brand-sub">文生圖 / 多圖編輯 / 局部重繪 / 圖像擴展</small>
+      </div>
+    </div>
+
+    <nav class="engine-switch" id="engine-switch" aria-label="繪圖引擎">
+      <span class="engine-pill" id="engine-pill" aria-hidden="true"></span>
+      <button type="button" data-engine="flux2klein" class="active">Flux2 Klein</button>
+      <button type="button" data-engine="zimage">Z-Image Turbo</button>
+      <button type="button" data-engine="krea2">Krea2</button>
+      <button type="button" data-engine="illustrious">Illustrious</button>
+    </nav>
+
+    <!-- 目前引擎錨的那個真實顏料。內容由 lab-boot.js 依 data-engine 換。 -->
+    <div class="pigment" id="pigment" aria-hidden="true">
+      <i class="pigment-chip"></i>
+      <span class="pigment-name" id="pigment-name">國際克萊因藍</span>
+      <code class="pigment-hex" id="pigment-hex">#002fa7</code>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- 助理不是第五個引擎：它自己不產圖，而是操作那四個。 -->
+    <button type="button" class="tool-btn assistant-btn" id="assistant-btn"
+            aria-expanded="false" aria-controls="assistant" title="AI 助理（語音操作面板）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 3a4 4 0 0 1 4 4v4a4 4 0 0 1-8 0V7a4 4 0 0 1 4-4Z"/>
+        <path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>
+      </svg>
+      <span>助理</span>
+    </button>
+    <button type="button" class="tool-btn darkroom-btn" id="darkroom-btn"
+            title="詞庫暗房（開新視窗，需先啟動 darkroom/preview_ui.bat）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="16" rx="1.5"/>
+        <circle cx="8.5" cy="9.5" r="1.6"/><path d="m21 16-5-5L5 20"/>
+      </svg>
+      <span>暗房</span>
+    </button>
+
+    <!-- 偏好開關的摺疊鈕：只在窄螢幕出現（桌面 CSS 設 display:none）。 -->
+    <button type="button" class="tool-btn icon-only topbar-more" id="topbar-more"
+            aria-expanded="false" aria-controls="toggle-inline" aria-label="顯示偏好開關">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="2.6"/>
+        <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>
+      </svg>
+    </button>
+
+    <div class="toggle-inline" id="toggle-inline">
+      <label class="opt"><span>音效</span><span class="yz-switch"><input type="checkbox" id="opt-sound" checked><span class="yz-slider"></span><span class="yz-knob"></span></span></label>
+      <label class="opt"><span>通知</span><span class="yz-switch"><input type="checkbox" id="opt-notify"><span class="yz-slider"></span><span class="yz-knob"></span></span></label>
+      <label class="opt"><span>預覽</span><span class="yz-switch"><input type="checkbox" id="opt-preview" checked><span class="yz-slider"></span><span class="yz-knob"></span></span></label>
+    </div>
+
+    <!-- 深／淺切換。lab-boot.js 記在 localStorage，不影響原面板。 -->
+    <button type="button" class="tool-btn icon-only skin-btn" id="skin-toggle"
+            title="切換深色／淺色" aria-label="切換深色／淺色">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="8.2" fill="none" stroke="currentColor" stroke-width="1.7"/>
+        <path d="M12 3.8a8.2 8.2 0 0 0 0 16.4Z" fill="currentColor"/>
+      </svg>
+    </button>
+
+    <div class="conn" id="conn"><span class="dot" id="conn-dot"></span><span id="conn-text">連線中…</span></div>
+  </header>
+
+  <div class="main">
+    <!-- ── 左：控制台 ──────────────────────────────────────────────── -->
+    <section class="left">
+      <div class="left-scroll">
+        <div class="tabs" id="tabs"></div>
+        <div class="form" id="form">
+          <p class="mode-desc" id="mode-desc"></p>
+
+          <div class="field prompt-wrap">
+            <label>提示詞 <span class="hint" id="prompt-hint"></span></label>
+            <textarea id="prompt" placeholder="描述你想要的畫面 / 編輯指令…"></textarea>
+            <div class="prompt-tools">
+              <button type="button" class="mic-btn" id="mic-btn" title="語音輸入（點一下開始／停止）" aria-label="語音輸入">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="21"/>
+                </svg>
+              </button>
+              <button type="button" class="ai-btn" id="ai-btn" title="AI 優化提示詞" aria-label="AI 優化提示詞">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="m3 21 9.5-9.5"/><path d="M14.5 3v4M12.5 5h4"/><path d="M19 9.5v3M17.5 11h3"/>
+                </svg>
+              </button>
+              <button type="button" class="prompt-undo" id="prompt-undo" hidden>還原優化前</button>
+            </div>
+          </div>
+
+          <div class="field" id="neg-field" style="display:none">
+            <label>負向提示詞 <span class="hint">選詞庫負向時會覆蓋這裡</span></label>
+            <textarea id="neg" rows="2" placeholder="不想出現的內容…"></textarea>
+          </div>
+
+          <div class="field" id="images-field" style="display:none">
+            <label>參考圖片 <span class="hint" id="images-hint"></span></label>
+            <div class="uploads" id="uploads"></div>
+          </div>
+
+          <div class="field" id="mask-field" style="display:none">
+            <label>塗抹要重繪的區域 <span class="hint">白色 = 會被重新生成</span></label>
+            <div class="mask-wrap">
+              <div class="mask-stage" id="mask-stage"><span class="mask-empty" id="mask-empty">先在上方上傳圖片</span></div>
+              <div class="mask-tools">
+                <span class="mask-brush"><span>筆刷</span><input type="range" id="brush" min="8" max="120" value="45"></span>
+                <button class="btn-mini" id="mask-clear">清除</button>
+                <span class="mask-grow">
+                  <label class="chk" for="grow"><span>擴張/羽化</span></label>
+                  <input type="number" id="grow" value="10" min="0" max="200">
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="field" id="size-field" style="display:none">
+            <label>尺寸 <span class="hint">像素</span></label>
+            <div class="row size-row">
+              <input type="number" id="width" value="1024" min="256" max="4096" step="8" aria-label="寬">
+              <span class="times" aria-hidden="true">×</span>
+              <input type="number" id="height" value="1024" min="256" max="4096" step="8" aria-label="高">
+            </div>
+            <div class="aspects" id="aspect-presets"></div>
+          </div>
+
+          <div class="field" id="pad-field" style="display:none">
+            <label>擴展邊界 <span class="hint">像素</span></label>
+            <div class="pad-grid">
+              <label class="pad-cell"><span>左</span><input type="number" id="pad-left" value="504" min="0" step="8"></label>
+              <label class="pad-cell"><span>右</span><input type="number" id="pad-right" value="504" min="0" step="8"></label>
+              <label class="pad-cell"><span>上</span><input type="number" id="pad-top" value="0" min="0" step="8"></label>
+              <label class="pad-cell"><span>下</span><input type="number" id="pad-bottom" value="0" min="0" step="8"></label>
+              <label class="pad-cell"><span>羽化</span><input type="number" id="pad-feather" value="50" min="0" step="1"></label>
+            </div>
+          </div>
+
+          <div class="field" id="enhance-field" style="display:none">
+            <label>增強 <span class="hint">開啟後可拉桿對照差別</span></label>
+            <div class="enh-grid" id="enhance-list"></div>
+            <div id="enh-tune"></div>
+            <div id="ref-upload" style="display:none">
+              <div class="uploads" id="uploads-ref"></div>
+            </div>
+          </div>
+
+          <div class="field" id="lora-field" style="display:none">
+            <label class="lora-head" id="lora-toggle">
+              <input type="checkbox" id="lora-on">
+              <span class="lora-head-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg></span>
+              <span class="lora-head-body">
+                <span class="lora-head-name">LoRA 風格</span>
+                <span class="lora-head-desc">套用畫風 LoRA，可挑觸發詞加進提示詞</span>
+              </span>
+              <span class="lora-head-sw"></span>
+            </label>
+            <div id="lora-panel" style="display:none"></div>
+          </div>
+
+          <div class="field" id="lib-field" style="display:none">
+            <label class="lora-head" id="lib-toggle">
+              <input type="checkbox" id="lib-on">
+              <span class="lora-head-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg></span>
+              <span class="lora-head-body">
+                <span class="lora-head-name">詞庫</span>
+                <span class="lora-head-desc">挑一個情境，正向自動填入、負向自動套用</span>
+              </span>
+              <span class="lora-head-sw"></span>
+            </label>
+            <div id="lib-panel" style="display:none"></div>
+          </div>
+
+          <div class="field" id="model-field">
+            <label>模型 <span class="hint">Diffusion + Text Encoder</span></label>
+            <select id="model-set"></select>
+          </div>
+
+          <div class="row num-row">
+            <div class="field">
+              <label>步數 <span class="hint">Steps</span></label>
+              <input type="number" id="steps" value="4" min="1" max="60">
+            </div>
+            <div class="field">
+              <label>批次 <span class="hint">Batch</span></label>
+              <input type="number" id="batch" value="1" min="1" max="16">
+            </div>
+          </div>
+
+          <div class="field">
+            <label>種子 <span class="hint">Seed</span></label>
+            <div class="seed-row">
+              <input type="text" id="seed" value="9527" inputmode="numeric">
+              <button class="btn-mini" id="seed-rand" title="重擲">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/>
+                  <circle cx="8.4" cy="8.4" r="1.15" fill="currentColor" stroke="none"/>
+                  <circle cx="12" cy="12" r="1.15" fill="currentColor" stroke="none"/>
+                  <circle cx="15.6" cy="15.6" r="1.15" fill="currentColor" stroke="none"/>
+                </svg>重擲
+              </button>
+              <label class="chk"><input type="checkbox" id="seed-fixed"><span>固定</span></label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 送出列釘在左欄底：原面板要捲到最下面才按得到「生成」。 -->
+      <div class="actions">
+        <!-- 按鈕內容不能放子元素：app.js 會用 textContent 直接改字（送出中…／完成／
+             生成），那會把子節點整個抹掉。快捷鍵標示因此做在 ::after 上。 -->
+        <button class="btn-run" id="run" data-state="idle" title="生成（Ctrl / ⌘ + Enter）">生成</button>
+        <button class="btn-ghost" id="interrupt" title="中斷目前任務">中斷</button>
+      </div>
+    </section>
+
+    <!-- ── 右：儀表 + 版面 ─────────────────────────────────────────── -->
+    <section class="right">
+      <!-- 狀態橫樑。不是卡片：進度條就是它自己的下緣。 -->
+      <div class="strip idle" id="progress-card">
+        <div class="strip-row">
+          <span class="progress-pct" id="pct">0%</span>
+          <span class="progress-stage" id="stage">閒置中</span>
+          <span class="run-loader" id="run-loader" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="strip-gap"></span>
+          <span class="metrics">
+            <span class="metric"><span class="k">速度</span><span class="v" id="m-speed">–</span></span>
+            <span class="metric"><span class="k">ETA</span><span class="v" id="m-eta">–</span></span>
+            <span class="metric"><span class="k">步數</span><span class="v" id="m-step">–</span></span>
+          </span>
+        </div>
+        <ol class="pipeline" id="pipeline" aria-label="執行階段"></ol>
+        <div class="bar"><i id="bar-fill"></i></div>
+      </div>
+
+      <!-- 版面：所有看的東西都在這一片上，沒有卡片套卡片。 -->
+      <div class="plate">
+        <div class="idle-hint">
+          <p class="idle-lead">左欄填好，按 <kbd>Ctrl / ⌘</kbd> + <kbd>Enter</kbd>。</p>
+          <p class="idle-sub">生成時這裡會即時長出取樣預覽，完成後成品留在下面的樣張區。</p>
+        </div>
+
+        <!-- 畫布形狀。閒置時右邊本來整片是空的，但「等一下會做出什麼形狀的圖」
+             是這個當下唯一有意義的資訊，就把它畫出來。文生圖以外的模式（畫布
+             來自上傳圖）由 lab-boot.js 收起來。 -->
+        <section class="plate-sec canvas-sec" id="canvas-sec">
+          <h2 class="plate-head">畫布</h2>
+          <div class="canvas-read">
+            <div class="canvas-frame" id="canvas-frame"></div>
+            <dl class="canvas-meta">
+              <div><dt>尺寸</dt><dd id="canvas-dims">1024 × 1024</dd></div>
+              <div><dt>比例</dt><dd id="canvas-ratio">1:1</dd></div>
+              <div><dt>像素</dt><dd id="canvas-mp">1.05 MP</dd></div>
+            </dl>
+          </div>
+        </section>
+
+        <div class="preview-live" id="preview-live"><img id="preview-img" alt="即時取樣預覽"></div>
+
+        <section class="plate-sec" id="compare-card" style="display:none">
+          <h2 class="plate-head">前後對照<span class="hint">拖曳中間分隔線，點圖放大</span></h2>
+          <div id="compare"></div>
+        </section>
+
+        <section class="plate-sec sheet">
+          <h2 class="plate-head">樣張<button type="button" class="head-btn" id="gallery-clear">清除</button></h2>
+          <div class="gallery" id="gallery"></div>
+        </section>
+      </div>
+
+      <!-- 日誌抽屜：釘在版面下緣，預設收起 -->
+      <div class="drawer collapsed" id="log-card">
+        <div class="drawer-head" id="log-head" role="button" tabindex="0" aria-expanded="false" aria-controls="log">
+          <span class="drawer-title">日誌</span>
+          <span class="drawer-sub">KLEIN LAB</span>
+          <span class="head-caret" aria-hidden="true"></span>
+        </div>
+        <div class="drawer-body"><div class="log" id="log"></div></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- AI 助理抽屜。刻意不加遮罩：它的價值是「你說話、面板動起來」。 -->
+<aside class="assistant" id="assistant" aria-label="AI 助理" inert>
+  <header class="asst-head">
+    <span class="asst-dot" id="asst-dot" aria-hidden="true"></span>
+    <div class="asst-head-txt">
+      <strong id="asst-title">AI 助理</strong>
+      <small id="asst-state">尚未啟動</small>
+    </div>
+    <button type="button" class="asst-close" id="asst-close" title="關閉助理" aria-label="關閉助理">✕</button>
+  </header>
+
+  <div class="asst-modes" id="asst-modes" role="group" aria-label="助理模式">
+    <button type="button" data-mode="assistant" class="active">AI 助理</button>
+    <button type="button" data-mode="girlfriend">女友</button>
+  </div>
+
+  <div class="asst-avatar" id="asst-avatar" aria-hidden="true">
+    <div class="asst-avatar-inner">
+      <span class="asst-avatar-ring" id="asst-avatar-ring"></span>
+      <img id="asst-avatar-img" src="/assets/avatar.webp?v=1" alt="" loading="lazy" decoding="async">
+      <video id="asst-avatar-video" autoplay playsinline muted></video>
+      <span class="asst-avatar-glow" id="asst-avatar-glow"></span>
+    </div>
+  </div>
+
+  <div class="asst-log" id="asst-log" role="log" aria-live="polite">
+    <p class="asst-empty">直接打字，或按「開始聆聽」用說的。例如：<br>
+      「用 Illustrious 畫一個抱著吉他的少女，直式」</p>
+  </div>
+
+  <footer class="asst-foot">
+    <div class="asst-type">
+      <input type="text" id="asst-input" placeholder="打字問助理…（Enter 送出）"
+             autocomplete="off" aria-label="輸入訊息給助理">
+      <button type="button" class="asst-send" id="asst-send" title="送出" aria-label="送出">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 12h15M13 6l6 6-6 6"/>
+        </svg>
+      </button>
+    </div>
+    <div class="asst-mic-row">
+      <button type="button" class="asst-mic" id="asst-mic">
+        <span class="asst-mic-icon" aria-hidden="true"></span>
+        <span id="asst-mic-label">開始聆聽</span>
+      </button>
+      <div class="asst-level" id="asst-level" aria-hidden="true"><i></i></div>
+    </div>
+  </footer>
+</aside>
+
+<div class="lightbox" id="lightbox"><img id="lightbox-img" alt=""></div>
+
+<!-- lab-boot.js 必須排在 app.js 前面：它要在 app.js 發出第一個請求之前，
+     先把 /object_info 改指到精簡端點。 -->
+<script src="/lab/lab-boot.js?v=1"></script>
+<script src="/config.js?v=1"></script>
+<script src="/converter.js?v=1"></script>
+<script src="/zimage.js?v=1"></script>
+<script src="/krea2.js?v=1"></script>
+<script src="/illustrious.js?v=1"></script>
+<script src="/app.js?v=1"></script>
+</body>
+</html>

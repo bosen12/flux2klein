@@ -1,0 +1,17 @@
+KLEIN LAB 用到的兩套拉丁字型，都是 SIL Open Font License 1.1，
+可以自由使用、修改、隨作品散布（含商業用途），只要保留這份授權說明。
+
+  archivo-latin.woff2        Archivo (variable, wght 400–700)
+                             © Omnibus-Type
+                             https://github.com/Omnibus-Type/Archivo
+
+  plexmono-400-latin.woff2   IBM Plex Mono Regular
+  plexmono-500-latin.woff2   IBM Plex Mono Medium
+                             © IBM Corp.
+                             https://github.com/IBM/plex
+
+授權全文：https://openfontlicense.org/
+
+三個檔案都只含 latin 子集（U+0000–00FF 那一段，就是 Google Fonts 切好的
+latin unicode-range），合計 64KB。中文完全走系統字：CJK webfont 動輒好幾 MB，
+放進一個以「更快」為目標的版本裡不合理。

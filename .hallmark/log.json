@@ -1,0 +1,11 @@
+[
+  {
+    "date": "2026-09-10",
+    "macrostructure": "Instrument (app shell)",
+    "theme": "custom",
+    "theme_axes": "dark+light paper / grotesk-sans / chromatic-per-engine",
+    "vibe": "darkroom instrument, warm ink, four real pigments",
+    "enrichment": "none (typography + hairlines only)",
+    "brief": "KLEIN LAB — ComfyUI 面板的平行改版（/lab），與原 /klein 並存"
+  }
+]
