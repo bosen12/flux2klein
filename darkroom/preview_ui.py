@@ -2409,7 +2409,14 @@ class Handler(BaseHTTPRequestHandler):
         darkroom.css（41KB gz）＋index.html（13KB gz）＝142KB，手機走 Tailscale 每次
         都要付。用 no-cache 而不是 max-age 是刻意的：這幾支沒有內容雜湊網址（不像主
         面板 index.html 會把資產網址換成 ?v=<雜湊>），必須每次問一下伺服器，但內容沒變
-        就回 304、不重送 body——「改完存檔重整就生效」這個前提完全不變。"""
+        就回 304、不重送 body——「改完存檔重整就生效」這個前提完全不變。
+
+        **字型是例外**：`no-cache` 的前提是「這支檔案會被我們改」，但 woff2 是 vendor
+        進來的二進位檔，改動只發生在換字型那一刻。維持 no-cache 的代價是每次開頁都對
+        每支字型多送一次條件式請求（3 支＝3 次來回），而且它就卡在文字要換成正式字型的
+        那條路徑上。改成 30 天 max-age：期間瀏覽器連問都不用問，過期後仍靠 ETag 回 304
+        自我修復。刻意不用 immutable + 一年——那會把舊字型永遠鎖在使用者瀏覽器裡，而
+        這些網址沒有內容雜湊可以換（CLAUDE.md 記過這個風險），30 天是有上限的取捨。"""
         path = DARKROOM_DIR / fname
         try:
             st = path.stat()
@@ -2418,10 +2425,11 @@ class Handler(BaseHTTPRequestHandler):
             return
         etag = '"%s"' % hashlib.md5(
             f"{fname}|{st.st_mtime_ns}|{st.st_size}".encode("utf-8")).hexdigest()[:16]
+        cache = "public, max-age=2592000" if ctype.startswith("font/") else "no-cache"
         if self.headers.get("If-None-Match") == etag:
             self.send_response(304)
             self.send_header("ETag", etag)
-            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Cache-Control", cache)
             self.end_headers()
             return
         try:
@@ -2429,7 +2437,7 @@ class Handler(BaseHTTPRequestHandler):
         except OSError:
             self._send_bytes(b"darkroom asset missing", "text/plain", 404)
             return
-        self._write_body(body, ctype, 200, {"Cache-Control": "no-cache", "ETag": etag})
+        self._write_body(body, ctype, 200, {"Cache-Control": cache, "ETag": etag})
 
     def _send_json_etag(self, obj, key: str):
         """跟 _send_json 一樣，但帶 ETag：內容沒變就回 304，一個 byte 的 body 都不用送。
