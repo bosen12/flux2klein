@@ -1486,6 +1486,9 @@ $('rescan').onclick = () => loadAll(true);
 function setMobileRail(on) {
   $('rail').classList.toggle('open', on);
   document.body.classList.toggle('rail-open', on);
+  // aria-expanded 讓讀屏知道這顆鈕現在是「已展開」還是「已收起」，不然它只唸得出
+  // aria-label 的「開關資料夾列」，聽不出目前是哪一邊。
+  $('menu-btn').setAttribute('aria-expanded', on ? 'true' : 'false');
 }
 function closeMobileRail() { setMobileRail(false); }
 $('menu-btn').onclick = () => setMobileRail(!$('rail').classList.contains('open'));
@@ -1671,6 +1674,12 @@ window.addEventListener('keydown', e => {
   if ($('lora-modal').classList.contains('open')) {
     if (e.key === 'Escape') closeLoraModal();
     return;
+  }
+  // 手機資料夾抽屜（≤860px 才是抽屜，見 darkroom.css .rail 的 drawer 規則）：它疊在
+  // 卡片牆之上、有半透明遮罩，卻是這一頁唯一沒有 Esc 出口的疊層——只能點遮罩或再按一次
+  // 選單鈕。只攔 Escape、其餘按鍵照原本流程往下走，避免改到既有快捷鍵行為。
+  if (document.body.classList.contains('rail-open') && e.key === 'Escape') {
+    e.preventDefault(); closeMobileRail(); $('menu-btn').focus(); return;
   }
   // 大圖疊在抽卡之上時，鍵盤先歸大圖：Esc 關大圖回到那批牌（而非關掉整個抽卡）
   if ($('modal').classList.contains('open')) {
