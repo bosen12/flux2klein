@@ -69,3 +69,7 @@ darkroom/update_ai_and_list_channels.py
 darkroom/new_0816.json
 darkroom/old_0816.json
 darkroom/patch_resp.json
+
+# AI agent 的規劃／進度暫存（planning-with-files 那類 skill 產生的工作草稿，
+# 不是原始碼也不是交付物）。放在任何一層都忽略。
+.planning/
