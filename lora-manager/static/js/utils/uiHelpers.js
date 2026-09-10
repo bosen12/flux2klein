@@ -666,6 +666,7 @@ async function ensureRelativeModelPath(modelPath, collectionType) {
 // 時）。跟 darkroom.js 的 LORA_MGR_ORIGIN 是同一個坑、同一種修法。
 const DARKROOM_ORIGIN = `http://${location.hostname}:7860`;
 const KLEIN_ORIGIN = `http://${location.hostname}:7801`;
+const CASE_PORTS = [8787, 8788, 8789, 8790];
 
 async function pushLora(origin, path, folder, fileNameNoExt) {
   const res = await fetch(`${origin}${path}`, {
@@ -678,20 +679,32 @@ async function pushLora(origin, path, folder, fileNameNoExt) {
 }
 
 export async function sendLoraToDarkroom(folder, fileNameNoExt) {
-  const [dr, kl] = await Promise.allSettled([
-    pushLora(DARKROOM_ORIGIN, '/api/lora-push', folder, fileNameNoExt),
-    pushLora(KLEIN_ORIGIN, '/panel/lora-push', folder, fileNameNoExt),
-  ]);
-  if (dr.status === 'rejected') console.error('Failed to send LoRA to darkroom:', dr.reason);
-  if (kl.status === 'rejected') console.error('Failed to send LoRA to KLEIN:', kl.reason);
-  if (dr.status === 'fulfilled' && kl.status === 'fulfilled') {
-    showToast('toast.general.sentToDarkroom', {}, 'success', `已送到暗房、KLEIN 面板：${fileNameNoExt}`);
-  } else if (dr.status === 'fulfilled') {
-    showToast('toast.general.sentToDarkroom', {}, 'success', `已送到暗房：${fileNameNoExt}（KLEIN 面板沒連上，略過）`);
-  } else if (kl.status === 'fulfilled') {
-    showToast('toast.general.sentToDarkroom', {}, 'success', `已送到 KLEIN 面板：${fileNameNoExt}（暗房沒連上，略過）`);
+  const targets = [
+    { name: '暗房', origin: DARKROOM_ORIGIN, path: '/api/lora-push' },
+    { name: 'KLEIN', origin: KLEIN_ORIGIN, path: '/panel/lora-push' },
+    ...CASE_PORTS.map((port) => ({
+      name: `排字匣:${port}`,
+      origin: `http://${location.hostname}:${port}`,
+      path: '/api/lora-push',
+    })),
+  ];
+  const results = await Promise.allSettled(
+    targets.map((t) => pushLora(t.origin, t.path, folder, fileNameNoExt)),
+  );
+  const ok = [];
+  const fail = [];
+  results.forEach((r, i) => {
+    if (r.status === 'fulfilled') ok.push(targets[i].name);
+    else {
+      fail.push(targets[i].name);
+      console.error(`Failed to send LoRA to ${targets[i].name}:`, r.reason);
+    }
+  });
+  if (ok.length) {
+    const skip = fail.length ? `（${fail.join('、')} 沒連上，略過）` : '';
+    showToast('toast.general.sentToDarkroom', {}, 'success', `已送到 ${ok.join('、')}：${fileNameNoExt}${skip}`);
   } else {
-    showToast('toast.general.sendToDarkroomFailed', {}, 'error', `暗房、KLEIN 面板都送失敗：${fileNameNoExt}`);
+    showToast('toast.general.sendToDarkroomFailed', {}, 'error', `送到 workflow 都失敗：${fileNameNoExt}`);
   }
 }
 
