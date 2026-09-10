@@ -12,12 +12,16 @@
 <body>
 <a class="skip" href="#look">跳到看法</a>
 
-<div id="age-gate">
-  <div class="age-gate-card">
+<!-- 年齡閘：跟主應用（index.html）是同一份 markup，語意屬性也要一致——role/aria-modal
+     讓輔助技術知道這是擋路的對話框，焦點初始落在 .age-gate-card（tabindex=-1）上。
+     背景 inert 由 intro.js ageGateInert() 掛上：#page 雖然有 hidden，但上面那條 .skip
+     沒有，實測 Tab 會從閘裡跳到它。 -->
+<div id="age-gate" role="dialog" aria-modal="true" aria-labelledby="age-gate-title" aria-describedby="age-gate-desc">
+  <div class="age-gate-card" tabindex="-1">
     <svg class="age-gate-ap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="14.31" y1="8" x2="20.05" y2="17.94"/><line x1="9.69" y1="8" x2="21.17" y2="8"/><line x1="7.38" y1="12" x2="13.12" y2="2.06"/><line x1="9.69" y1="16" x2="3.95" y2="6.06"/><line x1="14.31" y1="16" x2="2.83" y2="16"/><line x1="16.62" y1="12" x2="10.88" y2="21.94"/></svg>
     <p class="age-gate-eyebrow">年齡限制內容</p>
-    <h1>你已年滿 18 歲了嗎？</h1>
-    <p class="age-gate-body">本站包含成人向詞庫與生成內容，僅限已年滿 18 歲人士使用。</p>
+    <h1 id="age-gate-title">你已年滿 18 歲了嗎？</h1>
+    <p class="age-gate-body" id="age-gate-desc">本站包含成人向詞庫與生成內容，僅限已年滿 18 歲人士使用。</p>
     <div class="age-gate-actions">
       <button type="button" id="age-gate-leave" class="age-gate-no">離開</button>
       <button type="button" id="age-gate-enter" class="age-gate-yes">已滿 18 歲</button>
@@ -56,7 +60,8 @@
     </div>
   </header>
 
-  <section class="look" id="look">
+  <!-- tabindex="-1"：.skip 的目標要自己能被聚焦，否則跳轉只捲動、焦點還留在連結上。 -->
+  <section class="look" id="look" tabindex="-1">
     <h2>四種看法，同一張紙</h2>
     <p class="look-lede">小框裡跑的是你現在這份詞庫抽來的縮圖，不是示意素材。</p>
     <div class="feats">

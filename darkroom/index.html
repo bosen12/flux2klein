@@ -10,17 +10,24 @@
 <link rel="stylesheet" href="/darkroom.css">
 </head>
 <body>
+<!-- 跳到主要內容：第一個 tab 停留點，鍵盤使用者不用逐一穿過頂列十幾個控制項才進到卡片牆。
+     年齡閘開著時整頁（含這條）都被 inert 掉，所以它不會搶在年齡閘前面。 -->
+<a class="skip" href="#main">跳到主要內容</a>
+
 <!-- 18+ 年齡確認：擋在 boot 沖洗動畫之前，見 darkroom.js initAgeGate()。sessionStorage
-     記錄「這次瀏覽階段已確認」，分頁/瀏覽器關掉才重問，一般重整與硬重整都不用再問。 -->
-<div id="age-gate">
-  <div class="age-gate-card">
+     記錄「這次瀏覽階段已確認」，分頁/瀏覽器關掉才重問，一般重整與硬重整都不用再問。
+     role/aria-modal/aria-labelledby 讓輔助技術知道這是擋路的對話框；焦點初始落在
+     .age-gate-card（tabindex=-1）上，整段標題與說明才會被讀出來。背景 inert 由
+     darkroom.js 掛上，不是寫死在這裡——確認通過要拆掉。 -->
+<div id="age-gate" role="dialog" aria-modal="true" aria-labelledby="age-gate-title" aria-describedby="age-gate-desc">
+  <div class="age-gate-card" tabindex="-1">
     <svg class="age-gate-ap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="14.31" y1="8" x2="20.05" y2="17.94"/><line x1="9.69" y1="8" x2="21.17" y2="8"/><line x1="7.38" y1="12" x2="13.12" y2="2.06"/><line x1="9.69" y1="16" x2="3.95" y2="6.06"/><line x1="14.31" y1="16" x2="2.83" y2="16"/><line x1="16.62" y1="12" x2="10.88" y2="21.94"/></svg>
     <p class="age-gate-eyebrow">年齡限制內容</p>
-    <h1>你已年滿 18 歲了嗎？</h1>
-    <p class="age-gate-body">本站包含成人向詞庫與生成內容，僅限已年滿 18 歲人士使用。</p>
+    <h1 id="age-gate-title">你已年滿 18 歲了嗎？</h1>
+    <p class="age-gate-body" id="age-gate-desc">本站包含成人向詞庫與生成內容，僅限已年滿 18 歲人士使用。</p>
     <div class="age-gate-actions">
-      <button id="age-gate-leave" class="age-gate-no ghost">離開</button>
-      <button id="age-gate-enter" class="age-gate-yes primary">已滿 18 歲</button>
+      <button type="button" id="age-gate-leave" class="age-gate-no ghost">離開</button>
+      <button type="button" id="age-gate-enter" class="age-gate-yes primary">已滿 18 歲</button>
     </div>
   </div>
 </div>
@@ -132,7 +139,9 @@
     <div id="rail-empty" class="rail-empty" style="display:none;">找不到符合的資料夾</div>
   </nav>
 
-  <main class="main" id="main">
+  <!-- tabindex="-1"：跳轉連結的目標必須自己能被聚焦，否則 href="#main" 只會改網址、
+       焦點還留在連結上，下一次 Tab 又回到頂列——跳轉等於沒作用。 -->
+  <main class="main" id="main" tabindex="-1">
     <div class="main-head">
       <div>
         <div class="main-title"><span class="num" id="mt-num"></span><h2 id="mt-name">載入中…</h2><button class="ghost cat-draw-btn" id="draw-cat" title="從本分類抽卡（快捷鍵 E）" aria-label="從本分類抽卡"><svg class="btn-svg" style="margin-right:0" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><path d="M12 2c.6 3.6 2.2 6 6 6.6-3.8.6-5.4 3-6 6.6-.6-3.6-2.2-6-6-6.6 3.8-.6 5.4-3 6-6.6z"/></svg></button></div>

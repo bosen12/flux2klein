@@ -4618,19 +4618,41 @@ function startApp() {
   setTimeout(hideBoot, 20000);   // 保險：萬一 loadAll 本身卡住也別讓載入畫面永遠蓋著
   fetchReplacements();   // 背景抓替換規則、更新 genbar 摘要 chip；不影響 boot 收起時機
 }
+// 年齡閘是擋路的對話框，但它跟 body 的其他子節點是平輩、不是包在裡面，所以「看不到就
+// 不能操作」要自己做：把除了它以外的 body 子節點通通 inert 掉。用 inert 而不是自己攔
+// Tab——inert 連同滑鼠點擊、螢幕閱讀器的虛擬游標一起擋掉，手刻的 keydown 迴圈只擋得住
+// Tab 鍵。原本兩者都沒有，實測第三次 Tab 就會穿到背景的名稱搜尋框。
+// 記住「我們自己設的是哪幾個」，拆的時候才不會誤拆本來就寫在 HTML 上的 inert
+// （#shortcuts-overlay 就是一直帶著 inert 的）。
+let ageInerted = [];
+function ageGateInert(on) {
+  if (on) {
+    ageInerted = [...document.body.children]
+      .filter(el => el.id !== 'age-gate' && !el.hasAttribute('inert'));
+    ageInerted.forEach(el => el.setAttribute('inert', ''));
+  } else {
+    ageInerted.forEach(el => el.removeAttribute('inert'));
+    ageInerted = [];
+  }
+}
 function initAgeGate() {
   if (sessionStorage.getItem(AGE_GATE_KEY) === '1') {
     $('age-gate').remove();
     startApp();
     return;
   }
+  ageGateInert(true);
+  // 焦點落在卡片本身（tabindex=-1）而不是任一顆按鈕：標題與說明會整段被讀出來，
+  // 也不會替使用者預選「已滿 18 歲」。preventScroll 避免 body 被捲動一格。
+  const card = document.querySelector('.age-gate-card');
+  if (card) card.focus({ preventScroll: true });
   let ageEntering = false;
   $('age-gate-enter').addEventListener('click', () => {
     if (ageEntering) return;
     ageEntering = true;
     sessionStorage.setItem(AGE_GATE_KEY, '1');
     const gate = $('age-gate');
-    const go = () => { gate.remove(); startApp(); };
+    const go = () => { gate.remove(); ageGateInert(false); startApp(); };
     if (REDUCE_MOTION || !gate.animate) { go(); return; }
     const anim = gate.animate([{ opacity: 1 }, { opacity: 0 }],
       { duration: 280, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' });
@@ -4640,9 +4662,11 @@ function initAgeGate() {
     setTimeout(settle, 400);
   });
   $('age-gate-leave').addEventListener('click', () => {
-    const card = document.querySelector('.age-gate-card');
+    // 換掉 innerHTML 會把當下有焦點的那顆按鈕一起刪掉，焦點會掉回 <body>——那是 inert
+    // 的，等於整頁沒有任何焦點、讀屏也不會唸新文字。改完立刻把焦點收回卡片。
     card.innerHTML =
-      '<p class="age-gate-eyebrow">年齡限制內容</p><h1>無法使用</h1><p class="age-gate-body">很抱歉，本站僅限已滿 18 歲人士使用。</p>';
+      '<p class="age-gate-eyebrow">年齡限制內容</p><h1 id="age-gate-title">無法使用</h1><p class="age-gate-body" id="age-gate-desc">很抱歉，本站僅限已滿 18 歲人士使用。</p>';
+    card.focus({ preventScroll: true });
     if (!REDUCE_MOTION && card.animate) {
       card.animate(
         [{ opacity: .4, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }],

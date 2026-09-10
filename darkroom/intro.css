@@ -135,12 +135,16 @@ section[id], header[id] { scroll-margin-top: var(--nav-clear); }
   background: var(--color-accent); color: var(--color-accent-ink); font-size: var(--text-sm);
   text-decoration: none; white-space: nowrap; transform: translateY(-160%); }
 .skip:focus { transform: none; }
+/* 跳轉目標用程式聚焦（tabindex="-1"），不該畫外框——那不是使用者自己 Tab 停上去的。 */
+#look:focus { outline: none; }
 
 /* ── 年齡閘 ── */
 #age-gate { position: fixed; inset: 0; z-index: var(--z-modal); display: grid; place-items: center;
   background: var(--color-paper); padding: env(safe-area-inset-top) var(--page-gutter) env(safe-area-inset-bottom); }
 .age-gate-card { width: min(24rem, 92vw); text-align: left; padding: var(--space-xl) var(--space-lg);
   background: var(--color-paper-2); border-radius: var(--radius-card); }
+/* 卡片是 tabindex="-1"、只給程式聚焦（讓讀屏唸完整段），Tab 不會停在這裡，拿掉外框無害。 */
+.age-gate-card:focus { outline: none; }
 .age-gate-ap { width: 26px; height: 26px; color: var(--color-accent); margin-bottom: var(--space-sm); }
 .age-gate-eyebrow { margin: 0 0 var(--space-xs); font-size: var(--text-xs);
   letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-accent); }

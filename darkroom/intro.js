@@ -572,6 +572,20 @@ void main() {
     }
   }
 
+  // 跟 darkroom.js 的 ageGateInert() 同一套：年齡閘跟 body 其他子節點是平輩，「看不到就
+  // 不能操作」要自己做。#page 有 hidden 已經拿不到焦點，但 .skip 沒有——不 inert 的話
+  // Tab 會從閘裡跳到那條跳轉連結。記住自己設了哪幾個，拆的時候不誤拆本來就有的。
+  let inerted = [];
+  function ageGateInert(on) {
+    if (on) {
+      inerted = [...document.body.children]
+        .filter(el => el.id !== 'age-gate' && !el.hasAttribute('inert'));
+      inerted.forEach(el => el.setAttribute('inert', ''));
+    } else {
+      inerted.forEach(el => el.removeAttribute('inert'));
+      inerted = [];
+    }
+  }
   function initAgeGate() {
     const gate = $('age-gate');
     if (sessionStorage.getItem(AGE_GATE_KEY) === '1') {
@@ -579,12 +593,16 @@ void main() {
       startPage();
       return;
     }
+    ageGateInert(true);
+    // 焦點給卡片本身而不是任一顆按鈕：標題與說明整段被讀出來，也不預選「已滿 18 歲」。
+    const card = document.querySelector('.age-gate-card');
+    if (card) card.focus({ preventScroll: true });
     let entering = false;
     $('age-gate-enter').addEventListener('click', () => {
       if (entering) return;
       entering = true;
       sessionStorage.setItem(AGE_GATE_KEY, '1');
-      const go = () => { gate.remove(); startPage(); };
+      const go = () => { gate.remove(); ageGateInert(false); startPage(); };
       if (REDUCE_MOTION || !gate.animate) { go(); return; }
       const anim = gate.animate([{ opacity: 1 }, { opacity: 0 }],
         { duration: 280, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' });
@@ -594,9 +612,10 @@ void main() {
       setTimeout(settle, 400);
     });
     $('age-gate-leave').addEventListener('click', () => {
-      const card = document.querySelector('.age-gate-card');
+      // innerHTML 一換，帶著焦點的那顆按鈕就沒了，焦點會掉回 inert 的 <body>；收回卡片。
       card.innerHTML =
-        '<p class="age-gate-eyebrow">年齡限制內容</p><h1>無法使用</h1><p class="age-gate-body">很抱歉，本站僅限已滿 18 歲人士使用。</p>';
+        '<p class="age-gate-eyebrow">年齡限制內容</p><h1 id="age-gate-title">無法使用</h1><p class="age-gate-body" id="age-gate-desc">很抱歉，本站僅限已滿 18 歲人士使用。</p>';
+      card.focus({ preventScroll: true });
     });
   }
 
