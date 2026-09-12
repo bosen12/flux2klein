@@ -30,6 +30,7 @@ import base64
 import copy
 import importlib.util
 import json
+import os
 import random
 import sys
 import time
@@ -51,6 +52,19 @@ DEFAULT_WORKFLOWS = [
     Path.home() / "Downloads" / "ANIMESTYLE.json",
     ROOT / "ANIMESTYLE.json",
 ]
+
+
+def atomic_write_bytes(path: Path, data: bytes) -> None:
+    """同目錄寫完暫存檔再原子換上，避免中斷留下被誤認為成品的半份圖片。"""
+    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        tmp.write_bytes(data)
+        os.replace(tmp, path)
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 # WAI Illustrious 品質標（若詞庫 REQUIRED 已有會自動去重）
 ILLUS_QUALITY = [
@@ -126,7 +140,7 @@ def resolve_comfy_base(preferred: str) -> str:
         import subprocess
         r = subprocess.run(
             ["bash", "-lc", "ip route show | awk '/default/{print $3; exit}'"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True, text=True, errors="replace", timeout=5,
         )
         gw = (r.stdout or "").strip()
         if gw:
@@ -327,6 +341,30 @@ def prepare_workflow(
     return wf
 
 
+def _history_failure(entry: dict) -> str | None:
+    """只擷取可安全顯示的 ComfyUI 執行錯誤，不把 current_inputs 等完整提示詞帶進日誌。"""
+    status = entry.get("status") if isinstance(entry, dict) else None
+    if not isinstance(status, dict) or status.get("status_str") != "error":
+        return None
+    messages = status.get("messages") or []
+    for message in reversed(messages):
+        if not isinstance(message, (list, tuple)) or len(message) < 2:
+            continue
+        event, detail = message[0], message[1]
+        if event != "execution_error" or not isinstance(detail, dict):
+            continue
+        node = detail.get("node_type") or "未知節點"
+        node_id = detail.get("node_id")
+        exc_type = detail.get("exception_type") or "執行錯誤"
+        exc_message = detail.get("exception_message") or "ComfyUI 未提供錯誤訊息"
+        where = f"{node} 節點 {node_id}" if node_id is not None else str(node)
+        return f"ComfyUI 執行失敗：{where} · {exc_type}: {exc_message}"
+    if any(isinstance(m, (list, tuple)) and m and m[0] == "execution_interrupted"
+           for m in messages):
+        return "ComfyUI 執行已中止"
+    return "ComfyUI 執行失敗（history 未提供節點錯誤明細）"
+
+
 def queue_and_wait(base: str, workflow: dict, timeout: float = 600) -> list[dict]:
     client_id = str(uuid.uuid4())
     result = http_json(
@@ -343,7 +381,11 @@ def queue_and_wait(base: str, workflow: dict, timeout: float = 600) -> list[dict
     while time.time() < deadline:
         hist = http_json("GET", f"{base}/history/{prompt_id}", timeout=15)
         if hist and prompt_id in hist:
-            outputs = hist[prompt_id].get("outputs") or {}
+            entry = hist[prompt_id]
+            failure = _history_failure(entry)
+            if failure:
+                raise RuntimeError(failure)
+            outputs = entry.get("outputs") or {}
             images = []
             for node_id in sorted(outputs.keys(), key=lambda x: int(x) if str(x).isdigit() else 0):
                 for img in outputs[node_id].get("images") or []:
@@ -352,12 +394,9 @@ def queue_and_wait(base: str, workflow: dict, timeout: float = 600) -> list[dict
                     images.append(img)
             if images:
                 return images
-        # 檢查 queue 錯誤
-        try:
-            q = http_json("GET", f"{base}/queue", timeout=10)
-            # 若 history 有 error 會在下面超時
-        except Exception:
-            pass
+            status = entry.get("status") or {}
+            if status.get("status_str") == "success":
+                raise RuntimeError("ComfyUI 執行成功，但 workflow 沒有可儲存的輸出圖片（請使用 SaveImage）")
         time.sleep(1.5)
 
     raise TimeoutError(f"超過 {timeout}s 未完成：{prompt_id}")
@@ -494,7 +533,7 @@ def main():
                 t0 = time.time()
                 images = queue_and_wait(base, wf, timeout=args.timeout)
                 img_bytes = download_image(base, images[0])
-                out_png.write_bytes(img_bytes)
+                atomic_write_bytes(out_png, img_bytes)
                 dt = time.time() - t0
                 ok += 1
                 msg = f"[{i}/{total}] OK  {rel}  ({dt:.1f}s, {len(img_bytes)//1024}KB, seed={seed})"

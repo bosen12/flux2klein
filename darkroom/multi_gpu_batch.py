@@ -25,7 +25,7 @@ thread 搶同一個 STATE['gen_sem']（同一台 ComfyUI）」改成「每條 wo
 這裡連不上的 endpoint 會直接跳過、印出來，不會偷偷換成別的位址。
 
 跑到一半某台斷線／壞掉怎麼辦：那台生成失敗的項目會**放回共用佇列**給還活著
-的 endpoint 接手（同一項目最多重試 3 次才真的放棄標成失敗），該台連續失敗
+的 endpoint 接手（同一項目最多重試 20 次才真的放棄標成失敗），該台連續失敗
 3 次就先**冷卻**（預設 90 秒，見 COOLDOWN_SECONDS）暫停領新工作，不會卡在
 失敗迴圈裡把項目白白吃掉——**不是永久放棄**，冷卻時間到會自動再試。這是
 刻意選擇：像 Cloudflare quick tunnel（`trycloudflare.com`）這種偶爾自己斷線
@@ -47,6 +47,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import generate_special_previews as gsp
 from generate_special_previews import (
     DEFAULT_WORKFLOWS,
+    atomic_write_bytes,
     build_negative,
     build_prompt,
     download_image,
@@ -132,7 +133,7 @@ def worker(name: str, base: str, task_q: "queue.Queue[tuple[Path, int]]", templa
             images = queue_and_wait(base, wf, timeout=TIMEOUT)
             img_bytes = download_image(base, images[0])
             out_img = py.with_suffix(OUT_EXT)
-            out_img.write_bytes(img_bytes)
+            atomic_write_bytes(out_img, img_bytes)
             dt = time.time() - t0
             consecutive_fails = 0
             with stats_lock:
@@ -262,7 +263,7 @@ def main():
                      f"（{cooling}/{len(live_endpoints)} 台目前冷卻中），仍在繼續嘗試、沒有中止。")
                 last_progress = time.time()  # 避免同一個停滯狀態一直重複印
     except KeyboardInterrupt:
-        plog("收到中止：在途的生成會跑完，還沒領到的項目不會再送出去...")
+        plog("收到中止：停止派新工作；在途 worker 最多等 5 秒收尾後結束程序...")
         stop_flag[0] = True
 
     stop_flag[0] = True  # 讓還卡在 task_q.get(timeout=0.5) 裡等的 worker 自然退出

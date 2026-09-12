@@ -457,7 +457,7 @@ _REPLACEMENT_PAREN_RE = re.compile(r"[()]")
 
 
 def _escape_weight_parens(text: str) -> str:
-    """ComfyUI 權重語法用 (text:weight) 包住標籤，若 text 本身含字面括號會跟語法的
+    r"""ComfyUI 權重語法用 (text:weight) 包住標籤，若 text 本身含字面括號會跟語法的
     括號混在一起、巢狀結構壞掉。查證過的跳脫方式是 \( \)（見
     https://docs.comfy.org/built-in-nodes/ClipTextEncode）。"""
     return _REPLACEMENT_PAREN_RE.sub(lambda m: "\\" + m.group(0), text)
@@ -1118,7 +1118,7 @@ def get_tailscale_ip() -> str | None:
     for exe in exes:
         try:
             r = subprocess.run(
-                [exe, "ip", "-4"], capture_output=True, text=True, timeout=5
+                [exe, "ip", "-4"], capture_output=True, text=True, errors="replace", timeout=5
             )
             for line in (r.stdout or "").splitlines():
                 ip = line.strip()
@@ -1185,6 +1185,17 @@ def set_job(rel: str, status: str, message: str = ""):
     # /api/status、/api/jobs、pollBatch 看進度，不靠 libs 裡那份快照。
 
 
+def claim_job(rel: str, status: str, message: str = "") -> tuple[bool, dict]:
+    """原子地把閒置 job 標成 queued；已在途時回傳既有狀態，不重複起 worker。"""
+    with STATE["jobs_lock"]:
+        current = STATE["jobs"].get(rel) or {}
+        if current.get("status") in ("queued", "running"):
+            return False, dict(current)
+        job = {"status": status, "message": message, "updated": time.time()}
+        STATE["jobs"][rel] = job
+        return True, dict(job)
+
+
 def get_job(rel: str) -> dict:
     with STATE["jobs_lock"]:
         return dict(STATE["jobs"].get(rel) or {})
@@ -1200,8 +1211,10 @@ def get_job(rel: str) -> dict:
 #   * 「重掃」鈕帶 force=1 同步重掃，使用者要的就是即時反映外部改動。
 # job 狀態不進快取——它會變，每次回應時才疊上去（純記憶體查表，成本可忽略）。
 SCAN_TTL = 60.0
-_scan = {"items": None, "by_rel": None, "at": 0.0, "refreshing": False}
+TAG_INDEX_TTL = 300.0
+_scan = {"items": None, "by_rel": None, "at": 0.0, "refreshing": False, "generation": 0}
 _scan_lock = threading.Lock()
+_scan_build_lock = threading.Lock()
 # 兩種表述都留著（raw 與 gzip），送出時依「這一個請求」的 Accept-Encoding 挑，不是依
 # 「第一個把快取灌熱的那個請求」挑——舊版只存一份 out + enc，於是誰先填快取誰就決定
 # 了之後所有人的編碼。實測後果：只要先來的是不送 Accept-Encoding 的客戶端（Python
@@ -1238,13 +1251,21 @@ def _scan_fs() -> list[dict]:
     return items
 
 
-def _scan_refresh_bg():
+def _scan_refresh_bg(generation: int):
     def work():
+        installed = False
         try:
-            items = _scan_fs()
-            with _scan_lock:
-                _set_scan_items(items)
-            bump_libs()
+            with _scan_build_lock:
+                with _scan_lock:
+                    if _scan.get("generation", 0) != generation:
+                        return
+                items = _scan_fs()
+                with _scan_lock:
+                    if _scan.get("generation", 0) == generation:
+                        _set_scan_items(items)
+                        installed = True
+            if installed:
+                bump_libs()
         finally:
             with _scan_lock:
                 _scan["refreshing"] = False
@@ -1259,6 +1280,8 @@ def scan_libraries(force: bool = False) -> list[dict]:
             # 過期就在背景重掃，這次仍回舊的（同一時間只排一個背景掃描）
             if stale and not _scan["refreshing"]:
                 _scan["refreshing"] = True
+                _scan["generation"] = _scan.get("generation", 0) + 1
+                generation = _scan["generation"]
                 need_bg = True
             else:
                 need_bg = False
@@ -1266,12 +1289,31 @@ def scan_libraries(force: bool = False) -> list[dict]:
             need_bg = False
     if cached is not None and not force:
         if need_bg:
-            _scan_refresh_bg()
+            _scan_refresh_bg(generation)
     else:
-        cached = _scan_fs()
-        with _scan_lock:
-            _set_scan_items(cached)
-        bump_libs()
+        # 開機縮圖預熱與瀏覽器第一個 /api/libs 常同時抵達；冷快取建置要共用一次
+        # filesystem walk，否則 30k 筆詞庫會被平行掃兩遍，反而讓首屏更慢。
+        with _scan_build_lock:
+            with _scan_lock:
+                current = _scan["items"]
+                if current is not None and not force:
+                    cached = current
+                    should_scan = False
+                else:
+                    _scan["generation"] = _scan.get("generation", 0) + 1
+                    generation = _scan["generation"]
+                    should_scan = True
+            if should_scan:
+                cached = _scan_fs()
+                installed = False
+                with _scan_lock:
+                    if _scan.get("generation", 0) == generation:
+                        _set_scan_items(cached)
+                        installed = True
+                    else:
+                        cached = _scan["items"] or cached
+                if installed:
+                    bump_libs()
     # 疊上會變、不進快取的部分：job 狀態、品質旗標、收藏、稀有度。稀有度以側檔為準，
     # 側檔沒有該筆才用 _scan_fs 由檔名衍生的值（舊前綴檔自動沿用）；側檔存 "" 代表
     # 明確清除，會蓋掉檔名衍生值。
@@ -1307,10 +1349,7 @@ def intro_payload() -> dict:
     with _scan_lock:
         cached = _scan["items"]
     if cached is None:
-        cached = _scan_fs()
-        with _scan_lock:
-            _set_scan_items(cached)
-        bump_libs()
+        cached = scan_libraries()
     have = [it for it in cached if it.get("has_image")]
     folders = {it.get("folder") or "" for it in cached}
     n = min(INTRO_SAMPLE, len(have))
@@ -1480,6 +1519,7 @@ def _scan_note_image(rel: str, img: Path):
         it = (_scan.get("by_rel") or {}).get(rel)
         if it is None:
             return
+        _scan["generation"] = _scan.get("generation", 0) + 1
         it["has_image"] = True
         try:
             it["image_mtime"] = int(img.stat().st_mtime)
@@ -1496,7 +1536,8 @@ def _scan_note_image(rel: str, img: Path):
 # 標籤來源有兩份，合併進同一個 frozenset：詞庫 .py 的 REQUIRED_POSITIVE/POSITIVE/
 # NEGATIVE（prompt 內容）+ 同檔名 .json 的 wd-tagger 視覺標籤（_read_visual_tags，
 # 見打標提案）——使用者不用分開想「查 prompt 還是查圖片內容」，搜尋框一律都找得到。
-_tag_index = {"by_rel": None, "by_tag": None, "at": 0.0, "refreshing": False}
+_tag_index = {"by_rel": None, "by_tag": None, "at": 0.0, "refreshing": False,
+              "generation": 0}
 _tag_index_lock = threading.Lock()
 
 
@@ -1548,16 +1589,22 @@ def _tag_index_note(rel: str, visual_tags: list[str]):
         for t in new_tags:
             by_tag.setdefault(t, set()).add(rel)
         by_rel[rel] = new_tags
+        _tag_index["generation"] = _tag_index.get("generation", 0) + 1
 
 
-def _tag_index_refresh_bg():
+def _tag_index_refresh_bg(generation: int):
     def work():
         try:
-            by_rel, by_tag = _build_tag_index()
-            with _tag_index_lock:
-                _tag_index["by_rel"] = by_rel
-                _tag_index["by_tag"] = by_tag
-                _tag_index["at"] = time.time()
+            with _tag_index_build_lock:
+                with _tag_index_lock:
+                    if _tag_index.get("generation", 0) != generation:
+                        return
+                by_rel, by_tag = _build_tag_index()
+                with _tag_index_lock:
+                    if _tag_index.get("generation", 0) == generation:
+                        _tag_index["by_rel"] = by_rel
+                        _tag_index["by_tag"] = by_tag
+                        _tag_index["at"] = time.time()
         finally:
             with _tag_index_lock:
                 _tag_index["refreshing"] = False
@@ -1571,10 +1618,14 @@ def get_tag_index(force: bool = False) -> tuple[dict[str, frozenset[str]], dict[
     with _tag_index_lock:
         cached = _tag_index["by_rel"]
         cached_tag = _tag_index["by_tag"]
-        stale = (time.time() - _tag_index["at"]) > SCAN_TTL
+        # 標籤索引要 AST 解析整份詞庫，實測 30,785 筆在冷磁碟可達 55 秒；暗房自己
+        # 寫入的新標籤會由 _tag_index_note() 立即更新，不必每分鐘重做一次全庫解析。
+        stale = (time.time() - _tag_index["at"]) > TAG_INDEX_TTL
         if cached is not None and not force:
             if stale and not _tag_index["refreshing"]:
                 _tag_index["refreshing"] = True
+                _tag_index["generation"] = _tag_index.get("generation", 0) + 1
+                generation = _tag_index["generation"]
                 need_bg = True
             else:
                 need_bg = False
@@ -1582,7 +1633,7 @@ def get_tag_index(force: bool = False) -> tuple[dict[str, frozenset[str]], dict[
             need_bg = False
     if cached is not None and cached_tag is not None and not force:
         if need_bg:
-            _tag_index_refresh_bg()
+            _tag_index_refresh_bg(generation)
         return cached, cached_tag
     # 還沒建過索引（或要求強制重建）：用一把鎖序列化「真的動手建」這一步。開機暖快取
     # 的背景執行緒跟使用者第一次搜尋標籤幾乎同時抵達時，兩邊都會走到這裡；沒有這把鎖
@@ -1594,12 +1645,33 @@ def get_tag_index(force: bool = False) -> tuple[dict[str, frozenset[str]], dict[
             cached_tag = _tag_index["by_tag"]
         if cached is not None and cached_tag is not None and not force:
             return cached, cached_tag
+        with _tag_index_lock:
+            _tag_index["generation"] = _tag_index.get("generation", 0) + 1
+            generation = _tag_index["generation"]
         by_rel, by_tag = _build_tag_index()
         with _tag_index_lock:
-            _tag_index["by_rel"] = by_rel
-            _tag_index["by_tag"] = by_tag
-            _tag_index["at"] = time.time()
+            if _tag_index.get("generation", 0) == generation:
+                _tag_index["by_rel"] = by_rel
+                _tag_index["by_tag"] = by_tag
+                _tag_index["at"] = time.time()
+            else:
+                by_rel = _tag_index["by_rel"] or by_rel
+                by_tag = _tag_index["by_tag"] or by_tag
         return by_rel, by_tag
+
+
+def search_tag_rels(query_tags: list[str], force: bool = False) -> list[str]:
+    """在鎖內複製會被背景打標更新的 set，避免搜尋迭代時集合大小改變。"""
+    _by_rel, built_by_tag = get_tag_index(force=force)
+    with _tag_index_lock:
+        by_tag = _tag_index.get("by_tag") or built_by_tag
+        if any(tag not in by_tag for tag in query_tags):
+            return []
+        buckets = [set(by_tag[tag]) for tag in query_tags]
+    if not buckets:
+        return []
+    matches = buckets[0] if len(buckets) == 1 else set.intersection(*buckets)
+    return sorted(matches)
 
 
 def get_batch() -> dict:
@@ -1612,12 +1684,29 @@ def set_batch(**kwargs):
         STATE["batch"].update(kwargs)
 
 
-def do_batch(rels: list[str]):
+def claim_batch(rels: list[str]) -> bool:
+    """原子地宣告一批工作，避免兩個分頁同時通過 running 檢查。"""
     with STATE["batch_lock"]:
+        if STATE["batch"].get("running"):
+            return False
         STATE["batch"].update(
             running=True, stop=False, total=len(rels),
             done=0, ok=0, fail=0, running_rels=[],
         )
+        return True
+
+
+def claim_backfill(name: str) -> bool:
+    """原子地宣告 score/tag backfill，避免多分頁重複啟動。"""
+    lock = STATE[f"{name}_lock"]
+    with lock:
+        if STATE[name].get("running"):
+            return False
+        STATE[name] = {"running": True, "done": 0, "total": 0}
+        return True
+
+
+def do_batch(rels: list[str]):
     total = len(rels)
     plog(f"[batch] 開始 · 共 {total} 張 · 併發 {STATE['concurrency']}")
     idx = {"i": 0}
@@ -1679,6 +1768,7 @@ _COMFY_RETRY_COOLDOWN = 15.0   # 秒。resolve_comfy_base() 會試好幾個候�
                                 # 錯覺：之前只在啟動時探測一次，這個修復讓它變成「沒接上
                                 # 就每次都探測」，忘記加冷卻時間）。
 STATE.setdefault("comfy_last_probe", 0.0)
+_comfy_probe_lock = threading.Lock()
 
 
 def ensure_comfy_base():
@@ -1689,17 +1779,20 @@ def ensure_comfy_base():
     重開暗房。改成 comfy_base 是 None、且距上次探測超過冷卻時間時才重探測一次。"""
     if STATE["comfy_base"]:
         return STATE["comfy_base"]
-    now = time.time()
-    if now - STATE["comfy_last_probe"] < _COMFY_RETRY_COOLDOWN:
-        return None
-    STATE["comfy_last_probe"] = now
-    pref = STATE.get("comfy_pref") or "http://127.0.0.1:8188"
-    try:
-        STATE["comfy_base"] = resolve_comfy_base(pref)
-        print(f"[comfy   ] 重新連上 → {STATE['comfy_base']}")
-    except Exception:
-        STATE["comfy_base"] = None
-    return STATE["comfy_base"]
+    with _comfy_probe_lock:
+        if STATE["comfy_base"]:
+            return STATE["comfy_base"]
+        now = time.time()
+        if now - STATE["comfy_last_probe"] < _COMFY_RETRY_COOLDOWN:
+            return None
+        STATE["comfy_last_probe"] = now
+        pref = STATE.get("comfy_pref") or "http://127.0.0.1:8188"
+        try:
+            STATE["comfy_base"] = resolve_comfy_base(pref)
+            print(f"[comfy   ] 重新連上 → {STATE['comfy_base']}")
+        except Exception:
+            STATE["comfy_base"] = None
+        return STATE["comfy_base"]
 
 
 def do_generate(rel: str, seed: int | None = None, in_batch: bool = False):
@@ -1735,7 +1828,7 @@ def do_generate(rel: str, seed: int | None = None, in_batch: bool = False):
             images = queue_and_wait(STATE["comfy_base"], wf, timeout=STATE["timeout"])
             img_bytes = download_image(STATE["comfy_base"], images[0])
             out_img = py.with_suffix(OUT_EXT)
-            out_img.write_bytes(img_bytes)
+            gsp.atomic_write_bytes(out_img, img_bytes)
             # 清掉同名舊 png,避免 webp/png 並存
             old_png = py.with_suffix(".png")
             if OUT_EXT != ".png" and old_png.is_file():
@@ -2368,13 +2461,58 @@ class Handler(BaseHTTPRequestHandler):
     # 壓縮成本 12ms）。對手機走 Tailscale 連是數量級差異。圖片已經是壓縮格式，
     # 不走這裡（_send_cacheable 不壓）。小回應壓了反而虧，設下限。
     GZIP_MIN = 1400
+    # 實際 30,785 筆詞庫的「全部重生」body 約 1.50 MiB；保留明確上限，但不能誤擋
+    # 面板自己的合法最大批次。4 MiB 留給詞庫成長與較長路徑，仍可擋住無界讀入。
+    MAX_JSON_BODY = 4 * 1024 * 1024
 
     def _gzip_ok(self, body: bytes, content_type: str) -> bool:
         if len(body) < self.GZIP_MIN:
             return False
         if not any(t in content_type for t in ("json", "text/", "javascript")):
             return False
-        return "gzip" in (self.headers.get("Accept-Encoding") or "")
+        weights = {}
+        for item in (self.headers.get("Accept-Encoding") or "").split(","):
+            token, *params = item.split(";")
+            token = token.strip().lower()
+            if not token:
+                continue
+            quality = 1.0
+            for param in params:
+                key, sep, value = param.partition("=")
+                if sep and key.strip().lower() == "q":
+                    try:
+                        quality = float(value.strip())
+                    except ValueError:
+                        quality = 0.0
+            weights[token] = quality
+        return weights.get("gzip", weights.get("*", 0.0)) > 0
+
+    def _read_json_body(self) -> dict | None:
+        raw_length = self.headers.get("Content-Length")
+        try:
+            length = int(raw_length) if raw_length is not None else 0
+        except (TypeError, ValueError):
+            self._send_json({"error": "Content-Length 不合法"}, 400)
+            return None
+        if length < 0:
+            self._send_json({"error": "Content-Length 不合法"}, 400)
+            return None
+        if length > self.MAX_JSON_BODY:
+            self._send_json({"error": "請求內容過大"}, 413)
+            return None
+        raw = self.rfile.read(length) if length else b""
+        if len(raw) != length:
+            self._send_json({"error": "請求內容不完整"}, 400)
+            return None
+        try:
+            data = json.loads(raw.decode("utf-8")) if raw else {}
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            self._send_json({"error": "JSON 格式不合法"}, 400)
+            return None
+        if not isinstance(data, dict):
+            self._send_json({"error": "JSON 最外層必須是物件"}, 400)
+            return None
+        return data
 
     def _write_body(self, body: bytes, content_type: str, code: int, extra: dict | None = None):
         gz = self._gzip_ok(body, content_type)
@@ -2662,14 +2800,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not query_tags:
                     self._send_json({"rels": []})
                     return
-                _by_rel, by_tag = get_tag_index(force=qs.get("force", [""])[0] == "1")
-                sets = [by_tag.get(t) for t in query_tags]
-                if any(s is None for s in sets):
-                    rels = []
-                elif len(sets) == 1:
-                    rels = list(sets[0])
-                else:
-                    rels = list(set.intersection(*sets))
+                rels = search_tag_rels(
+                    query_tags, force=qs.get("force", [""])[0] == "1")
                 self._send_json({"rels": rels, "tags": query_tags})
                 return
             if u.path == "/api/thumb":
@@ -2846,16 +2978,16 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
+    def do_HEAD(self):
+        self.do_GET()
+
     def do_POST(self):
         if self._blocked():
             return
         u = urllib.parse.urlparse(self.path)
-        length = int(self.headers.get("Content-Length") or 0)
-        raw = self.rfile.read(length) if length else b""
-        try:
-            data = json.loads(raw.decode("utf-8")) if raw else {}
-        except Exception:
-            data = {}
+        data = self._read_json_body()
+        if data is None:
+            return
         try:
             if u.path == "/api/flag":
                 rel = data.get("rel") or ""
@@ -2886,26 +3018,34 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"ok": True, "rel": rel, "favorited": now})
                 return
             if u.path == "/api/score-backfill":
-                with STATE["score_backfill_lock"]:
-                    if STATE["score_backfill"]["running"]:
-                        self._send_json({"ok": True, "already_running": True})
-                        return
                 if not _score_service_available():
                     self._send_json({"error": "waifu-score 服務未啟動，請先執行 run.bat"}, 400)
                     return
-                threading.Thread(target=run_score_backfill, daemon=True).start()
+                if not claim_backfill("score_backfill"):
+                    self._send_json({"ok": True, "already_running": True})
+                    return
+                try:
+                    threading.Thread(target=run_score_backfill, daemon=True).start()
+                except Exception:
+                    with STATE["score_backfill_lock"]:
+                        STATE["score_backfill"]["running"] = False
+                    raise
                 plog("[score-backfill] 已由前端觸發")
                 self._send_json({"ok": True, "started": True})
                 return
             if u.path == "/api/tag-backfill":
-                with STATE["tag_backfill_lock"]:
-                    if STATE["tag_backfill"]["running"]:
-                        self._send_json({"ok": True, "already_running": True})
-                        return
                 if not _tag_service_available():
                     self._send_json({"error": "wd-tagger 服務未啟動，請先執行 wd-tagger 的 run.bat"}, 400)
                     return
-                threading.Thread(target=run_tag_backfill, daemon=True).start()
+                if not claim_backfill("tag_backfill"):
+                    self._send_json({"ok": True, "already_running": True})
+                    return
+                try:
+                    threading.Thread(target=run_tag_backfill, daemon=True).start()
+                except Exception:
+                    with STATE["tag_backfill_lock"]:
+                        STATE["tag_backfill"]["running"] = False
+                    raise
                 plog("[tag-backfill] 已由前端觸發")
                 self._send_json({"ok": True, "started": True})
                 return
@@ -3080,21 +3220,17 @@ class Handler(BaseHTTPRequestHandler):
                 if not py.is_file():
                     self._send_json({"error": "詞庫不存在"}, 404)
                     return
-                current = get_job(rel)
-                if current.get("status") in ("queued", "running"):
+                claimed, current = claim_job(rel, "queued", "排隊中...")
+                if not claimed:
                     self._send_json({"status": current["status"], "message": current.get("message", "")})
                     return
                 seed = data.get("seed")
-                set_job(rel, "queued", "排隊中...")
                 threading.Thread(
                     target=do_generate, args=(rel, seed), daemon=True
                 ).start()
                 self._send_json({"status": "queued"})
                 return
             if u.path == "/api/batch_generate":
-                if get_batch().get("running"):
-                    self._send_json({"error": "已有批次進行中"}, 409)
-                    return
                 rels_in = data.get("rels") or []
                 regenerate = bool(data.get("regenerate"))
                 # 過濾:合法路徑(regenerate=False 時只留還沒圖的)
@@ -3111,10 +3247,28 @@ class Handler(BaseHTTPRequestHandler):
                 if not rels:
                     self._send_json({"error": "沒有需要生成的項目"}, 400)
                     return
+                if not claim_batch(rels):
+                    self._send_json({"error": "已有批次進行中"}, 409)
+                    return
+                queued = []
                 for rel in rels:
-                    set_job(rel, "queued", "批次排隊中...")
-                threading.Thread(target=do_batch, args=(rels,), daemon=True).start()
-                self._send_json({"status": "started", "total": len(rels)})
+                    claimed, _job = claim_job(rel, "queued", "批次排隊中...")
+                    if claimed:
+                        queued.append(rel)
+                if not queued:
+                    set_batch(running=False, total=0)
+                    self._send_json({"error": "項目都已在生成中"}, 409)
+                    return
+                set_batch(total=len(queued))
+                try:
+                    threading.Thread(target=do_batch, args=(queued,), daemon=True).start()
+                except Exception:
+                    for rel in queued:
+                        if get_job(rel).get("status") == "queued":
+                            set_job(rel, "", "")
+                    set_batch(running=False, total=0)
+                    raise
+                self._send_json({"status": "started", "total": len(queued)})
                 return
             if u.path == "/api/batch_stop":
                 set_batch(stop=True)

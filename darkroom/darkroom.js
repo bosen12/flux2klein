@@ -75,6 +75,7 @@ function invalidateFolderStats() { _folderStatsCache = null; }
 // 才篩的，不進快取，所以標記／生成完成不會讓它失真。
 let _baseCache = null, _baseKey = '', _baseTagSet = null;
 function invalidateBaseList() { _baseCache = null; }
+let loadAllReq = 0;
 
 function indexAll() {
   BY_REL = new Map();
@@ -122,18 +123,25 @@ function setDataset(dir) {
 
 // force=true 才讓後端重掃檔案系統（「重掃」鈕）；一般開頁吃後端快取，秒回。
 async function loadAll(force = false) {
+  const myReq = ++loadAllReq;
   const r = await fetch('/api/libs' + (force ? '?force=1' : ''));
+  if (!r.ok) throw new Error(`詞庫 API 回應 ${r.status}`);
   const j = await r.json();
-  ALL = j.items;
+  if (!Array.isArray(j.items)) throw new Error('詞庫 API 回應格式不正確');
   // job 不再進 /api/libs 指紋；重整時另抓這份小 JSON 疊回去，才會對 running 起輪詢。
+  let jobs = null;
   try {
-    const jobs = await (await fetch('/api/jobs')).json();
-    if (jobs && typeof jobs === 'object' && !Array.isArray(jobs)) {
-      for (const it of ALL) {
-        if (jobs[it.rel]) it.job = jobs[it.rel];
-      }
-    }
+    const jobsRes = await fetch('/api/jobs');
+    if (jobsRes.ok) jobs = await jobsRes.json();
   } catch (e) { /* 舊後端沒這支端點就維持 libs 裡可能帶的 job */ }
+  // 初始載入與使用者按「重掃」可能重疊；舊請求若較晚完成，不可把強制重掃的新快照蓋回去。
+  if (myReq !== loadAllReq) return false;
+  ALL = j.items;
+  if (jobs && typeof jobs === 'object' && !Array.isArray(jobs)) {
+    for (const it of ALL) {
+      if (jobs[it.rel]) it.job = jobs[it.rel];
+    }
+  }
   indexAll();
   const conn = $('conn');
   conn.classList.toggle('on', !!j.comfy);
@@ -171,6 +179,7 @@ async function loadAll(force = false) {
   // 由 pollBatch（單一 batch_status 輪詢）＋ running_rels 處理，queued 不需個別輪詢。
   for (const it of ALL)
     if (it.job && it.job.status === 'running') pollStatus(it.rel);
+  return true;
 }
 
 function folderStats() {
@@ -1482,7 +1491,14 @@ async function pollTagBackfill() {
   }
 }
 $('tag-backfill-btn').onclick = startTagBackfill;
-$('rescan').onclick = () => loadAll(true);
+$('rescan').onclick = async () => {
+  try {
+    await loadAll(true);
+  } catch (e) {
+    console.error(e);
+    toast('詞庫重掃失敗：' + e.message, true);
+  }
+};
 function setMobileRail(on) {
   $('rail').classList.toggle('open', on);
   document.body.classList.toggle('rail-open', on);
@@ -4623,7 +4639,18 @@ function startApp() {
   // 否則 boot 收起的瞬間是一整片底色。pollBatch() 刻意不 return——它的 while(true)
   // 永不 resolve，鏈在後面會讓 boot 一直等到下面的 20s 保險才關。
   $('boot').style.display = '';
-  loadAll().then(() => { maybeStartIntro(); pollBatch(); return introWarmup(); }).finally(hideBoot);
+  loadAll()
+    .then(applied => {
+      if (!applied) return;
+      maybeStartIntro();
+      pollBatch();
+      return introWarmup();
+    })
+    .catch(e => {
+      console.error(e);
+      toast('詞庫載入失敗：' + e.message, true);
+    })
+    .finally(hideBoot);
   setTimeout(hideBoot, 20000);   // 保險：萬一 loadAll 本身卡住也別讓載入畫面永遠蓋著
   fetchReplacements();   // 背景抓替換規則、更新 genbar 摘要 chip；不影響 boot 收起時機
 }

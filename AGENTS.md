@@ -24,11 +24,13 @@ Windows 上有 `start.bat` / `stop_panel.bat` 可用。
 
 AI 提示詞優化走同源 `/panel/groq`（`groq_proxy.py`），`config.js` 送給瀏覽器前會剝掉 `GROQ_API_KEY(S)`。不要再讓前端直打 `api.groq.com`。
 
-沒有測試框架。可用的驗證手段只有兩個：
+沒有第三方測試框架。可用的驗證手段：
 
 ```bash
 node --check app.js        # 語法檢查（app.js 是瀏覽器 IIFE，不能直接 node 執行）
 node _test_convert.js      # 離線驗證 Flux2 的 UI→API 轉換，不需要 ComfyUI
+python -m unittest -v darkroom/test_preview_ui.py  # 暗房後端／併發／快取回歸
+node darkroom/test_darkroom_js.cjs                 # 暗房前端載入競態回歸
 ```
 
 改完 JS/CSS 後，**要提醒使用者重整頁面**才會生效。

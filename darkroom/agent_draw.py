@@ -47,6 +47,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from generate_special_previews import atomic_write_bytes
+
 DEFAULT_BASE_URL = "http://127.0.0.1:7860"
 POLL_INTERVAL_S = 0.8   # 前端是 500ms，這裡沒有即時預覽的需求，放寬一點不必要地打伺服器
 POLL_TIMEOUT_S = 300.0  # 單張生成逾時（跟前端 preview_config 的 timeout 概念一致）
@@ -208,7 +210,7 @@ def draw_and_generate(n: int, *, base_url: str = DEFAULT_BASE_URL,
             data = fetch_result_bytes(gid, base_url=base_url)
             safe_name = "".join(c if c.isalnum() or c in "-_." else "_" for c in name)[:80]
             out_path = out_dir / f"{safe_name}.{gid}.webp"
-            out_path.write_bytes(data)
+            atomic_write_bytes(out_path, data)
             results.append({"rel": rel, "name": name, "id": gid, "status": "done", "out_path": str(out_path)})
         else:
             results.append({"rel": rel, "name": name, "id": gid, "status": st.get("status", "error"),
@@ -399,7 +401,7 @@ def draw_and_stream_to_discord(n: int, *, base_url: str = DEFAULT_BASE_URL,
                 data = fetch_result_bytes(gid, base_url=base_url)
                 safe_name = "".join(c if c.isalnum() or c in "-_." else "_" for c in it["name"])[:80]
                 out_path = out_dir / f"{safe_name}.{gid}.webp"
-                out_path.write_bytes(data)
+                atomic_write_bytes(out_path, data)
                 r = {"rel": it["rel"], "name": it["name"], "id": gid, "status": "done",
                      "out_path": str(out_path)}
                 results.append(r)
