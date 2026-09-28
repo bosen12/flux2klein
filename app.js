@@ -3005,7 +3005,8 @@ EXPLICIT CONTENT:
         ? text + `\n\n(The image canvas is ${sz[0]}×${sz[1]} pixels. Keep the subject suited to this shape; do not add camera or framing instructions.)`
         : text;
       const res = await groqChatFetch({
-        model: 'llama-3.3-70b-versatile',
+        model: 'openai/gpt-oss-120b',
+        reasoning_effort: 'low',
         messages: [
           { role: 'system', content: sys },
           { role: 'user', content: user },

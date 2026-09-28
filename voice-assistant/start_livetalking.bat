@@ -87,7 +87,7 @@ if errorlevel 1 (
 
 rem --- LLM config read by LiveTalking\llm.py ------------------
 set "LLM_BASE_URL=http://127.0.0.1:%PROXY_PORT%/openai/v1"
-set "LLM_MODEL=llama-3.3-70b-versatile"
+set "LLM_MODEL=openai/gpt-oss-120b"
 set "GROQ_API_KEY=local"
 
 echo ============================================================

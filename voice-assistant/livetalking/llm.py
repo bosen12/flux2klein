@@ -12,7 +12,7 @@ from utils.logger import logger
 # LLM_BASE_URL 設成 https://api.groq.com/openai/v1 並提供 GROQ_API_KEY。
 # 走代理時 api_key 不會被檢查，給任意字串即可。
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://127.0.0.1:8756/openai/v1")
-LLM_MODEL = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
+LLM_MODEL = os.getenv("LLM_MODEL", "openai/gpt-oss-120b")
 LLM_API_KEY = os.getenv("GROQ_API_KEY", "local")
 
 # 女友人設。與本專案 app.js 的 ASST_PROMPT_GF 同一套——那幾條說話規則不是囉嗦，

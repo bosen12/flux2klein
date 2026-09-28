@@ -37,6 +37,24 @@ GROQ = "https://api.groq.com"
 ALLOWED_PATHS = ("/openai/v1/chat/completions",)
 ROTATE_STATUSES = {401, 403, 429, 500, 502, 503}
 TIMEOUT_S = 60
+# gpt-oss 是推理模型，不指定時 Groq 用 medium，首字延遲明顯變長（語音念得慢）。
+# 語音助理的 speech-to-speech 套件傳不了這個參數，只能在代理這裡補預設值。
+REASONING_DEFAULTS = {"openai/gpt-oss-": "low"}
+
+
+def _apply_reasoning_default(body):
+    try:
+        obj = json.loads(body)
+    except (TypeError, ValueError):
+        return body
+    if not isinstance(obj, dict) or "reasoning_effort" in obj:
+        return body
+    model = str(obj.get("model", ""))
+    for prefix, effort in REASONING_DEFAULTS.items():
+        if model.startswith(prefix):
+            obj["reasoning_effort"] = effort
+            return json.dumps(obj).encode()
+    return body
 
 
 def load_keys():
@@ -69,6 +87,8 @@ def groq_open(path, method, body, content_type=None, user_agent=None, timeout=TI
     keys = Handler.keys or load_keys()
     if not keys:
         raise GroqConfigError("config.js 裡找不到 GROQ_API_KEYS 或 GROQ_API_KEY")
+    if body:
+        body = _apply_reasoning_default(body)
     n = len(keys)
     last_err = None
     for _ in range(n):

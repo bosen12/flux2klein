@@ -32,7 +32,7 @@ S2S_EXE = VENV / "Scripts" / "speech-to-speech.exe"
 # LLM 不直接打 Groq，而是走本地代理（groq_proxy）：某把 key 撞每日上限（429）
 # 就自動換下一把，兩個帳號額度接力。key 都在 config.js。
 PROXY_PORT = 8756
-GROQ_MODEL = "llama-3.3-70b-versatile"
+GROQ_MODEL = "openai/gpt-oss-120b"
 
 # ---- 斷句靈敏度（收音環境不同差很多，這三個最值得自己調）----
 # thresh：VAD 觸發門檻。預設 0.6 偏高，要講得夠大聲清楚才會觸發，感覺「不靈敏」。

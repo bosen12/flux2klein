@@ -53,7 +53,7 @@
 
 ### AI 提示詞優化
 - 提示詞框右下角 hover 顯示 ✦ 按鈕
-- 點擊後透過同源 `/panel/groq`（Groq Llama 3.3 70B）串流優化提示詞；key 不進瀏覽器
+- 點擊後透過同源 `/panel/groq`（Groq `openai/gpt-oss-120b`，推理強度 low）串流優化提示詞；key 不進瀏覽器
 - 根據當前引擎自動切換 system prompt（自然語言 vs Danbooru tag）
 - 優化後可用「還原優化前」救回原文
 - 需要在本機 `config.js` 設定 API Key（見下方）
