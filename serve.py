@@ -1369,7 +1369,14 @@ def _dispatch(client, initial):
         return "local"
     if path.startswith("/panel/groq") and not is_ws:
         # 串流、沒有 Content-Length，必須關連線才能讓對方知道 body 結束。
+        # 回 "taken" 時 handle() 不會替我們關，這裡要自己 shutdown，否則瀏覽器
+        # 的 reader.read() 永遠等不到 done（AI 優化鈕會一直轉）。
         serve_groq(client, initial, raw_path, method)
+        for fn in (lambda: client.shutdown(socket.SHUT_RDWR), client.close):
+            try:
+                fn()
+            except OSError:
+                pass
         return "taken"
     if is_ws and path.startswith("/assistant"):
         initial = rewrite_request_path(initial, "/v1/realtime")
